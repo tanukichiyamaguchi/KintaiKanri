@@ -1,0 +1,9 @@
+export { LoginPage } from './Login';
+export { ClockPage } from './staff/ClockPage';
+export { MyPage } from './staff/MyPage';
+export { AdminDashboard } from './admin/Dashboard';
+export { StaffManagement } from './admin/StaffManagement';
+export { AttendanceManagement } from './admin/AttendanceManagement';
+export { SalaryManagement } from './admin/SalaryManagement';
+export { PaidLeaveManagement } from './admin/PaidLeaveManagement';
+export { SettingsPage } from './admin/Settings';

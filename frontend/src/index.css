@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #fdf4f3;
+  --color-primary-100: #fce8e6;
+  --color-primary-200: #f9d5d1;
+  --color-primary-300: #f4b5ae;
+  --color-primary-400: #ec8b80;
+  --color-primary-500: #e05f52;
+  --color-primary-600: #cc4438;
+  --color-primary-700: #ab362d;
+  --color-primary-800: #8e3029;
+  --color-primary-900: #772e28;
+  --color-primary-950: #401411;
+
+  --color-secondary-50: #f6f5f5;
+  --color-secondary-100: #e7e6e6;
+  --color-secondary-200: #d1d0d0;
+  --color-secondary-300: #b1afb0;
+  --color-secondary-400: #8a8889;
+  --color-secondary-500: #6f6d6e;
+  --color-secondary-600: #5f5d5e;
+  --color-secondary-700: #514f50;
+  --color-secondary-800: #464546;
+  --color-secondary-900: #3d3c3d;
+  --color-secondary-950: #262526;
+}
+
+@layer base {
+  html {
+    font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic', 'Meiryo', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-gray-50);
+    color: var(--color-gray-900);
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background-color: var(--color-primary-600);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--color-primary-700);
+  }
+
+  .btn-primary:active {
+    background-color: var(--color-primary-800);
+  }
+
+  .btn-secondary {
+    background-color: var(--color-gray-200);
+    color: var(--color-gray-800);
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--color-gray-300);
+  }
+
+  .btn-secondary:active {
+    background-color: var(--color-gray-400);
+  }
+
+  .btn-success {
+    background-color: var(--color-green-600);
+    color: white;
+  }
+
+  .btn-success:hover {
+    background-color: var(--color-green-700);
+  }
+
+  .btn-success:active {
+    background-color: var(--color-green-800);
+  }
+
+  .btn-warning {
+    background-color: var(--color-yellow-500);
+    color: white;
+  }
+
+  .btn-warning:hover {
+    background-color: var(--color-yellow-600);
+  }
+
+  .btn-warning:active {
+    background-color: var(--color-yellow-700);
+  }
+
+  .btn-danger {
+    background-color: var(--color-red-600);
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background-color: var(--color-red-700);
+  }
+
+  .btn-danger:active {
+    background-color: var(--color-red-800);
+  }
+
+  .btn-large {
+    padding: 1rem 2rem;
+    font-size: 1.125rem;
+  }
+
+  .card {
+    background-color: white;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    padding: 1.5rem;
+  }
+
+  .input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 0.5rem;
+    outline: none;
+    transition: all 0.2s;
+  }
+
+  .input:focus {
+    border-color: transparent;
+    box-shadow: 0 0 0 2px var(--color-primary-500);
+  }
+
+  .input-error {
+    border-color: var(--color-red-500);
+  }
+
+  .input-error:focus {
+    box-shadow: 0 0 0 2px var(--color-red-500);
+  }
+
+  .label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-gray-700);
+    margin-bottom: 0.25rem;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .status-working {
+    background-color: var(--color-green-100);
+    color: var(--color-green-800);
+  }
+
+  .status-break {
+    background-color: var(--color-yellow-100);
+    color: var(--color-yellow-800);
+  }
+
+  .status-off {
+    background-color: var(--color-gray-100);
+    color: var(--color-gray-600);
+  }
+
+  .status-finished {
+    background-color: var(--color-blue-100);
+    color: var(--color-blue-800);
+  }
+}
