@@ -7,6 +7,7 @@ interface PinInputProps {
   onComplete?: (value: string) => void;
   disabled?: boolean;
   error?: boolean;
+  darkMode?: boolean;
 }
 
 export function PinInput({
@@ -16,6 +17,7 @@ export function PinInput({
   onComplete,
   disabled = false,
   error = false,
+  darkMode = true,
 }: PinInputProps) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focused, setFocused] = useState(false);
@@ -94,6 +96,16 @@ export function PinInput({
     }
   };
 
+  const baseClasses = darkMode
+    ? 'bg-secondary-700 border-secondary-600 text-white'
+    : 'bg-white border-secondary-300 text-secondary-900';
+
+  const filledClasses = darkMode
+    ? 'bg-primary-500/20 border-primary-500'
+    : 'bg-primary-50 border-primary-400';
+
+  const errorClasses = 'border-red-500 bg-red-500/10';
+
   return (
     <div className="flex justify-center gap-3">
       {digits.map((digit, index) => (
@@ -113,12 +125,11 @@ export function PinInput({
           disabled={disabled}
           className={`
             w-14 h-16 text-center text-2xl font-bold
-            border-2 rounded-lg
-            focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
-            transition-all
-            ${error ? 'border-red-500 bg-red-50' : 'border-gray-300 bg-white'}
-            ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}
-            ${digit ? 'bg-primary-50 border-primary-300' : ''}
+            border-2 rounded-xl
+            focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500
+            transition-all duration-200
+            ${error ? errorClasses : digit ? filledClasses : baseClasses}
+            ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary-400'}
           `}
           aria-label={`PIN digit ${index + 1}`}
         />

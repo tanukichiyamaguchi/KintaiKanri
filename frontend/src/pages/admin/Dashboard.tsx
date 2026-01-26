@@ -6,8 +6,9 @@ import {
   Palmtree,
   Calculator,
   Settings,
-  Circle,
   ChevronRight,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, attendanceApi } from '../../api';
@@ -61,16 +62,16 @@ export function AdminDashboard() {
     fetchData();
   }, []);
 
-  const getStatusInfo = (status?: WorkStatus): { color: string; text: string } => {
+  const getStatusInfo = (status?: WorkStatus): { bg: string; text: string; label: string; dot: string } => {
     switch (status) {
       case 'working':
-        return { color: 'text-green-500', text: '勤務中' };
+        return { bg: 'bg-green-50', text: 'text-green-700', label: '勤務中', dot: 'bg-green-500' };
       case 'on_break':
-        return { color: 'text-yellow-500', text: '休憩中' };
+        return { bg: 'bg-amber-50', text: 'text-amber-700', label: '休憩中', dot: 'bg-amber-500' };
       case 'finished':
-        return { color: 'text-blue-500', text: '退勤済み' };
+        return { bg: 'bg-blue-50', text: 'text-blue-700', label: '退勤済み', dot: 'bg-blue-500' };
       default:
-        return { color: 'text-gray-400', text: '未出勤' };
+        return { bg: 'bg-secondary-50', text: 'text-secondary-500', label: '未出勤', dot: 'bg-secondary-300' };
     }
   };
 
@@ -92,59 +93,113 @@ export function AdminDashboard() {
       icon: <Users className="w-6 h-6" />,
       label: 'スタッフ管理',
       description: 'スタッフの追加・編集・削除',
+      color: 'from-violet-500 to-purple-600',
+      shadowColor: 'shadow-violet-500/20',
     },
     {
       to: '/admin/attendance',
       icon: <Calendar className="w-6 h-6" />,
       label: '勤怠管理',
       description: '打刻データの確認・修正',
+      color: 'from-blue-500 to-indigo-600',
+      shadowColor: 'shadow-blue-500/20',
     },
     {
       to: '/admin/paid-leave',
       icon: <Palmtree className="w-6 h-6" />,
       label: '有給管理',
       description: '有給申請の承認・却下',
+      color: 'from-emerald-500 to-teal-600',
+      shadowColor: 'shadow-emerald-500/20',
     },
     {
       to: '/admin/salary',
       icon: <Calculator className="w-6 h-6" />,
       label: '給与計算',
       description: '給与計算・明細発行',
+      color: 'from-primary-500 to-primary-700',
+      shadowColor: 'shadow-primary-500/20',
     },
     {
       to: '/admin/settings',
       icon: <Settings className="w-6 h-6" />,
       label: 'システム設定',
       description: '保険料率・税金設定',
+      color: 'from-secondary-600 to-secondary-800',
+      shadowColor: 'shadow-secondary-500/20',
     },
   ];
 
   const today = new Date();
-  const todayStr = `${today.getFullYear()}/${today.getMonth() + 1}/${today.getDate()}`;
+  const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][today.getDay()];
+  const todayStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日（${dayOfWeek}）`;
+
+  // Count staff by status
+  const workingCount = staffList.filter(s => s.attendance?.status === 'working').length;
+  const breakCount = staffList.filter(s => s.attendance?.status === 'on_break').length;
+  const finishedCount = staffList.filter(s => s.attendance?.status === 'finished').length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-secondary-100">
       <Header title="KATEstageLASH 管理画面" />
 
-      <main className="max-w-4xl mx-auto p-4">
+      <main className="max-w-5xl mx-auto p-4 sm:p-6">
+        {/* Welcome Section */}
+        <div className="card card-dark mb-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-primary-500/5 rounded-full blur-2xl" />
+
+          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-5 h-5 text-primary-400" />
+                <span className="text-primary-400 text-sm font-medium">ダッシュボード</span>
+              </div>
+              <h1 className="text-2xl font-bold text-white mb-1">おかえりなさい</h1>
+              <p className="text-secondary-400">{todayStr}</p>
+            </div>
+            <div className="flex items-center gap-4 sm:gap-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-green-400">{workingCount}</div>
+                <div className="text-xs text-secondary-400">勤務中</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-amber-400">{breakCount}</div>
+                <div className="text-xs text-secondary-400">休憩中</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-blue-400">{finishedCount}</div>
+                <div className="text-xs text-secondary-400">退勤済</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Today's Status */}
         <div className="card mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-              <Calendar className="w-5 h-5" />
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-semibold text-secondary-800 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary-500" />
               本日の出勤状況
             </h2>
-            <span className="text-gray-500">{todayStr}</span>
+            <span className="text-sm text-secondary-500 bg-secondary-100 px-3 py-1 rounded-full">
+              {staffList.length}名
+            </span>
           </div>
 
           {isLoading ? (
-            <Loading />
+            <div className="py-8">
+              <Loading />
+            </div>
           ) : staffList.length === 0 ? (
-            <p className="text-center text-gray-500 py-4">
-              スタッフが登録されていません
-            </p>
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-secondary-100 flex items-center justify-center">
+                <Users className="w-8 h-8 text-secondary-400" />
+              </div>
+              <p className="text-secondary-500">スタッフが登録されていません</p>
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {staffList.map(staff => {
                 const statusInfo = getStatusInfo(staff.attendance?.status);
                 const clockInTime = getClockInTime(staff.attendance);
@@ -152,21 +207,18 @@ export function AdminDashboard() {
                 return (
                   <div
                     key={staff.staffId}
-                    className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                    className={`flex items-center justify-between p-4 rounded-xl transition-colors ${statusInfo.bg}`}
                   >
                     <div className="flex items-center gap-3">
-                      <Circle
-                        className={`w-4 h-4 ${statusInfo.color}`}
-                        fill="currentColor"
-                      />
-                      <span className="font-medium text-gray-800">{staff.name}</span>
+                      <div className={`w-2.5 h-2.5 rounded-full ${statusInfo.dot}`} />
+                      <span className="font-medium text-secondary-800">{staff.name}</span>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className={`text-sm ${statusInfo.color}`}>
-                        {statusInfo.text}
+                      <span className={`text-sm font-medium px-3 py-1 rounded-full ${statusInfo.bg} ${statusInfo.text}`}>
+                        {statusInfo.label}
                       </span>
                       {clockInTime && (
-                        <span className="text-sm text-gray-500">{clockInTime}〜</span>
+                        <span className="text-sm text-secondary-500 font-mono">{clockInTime}〜</span>
                       )}
                     </div>
                   </div>
@@ -177,28 +229,34 @@ export function AdminDashboard() {
         </div>
 
         {/* Menu Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           {menuItems.map(item => (
             <Link
               key={item.to}
               to={item.to}
-              className="card hover:shadow-lg transition-shadow flex items-center gap-4"
+              className="group card hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
             >
-              <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center text-primary-600">
-                {item.icon}
+              <div className="flex items-start gap-4">
+                <div className={`w-12 h-12 bg-gradient-to-br ${item.color} rounded-xl flex items-center justify-center text-white shadow-lg ${item.shadowColor} group-hover:scale-110 transition-transform`}>
+                  {item.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-secondary-800 group-hover:text-primary-600 transition-colors">{item.label}</h3>
+                  <p className="text-sm text-secondary-500 mt-0.5">{item.description}</p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-secondary-300 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0" />
               </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-gray-800">{item.label}</h3>
-                <p className="text-sm text-gray-500">{item.description}</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
             </Link>
           ))}
         </div>
 
         {/* Current Time */}
-        <div className="mt-6 card text-center">
-          <Clock size="md" showDate={false} />
+        <div className="card card-gold text-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl" />
+          <div className="absolute bottom-0 left-0 w-24 h-24 bg-primary-500/5 rounded-full blur-2xl" />
+          <div className="relative">
+            <Clock size="md" showDate={false} />
+          </div>
         </div>
       </main>
     </div>

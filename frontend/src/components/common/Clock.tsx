@@ -28,15 +28,15 @@ export function Clock({ showDate = true, size = 'lg' }: ClockProps) {
 
   const sizeClasses = {
     sm: {
-      time: 'text-2xl',
+      time: 'text-3xl',
       date: 'text-sm',
     },
     md: {
-      time: 'text-4xl',
+      time: 'text-5xl',
       date: 'text-base',
     },
     lg: {
-      time: 'text-6xl',
+      time: 'text-7xl',
       date: 'text-lg',
     },
   };
@@ -44,12 +44,12 @@ export function Clock({ showDate = true, size = 'lg' }: ClockProps) {
   const todayStr = time.toISOString().split('T')[0];
 
   return (
-    <div className="text-center">
-      <div className={`font-mono font-bold text-gray-800 ${sizeClasses[size].time}`}>
+    <div className="text-center py-4">
+      <div className={`clock-display font-bold tracking-wider ${sizeClasses[size].time}`}>
         {formatTime(time)}
       </div>
       {showDate && (
-        <div className={`text-gray-600 mt-2 ${sizeClasses[size].date}`}>
+        <div className={`text-secondary-500 mt-3 font-medium ${sizeClasses[size].date}`}>
           {formatDateJapanese(todayStr)}
         </div>
       )}

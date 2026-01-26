@@ -11,6 +11,8 @@ import {
   CheckCircle,
   User,
   Building,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi } from '../../api';
@@ -213,18 +215,18 @@ export function ClockPage() {
   };
 
   // Get status label
-  const getStatusLabel = (s: WorkStatus): { text: string; class: string } => {
+  const getStatusLabel = (s: WorkStatus): { text: string; class: string; icon: string } => {
     switch (s) {
       case 'not_started':
-        return { text: '未出勤', class: 'status-badge status-off' };
+        return { text: '未出勤', class: 'status-badge status-off', icon: '○' };
       case 'working':
-        return { text: '勤務中', class: 'status-badge status-working' };
+        return { text: '勤務中', class: 'status-badge status-working pulse-gold', icon: '●' };
       case 'on_break':
-        return { text: '休憩中', class: 'status-badge status-break' };
+        return { text: '休憩中', class: 'status-badge status-break', icon: '◐' };
       case 'finished':
-        return { text: '退勤済み', class: 'status-badge status-finished' };
+        return { text: '退勤済み', class: 'status-badge status-finished', icon: '◎' };
       default:
-        return { text: '', class: '' };
+        return { text: '', class: '', icon: '' };
     }
   };
 
@@ -245,7 +247,7 @@ export function ClockPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-secondary-100">
         <Header title="打刻" />
         <div className="flex items-center justify-center h-[calc(100vh-64px)]">
           <Loading message="読み込み中..." />
@@ -255,24 +257,36 @@ export function ClockPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-secondary-100">
       <Header title="打刻" />
 
       <main className="max-w-lg mx-auto p-4">
-        {/* Clock Display */}
-        <div className="card text-center mb-6">
-          <Clock size="lg" showDate={true} />
+        {/* Clock Display Card */}
+        <div className="card card-gold text-center mb-6 relative overflow-hidden">
+          {/* Background decoration */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl" />
+          <div className="absolute bottom-0 left-0 w-24 h-24 bg-primary-500/5 rounded-full blur-2xl" />
 
-          {/* Status */}
-          <div className="mt-4">
-            <span className={statusInfo.class}>{statusInfo.text}</span>
+          <div className="relative">
+            <Clock size="lg" showDate={true} />
+
+            {/* Status Badge */}
+            <div className="mt-6 flex justify-center">
+              <span className={statusInfo.class}>{statusInfo.text}</span>
+            </div>
           </div>
         </div>
 
         {/* GPS Status */}
-        <div className="flex items-center justify-center gap-2 mb-4 text-sm">
-          <MapPin className={`w-4 h-4 ${gpsError ? 'text-red-500' : 'text-green-500'}`} />
-          <span className={gpsError ? 'text-red-600' : 'text-gray-600'}>
+        <div className={`flex items-center justify-center gap-2 mb-4 px-4 py-2 rounded-full text-sm ${
+          gpsError
+            ? 'bg-red-50 border border-red-200'
+            : gpsPosition
+            ? 'bg-green-50 border border-green-200'
+            : 'bg-secondary-100 border border-secondary-200'
+        }`}>
+          <MapPin className={`w-4 h-4 ${gpsError ? 'text-red-500' : gpsPosition ? 'text-green-500' : 'text-secondary-400'}`} />
+          <span className={gpsError ? 'text-red-600' : gpsPosition ? 'text-green-600' : 'text-secondary-500'}>
             {gpsError || (gpsPosition ? '位置情報取得済み' : '位置情報取得中...')}
           </span>
         </div>
@@ -280,10 +294,10 @@ export function ClockPage() {
         {/* Message */}
         {message && (
           <div
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg mb-4 ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-4 border ${
               message.type === 'success'
-                ? 'bg-green-50 text-green-700'
-                : 'bg-red-50 text-red-700'
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : 'bg-red-50 text-red-700 border-red-200'
             }`}
           >
             {message.type === 'success' ? (
@@ -291,7 +305,7 @@ export function ClockPage() {
             ) : (
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
             )}
-            <p>{message.text}</p>
+            <p className="font-medium">{message.text}</p>
           </div>
         )}
 
@@ -301,105 +315,119 @@ export function ClockPage() {
           <button
             onClick={() => handleClock('clock_in')}
             disabled={getButtonState('clock_in').disabled || isClocking}
-            className={`btn btn-large flex-col h-24 ${
+            className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
               getButtonState('clock_in').active
-                ? 'bg-green-100 text-green-700 border-2 border-green-300'
-                : 'btn-success'
-            }`}
+                ? 'bg-green-100 text-green-700 border-2 border-green-300 shadow-green-100'
+                : 'bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 hover:-translate-y-0.5'
+            } ${getButtonState('clock_in').disabled && !getButtonState('clock_in').active ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            <Play className="w-6 h-6" />
-            <span>出勤</span>
-            {getButtonState('clock_in').active && <span className="text-xs">(済)</span>}
+            <Play className="w-7 h-7" />
+            <span className="text-lg">出勤</span>
+            {getButtonState('clock_in').active && (
+              <span className="absolute top-2 right-2 text-xs bg-green-200 text-green-700 px-2 py-0.5 rounded-full">済</span>
+            )}
           </button>
 
           {/* Break Start */}
           <button
             onClick={() => handleClock('break_start')}
             disabled={getButtonState('break_start').disabled || isClocking}
-            className={`btn btn-large flex-col h-24 ${
+            className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
               getButtonState('break_start').active
-                ? 'bg-yellow-100 text-yellow-700 border-2 border-yellow-300'
-                : 'btn-warning'
-            }`}
+                ? 'bg-amber-100 text-amber-700 border-2 border-amber-300'
+                : 'bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:-translate-y-0.5'
+            } ${getButtonState('break_start').disabled && !getButtonState('break_start').active ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            <Coffee className="w-6 h-6" />
-            <span>休憩開始</span>
+            <Coffee className="w-7 h-7" />
+            <span className="text-lg">休憩開始</span>
           </button>
 
           {/* Break End */}
           <button
             onClick={() => handleClock('break_end')}
             disabled={getButtonState('break_end').disabled || isClocking}
-            className="btn btn-large flex-col h-24 btn-secondary"
+            className={`group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-secondary-100 to-secondary-200 text-secondary-700 border border-secondary-300 hover:from-secondary-50 hover:to-secondary-100 ${
+              getButtonState('break_end').disabled ? 'opacity-50 cursor-not-allowed' : 'hover:-translate-y-0.5 hover:shadow-lg'
+            }`}
           >
-            <Pause className="w-6 h-6" />
-            <span>休憩終了</span>
+            <Pause className="w-7 h-7" />
+            <span className="text-lg">休憩終了</span>
           </button>
 
           {/* Clock Out */}
           <button
             onClick={() => handleClock('clock_out')}
             disabled={getButtonState('clock_out').disabled || isClocking}
-            className={`btn btn-large flex-col h-24 ${
+            className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
               getButtonState('clock_out').active
-                ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
-                : 'btn-primary'
-            }`}
+                ? 'bg-primary-100 text-primary-700 border-2 border-primary-300'
+                : 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/30 hover:shadow-xl hover:shadow-primary-500/40 hover:-translate-y-0.5'
+            } ${getButtonState('clock_out').disabled && !getButtonState('clock_out').active ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            <LogOut className="w-6 h-6" />
-            <span>退勤</span>
+            <LogOut className="w-7 h-7" />
+            <span className="text-lg">退勤</span>
           </button>
 
           {/* Early Leave - Company */}
           <button
             onClick={() => handleClock('early_leave_company')}
             disabled={getButtonState('early_leave_company').disabled || isClocking}
-            className="btn btn-large flex-col h-24 bg-blue-500 text-white hover:bg-blue-600"
+            className={`group flex flex-col items-center justify-center gap-1 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:-translate-y-0.5 ${
+              getButtonState('early_leave_company').disabled ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           >
             <Building className="w-6 h-6" />
-            <span>早上がり</span>
-            <span className="text-xs">(会社都合)</span>
+            <span className="text-base">早上がり</span>
+            <span className="text-xs opacity-80">(会社都合)</span>
           </button>
 
           {/* Early Leave - Self */}
           <button
             onClick={() => handleClock('early_leave_self')}
             disabled={getButtonState('early_leave_self').disabled || isClocking}
-            className="btn btn-large flex-col h-24 btn-danger"
+            className={`group flex flex-col items-center justify-center gap-1 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40 hover:-translate-y-0.5 ${
+              getButtonState('early_leave_self').disabled ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           >
             <User className="w-6 h-6" />
-            <span>早退</span>
-            <span className="text-xs">(自己都合)</span>
+            <span className="text-base">早退</span>
+            <span className="text-xs opacity-80">(自己都合)</span>
           </button>
         </div>
 
         {/* Loading overlay */}
         {isClocking && (
-          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-40">
-            <div className="bg-white p-6 rounded-xl shadow-xl">
-              <Loading message="打刻中..." />
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-40">
+            <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
+              <p className="text-secondary-700 font-medium">打刻中...</p>
             </div>
           </div>
         )}
 
         {/* Today's Records */}
         <div className="card">
-          <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <ClockIcon className="w-5 h-5" />
+          <h3 className="font-semibold text-secondary-800 mb-4 flex items-center gap-2">
+            <ClockIcon className="w-5 h-5 text-primary-500" />
             本日の記録
           </h3>
 
           {records.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">まだ打刻がありません</p>
+            <div className="text-center py-8">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-secondary-100 flex items-center justify-center">
+                <ClockIcon className="w-8 h-8 text-secondary-400" />
+              </div>
+              <p className="text-secondary-500">まだ打刻がありません</p>
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {records.map((record, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                  className="flex items-center justify-between py-3 px-4 bg-secondary-50 rounded-xl"
                 >
-                  <span className="text-gray-700">{getTypeLabel(record.type)}</span>
-                  <span className="font-mono text-gray-900">{formatTime(record.time)}</span>
+                  <span className="text-secondary-700 font-medium">{getTypeLabel(record.type)}</span>
+                  <span className="font-mono text-secondary-900 font-semibold">{formatTime(record.time)}</span>
                 </div>
               ))}
             </div>
@@ -407,12 +435,13 @@ export function ClockPage() {
         </div>
 
         {/* My Page Link */}
-        <div className="mt-6 text-center">
+        <div className="mt-6">
           <Link
             to="/mypage"
-            className="text-primary-600 hover:text-primary-700 font-medium"
+            className="flex items-center justify-between w-full p-4 bg-white rounded-xl border border-secondary-200 hover:border-primary-300 hover:shadow-md transition-all group"
           >
-            マイページへ →
+            <span className="text-secondary-700 font-medium group-hover:text-primary-600">マイページへ</span>
+            <ChevronRight className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 group-hover:translate-x-1 transition-all" />
           </Link>
         </div>
       </main>
@@ -428,7 +457,10 @@ export function ClockPage() {
         size="sm"
       >
         <div className="text-center py-4">
-          <p className="text-gray-700 mb-6">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary-100 flex items-center justify-center">
+            <LogOut className="w-8 h-8 text-primary-600" />
+          </div>
+          <p className="text-secondary-700 mb-6 whitespace-pre-line">
             {pendingClockType === 'clock_out' && '退勤しますか？'}
             {pendingClockType === 'early_leave_company' && '早上がり（会社都合）で退勤しますか？'}
             {pendingClockType === 'early_leave_self' && '早退（自己都合）で退勤しますか？\n※控除の対象となります'}
