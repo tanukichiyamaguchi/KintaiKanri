@@ -4,14 +4,16 @@
  * Setup Instructions:
  * 1. Create a new Google Spreadsheet
  * 2. Go to Extensions > Apps Script
- * 3. Copy all .gs files into the Apps Script editor
+ * 3. Copy this code into the Apps Script editor
  * 4. Set up the SPREADSHEET_ID constant below
- * 5. Deploy as Web App (Execute as: Me, Who has access: Anyone)
+ * 5. Run setupSystem() function once to initialize all sheets
+ * 6. Deploy as Web App (Execute as: Me, Who has access: Anyone)
  */
 
 // Configuration
 const SPREADSHEET_ID = ''; // Set your spreadsheet ID here
 const WEEKLY_HOURS = 44; // Beauty industry special measure
+const ADMIN_PIN = '9999'; // Admin PIN code - CHANGE THIS IN PRODUCTION
 
 // Sheet names
 const SHEETS = {
@@ -21,10 +23,97 @@ const SHEETS = {
   STANDARD_REMUNERATION: 'standard_remuneration',
 };
 
+/**
+ * 初期セットアップ - この関数を一度実行してすべてのシートを作成
+ * Run this function once to set up all sheets
+ */
+function setupSystem() {
+  const ss = getSpreadsheet();
+
+  // Create all master sheets
+  const sheetsToCreate = [
+    {
+      name: SHEETS.STAFF_MASTER,
+      headers: ['staff_id', 'name', 'pin_code', 'monthly_salary', 'transportation', 'hire_date', 'paid_leave_balance', 'status', 'birth_date']
+    },
+    {
+      name: SHEETS.PAID_LEAVE,
+      headers: ['id', 'staff_id', 'name', 'request_date', 'leave_date', 'status', 'approved_date', 'remarks']
+    },
+    {
+      name: SHEETS.INSURANCE_RATES,
+      headers: ['effective_date', 'health_insurance_rate', 'nursing_insurance_rate', 'pension_rate', 'employment_insurance_rate', 'updated_at', 'updated_by']
+    },
+    {
+      name: SHEETS.STANDARD_REMUNERATION,
+      headers: ['grade', 'monthly_min', 'monthly_max', 'standard_monthly']
+    }
+  ];
+
+  for (const sheetInfo of sheetsToCreate) {
+    let sheet = ss.getSheetByName(sheetInfo.name);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetInfo.name);
+      Logger.log('Created sheet: ' + sheetInfo.name);
+    }
+
+    // Set headers if row 1 is empty
+    const firstRow = sheet.getRange(1, 1, 1, sheetInfo.headers.length).getValues()[0];
+    if (!firstRow[0]) {
+      sheet.getRange(1, 1, 1, sheetInfo.headers.length).setValues([sheetInfo.headers]);
+      Logger.log('Added headers to: ' + sheetInfo.name);
+    }
+  }
+
+  // Add default insurance rates if none exist
+  const insuranceSheet = ss.getSheetByName(SHEETS.INSURANCE_RATES);
+  const insuranceData = insuranceSheet.getDataRange().getValues();
+  if (insuranceData.length <= 1) {
+    const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    insuranceSheet.appendRow([today, 4.905, 0.80, 9.15, 0.60, new Date().toISOString(), 'System']);
+    Logger.log('Added default insurance rates');
+  }
+
+  Logger.log('System setup complete!');
+  return { success: true, message: 'System setup complete!' };
+}
+
+/**
+ * テスト用スタッフを追加（PIN: 1234）
+ * Run this to add a test staff member with PIN 1234
+ */
+function addTestStaff() {
+  const sheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+  const testPin = hashPin('1234');
+
+  // Check if test staff already exists
+  const data = sheetToObjects(sheet);
+  if (data.find(s => s.staff_id === 'S000001')) {
+    Logger.log('Test staff already exists');
+    return { success: false, message: 'Test staff already exists' };
+  }
+
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  sheet.appendRow(['S000001', 'テストスタッフ', testPin, 250000, 15000, today, 10, 'active', '1990-01-01']);
+
+  Logger.log('Test staff added! Staff ID: S000001, PIN: 1234');
+  return { success: true, message: 'Test staff added! Staff ID: S000001, PIN: 1234' };
+}
+
+/**
+ * PINコードをハッシュ化するテスト用関数
+ */
+function testHashPin() {
+  const pins = ['1234', '0000', '9999'];
+  for (const pin of pins) {
+    Logger.log('PIN ' + pin + ' -> ' + hashPin(pin));
+  }
+}
+
 // Get spreadsheet
 function getSpreadsheet() {
   if (!SPREADSHEET_ID) {
-    throw new Error('SPREADSHEET_ID is not configured');
+    throw new Error('SPREADSHEET_ID is not configured. Please set your spreadsheet ID.');
   }
   return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
@@ -215,6 +304,11 @@ function handleRequest(e, method) {
         result = handleAuth(body);
         break;
 
+      // Admin Authentication
+      case 'admin-auth':
+        result = handleAdminAuth(body);
+        break;
+
       // Clock operations
       case 'clock':
         result = handleClock(body);
@@ -298,8 +392,13 @@ function handleRequest(e, method) {
         }
         break;
 
+      // Setup - initialize system
+      case 'setup':
+        result = setupSystem();
+        break;
+
       default:
-        result = { success: false, error: 'Unknown action' };
+        result = { success: false, error: 'Unknown action: ' + path };
     }
 
     output.setContent(JSON.stringify(result));
@@ -315,6 +414,23 @@ function handleRequest(e, method) {
 }
 
 // Handler functions
+
+function handleAdminAuth(body) {
+  const { pinCode } = body;
+
+  if (!pinCode) {
+    return { success: false, error: 'Missing pinCode' };
+  }
+
+  if (pinCode !== ADMIN_PIN) {
+    return { success: false, error: '管理者PINが正しくありません' };
+  }
+
+  return {
+    success: true,
+    token: generateId()
+  };
+}
 
 function handleAuth(body) {
   const { staffId, pinCode } = body;
@@ -591,7 +707,7 @@ function handleCreateStaff(body) {
   const { name, pinCode, monthlySalary, transportation, hireDate, birthDate, paidLeaveBalance } = body;
 
   if (!name || !pinCode) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: 'Missing required fields (name and pinCode are required)' };
   }
 
   const sheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -795,7 +911,7 @@ function handleGetInsuranceRates() {
   const data = sheetToObjects(sheet);
 
   // Sort by effective_date descending
-  data.sort((a, b) => b.effective_date.localeCompare(a.effective_date));
+  data.sort((a, b) => String(b.effective_date).localeCompare(String(a.effective_date)));
 
   const currentRates = data.length > 0 ? data[0] : null;
 
