@@ -45,25 +45,25 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-secondary-900/60 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-secondary-900/40 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className={`relative w-full ${sizeClasses[size]} bg-white rounded-2xl shadow-2xl transform transition-all border border-primary-200/50`}
+          className={`relative w-full ${sizeClasses[size]} bg-white rounded-2xl shadow-2xl transform transition-all gold-border`}
           onClick={e => e.stopPropagation()}
         >
           {/* Header */}
           {title && (
-            <div className="flex items-center justify-between px-6 py-4 border-b border-secondary-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-secondary-100">
               <h3 className="text-lg font-semibold text-secondary-900">{title}</h3>
               <button
                 onClick={onClose}
-                className="p-2 rounded-xl hover:bg-secondary-100 transition-colors"
+                className="p-2 rounded-xl hover:bg-secondary-50 transition-colors border border-transparent hover:border-secondary-200"
               >
-                <X className="w-5 h-5 text-secondary-500" />
+                <X className="w-5 h-5 text-secondary-400" />
               </button>
             </div>
           )}

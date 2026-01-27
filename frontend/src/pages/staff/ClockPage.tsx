@@ -215,18 +215,18 @@ export function ClockPage() {
   };
 
   // Get status label
-  const getStatusLabel = (s: WorkStatus): { text: string; class: string; icon: string } => {
+  const getStatusLabel = (s: WorkStatus): { text: string; class: string } => {
     switch (s) {
       case 'not_started':
-        return { text: '未出勤', class: 'status-badge status-off', icon: '○' };
+        return { text: '未出勤', class: 'status-badge status-off' };
       case 'working':
-        return { text: '勤務中', class: 'status-badge status-working pulse-gold', icon: '●' };
+        return { text: '勤務中', class: 'status-badge status-working pulse-gold' };
       case 'on_break':
-        return { text: '休憩中', class: 'status-badge status-break', icon: '◐' };
+        return { text: '休憩中', class: 'status-badge status-break' };
       case 'finished':
-        return { text: '退勤済み', class: 'status-badge status-finished', icon: '◎' };
+        return { text: '退勤済み', class: 'status-badge status-finished' };
       default:
-        return { text: '', class: '', icon: '' };
+        return { text: '', class: '' };
     }
   };
 
@@ -247,7 +247,7 @@ export function ClockPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-secondary-100">
+      <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
         <Header title="打刻" />
         <div className="flex items-center justify-center h-[calc(100vh-64px)]">
           <Loading message="読み込み中..." />
@@ -257,15 +257,15 @@ export function ClockPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-secondary-100">
+    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="打刻" />
 
       <main className="max-w-lg mx-auto p-4">
         {/* Clock Display Card */}
         <div className="card card-gold text-center mb-6 relative overflow-hidden">
           {/* Background decoration */}
-          <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl" />
-          <div className="absolute bottom-0 left-0 w-24 h-24 bg-primary-500/5 rounded-full blur-2xl" />
+          <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-primary-200/20 to-transparent rounded-full" />
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-primary-200/20 to-transparent rounded-full" />
 
           <div className="relative">
             <Clock size="lg" showDate={true} />
@@ -278,15 +278,15 @@ export function ClockPage() {
         </div>
 
         {/* GPS Status */}
-        <div className={`flex items-center justify-center gap-2 mb-4 px-4 py-2 rounded-full text-sm ${
+        <div className={`flex items-center justify-center gap-2.5 mb-5 px-5 py-3 rounded-full text-sm font-medium border ${
           gpsError
-            ? 'bg-red-50 border border-red-200'
+            ? 'bg-red-50 border-red-200 text-red-600'
             : gpsPosition
-            ? 'bg-green-50 border border-green-200'
-            : 'bg-secondary-100 border border-secondary-200'
+            ? 'bg-green-50 border-green-200 text-green-600'
+            : 'bg-secondary-50 border-secondary-200 text-secondary-500'
         }`}>
           <MapPin className={`w-4 h-4 ${gpsError ? 'text-red-500' : gpsPosition ? 'text-green-500' : 'text-secondary-400'}`} />
-          <span className={gpsError ? 'text-red-600' : gpsPosition ? 'text-green-600' : 'text-secondary-500'}>
+          <span>
             {gpsError || (gpsPosition ? '位置情報取得済み' : '位置情報取得中...')}
           </span>
         </div>
@@ -294,7 +294,7 @@ export function ClockPage() {
         {/* Message */}
         {message && (
           <div
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-4 border ${
+            className={`flex items-center gap-3 px-5 py-4 rounded-xl mb-5 border ${
               message.type === 'success'
                 ? 'bg-green-50 text-green-700 border-green-200'
                 : 'bg-red-50 text-red-700 border-red-200'
@@ -317,14 +317,14 @@ export function ClockPage() {
             disabled={getButtonState('clock_in').disabled || isClocking}
             className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
               getButtonState('clock_in').active
-                ? 'bg-green-100 text-green-700 border-2 border-green-300 shadow-green-100'
-                : 'bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 hover:-translate-y-0.5'
+                ? 'bg-green-50 text-green-700 border-2 border-green-300'
+                : 'bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg shadow-green-500/25 hover:shadow-xl hover:shadow-green-500/35 hover:-translate-y-0.5'
             } ${getButtonState('clock_in').disabled && !getButtonState('clock_in').active ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Play className="w-7 h-7" />
             <span className="text-lg">出勤</span>
             {getButtonState('clock_in').active && (
-              <span className="absolute top-2 right-2 text-xs bg-green-200 text-green-700 px-2 py-0.5 rounded-full">済</span>
+              <span className="absolute top-2 right-2 text-xs bg-green-200 text-green-700 px-2.5 py-0.5 rounded-full font-bold">済</span>
             )}
           </button>
 
@@ -334,8 +334,8 @@ export function ClockPage() {
             disabled={getButtonState('break_start').disabled || isClocking}
             className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
               getButtonState('break_start').active
-                ? 'bg-amber-100 text-amber-700 border-2 border-amber-300'
-                : 'bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:-translate-y-0.5'
+                ? 'bg-amber-50 text-amber-700 border-2 border-amber-300'
+                : 'bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 hover:shadow-xl hover:shadow-amber-500/35 hover:-translate-y-0.5'
             } ${getButtonState('break_start').disabled && !getButtonState('break_start').active ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Coffee className="w-7 h-7" />
@@ -346,7 +346,7 @@ export function ClockPage() {
           <button
             onClick={() => handleClock('break_end')}
             disabled={getButtonState('break_end').disabled || isClocking}
-            className={`group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-secondary-100 to-secondary-200 text-secondary-700 border border-secondary-300 hover:from-secondary-50 hover:to-secondary-100 ${
+            className={`group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 bg-white text-secondary-600 border-2 border-secondary-200 hover:border-primary-300 hover:text-primary-600 ${
               getButtonState('break_end').disabled ? 'opacity-50 cursor-not-allowed' : 'hover:-translate-y-0.5 hover:shadow-lg'
             }`}
           >
@@ -360,8 +360,8 @@ export function ClockPage() {
             disabled={getButtonState('clock_out').disabled || isClocking}
             className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
               getButtonState('clock_out').active
-                ? 'bg-primary-100 text-primary-700 border-2 border-primary-300'
-                : 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/30 hover:shadow-xl hover:shadow-primary-500/40 hover:-translate-y-0.5'
+                ? 'bg-primary-50 text-primary-700 border-2 border-primary-300'
+                : 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/35 hover:-translate-y-0.5'
             } ${getButtonState('clock_out').disabled && !getButtonState('clock_out').active ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <LogOut className="w-7 h-7" />
@@ -372,7 +372,7 @@ export function ClockPage() {
           <button
             onClick={() => handleClock('early_leave_company')}
             disabled={getButtonState('early_leave_company').disabled || isClocking}
-            className={`group flex flex-col items-center justify-center gap-1 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:-translate-y-0.5 ${
+            className={`group flex flex-col items-center justify-center gap-1 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 hover:-translate-y-0.5 ${
               getButtonState('early_leave_company').disabled ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
@@ -385,7 +385,7 @@ export function ClockPage() {
           <button
             onClick={() => handleClock('early_leave_self')}
             disabled={getButtonState('early_leave_self').disabled || isClocking}
-            className={`group flex flex-col items-center justify-center gap-1 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40 hover:-translate-y-0.5 ${
+            className={`group flex flex-col items-center justify-center gap-1 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 hover:shadow-xl hover:shadow-red-500/35 hover:-translate-y-0.5 ${
               getButtonState('early_leave_self').disabled ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
@@ -397,37 +397,39 @@ export function ClockPage() {
 
         {/* Loading overlay */}
         {isClocking && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-40">
-            <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
-              <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
-              <p className="text-secondary-700 font-medium">打刻中...</p>
+          <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-40">
+            <div className="bg-white p-10 rounded-3xl shadow-2xl border border-primary-100 flex flex-col items-center gap-5">
+              <Loader2 className="w-12 h-12 text-primary-500 animate-spin" />
+              <p className="text-secondary-700 font-semibold text-lg">打刻中...</p>
             </div>
           </div>
         )}
 
         {/* Today's Records */}
         <div className="card">
-          <h3 className="font-semibold text-secondary-800 mb-4 flex items-center gap-2">
-            <ClockIcon className="w-5 h-5 text-primary-500" />
+          <h3 className="font-semibold text-secondary-800 mb-5 flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center">
+              <ClockIcon className="w-4 h-4 text-primary-600" />
+            </div>
             本日の記録
           </h3>
 
           {records.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-secondary-100 flex items-center justify-center">
-                <ClockIcon className="w-8 h-8 text-secondary-400" />
+            <div className="text-center py-10">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-secondary-50 flex items-center justify-center">
+                <ClockIcon className="w-8 h-8 text-secondary-300" />
               </div>
-              <p className="text-secondary-500">まだ打刻がありません</p>
+              <p className="text-secondary-400">まだ打刻がありません</p>
             </div>
           ) : (
             <div className="space-y-2">
               {records.map((record, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between py-3 px-4 bg-secondary-50 rounded-xl"
+                  className="flex items-center justify-between py-3.5 px-5 bg-secondary-50 rounded-xl border border-secondary-100"
                 >
                   <span className="text-secondary-700 font-medium">{getTypeLabel(record.type)}</span>
-                  <span className="font-mono text-secondary-900 font-semibold">{formatTime(record.time)}</span>
+                  <span className="font-mono text-secondary-900 font-semibold text-lg">{formatTime(record.time)}</span>
                 </div>
               ))}
             </div>
@@ -456,13 +458,13 @@ export function ClockPage() {
         title="確認"
         size="sm"
       >
-        <div className="text-center py-4">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary-100 flex items-center justify-center">
-            <LogOut className="w-8 h-8 text-primary-600" />
+        <div className="text-center py-6">
+          <div className="w-20 h-20 mx-auto mb-5 rounded-2xl bg-primary-50 flex items-center justify-center">
+            <LogOut className="w-10 h-10 text-primary-600" />
           </div>
-          <p className="text-secondary-700 mb-6 whitespace-pre-line">
+          <p className="text-secondary-700 mb-8 whitespace-pre-line text-lg">
             {pendingClockType === 'clock_out' && '退勤しますか？'}
-            {pendingClockType === 'early_leave_company' && '早上がり（会社都合）で退勤しますか？'}
+            {pendingClockType === 'early_leave_company' && '早上がり（会社都合）で\n退勤しますか？'}
             {pendingClockType === 'early_leave_self' && '早退（自己都合）で退勤しますか？\n※控除の対象となります'}
           </p>
 

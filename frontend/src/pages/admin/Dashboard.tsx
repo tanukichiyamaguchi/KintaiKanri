@@ -93,8 +93,8 @@ export function AdminDashboard() {
       icon: <Users className="w-6 h-6" />,
       label: 'スタッフ管理',
       description: 'スタッフの追加・編集・削除',
-      color: 'from-violet-500 to-purple-600',
-      shadowColor: 'shadow-violet-500/20',
+      color: 'from-primary-400 to-primary-600',
+      shadowColor: 'shadow-primary-500/20',
     },
     {
       to: '/admin/attendance',
@@ -117,15 +117,15 @@ export function AdminDashboard() {
       icon: <Calculator className="w-6 h-6" />,
       label: '給与計算',
       description: '給与計算・明細発行',
-      color: 'from-primary-500 to-primary-700',
-      shadowColor: 'shadow-primary-500/20',
+      color: 'from-violet-500 to-purple-600',
+      shadowColor: 'shadow-violet-500/20',
     },
     {
       to: '/admin/settings',
       icon: <Settings className="w-6 h-6" />,
       label: 'システム設定',
       description: '保険料率・税金設定',
-      color: 'from-secondary-600 to-secondary-800',
+      color: 'from-secondary-500 to-secondary-700',
       shadowColor: 'shadow-secondary-500/20',
     },
   ];
@@ -140,36 +140,38 @@ export function AdminDashboard() {
   const finishedCount = staffList.filter(s => s.attendance?.status === 'finished').length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-secondary-100">
+    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="KATEstageLASH 管理画面" />
 
       <main className="max-w-5xl mx-auto p-4 sm:p-6">
         {/* Welcome Section */}
-        <div className="card card-dark mb-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-primary-500/5 rounded-full blur-2xl" />
+        <div className="card card-gold gold-border mb-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-bl from-primary-200/30 to-transparent rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-56 h-56 bg-gradient-to-tr from-primary-200/20 to-transparent rounded-full blur-2xl" />
 
-          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-5 h-5 text-primary-400" />
-                <span className="text-primary-400 text-sm font-medium">ダッシュボード</span>
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-sm shadow-primary-500/20">
+                  <Sparkles className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-primary-600 text-sm font-semibold tracking-wider uppercase">Dashboard</span>
               </div>
-              <h1 className="text-2xl font-bold text-white mb-1">おかえりなさい</h1>
-              <p className="text-secondary-400">{todayStr}</p>
+              <h1 className="text-2xl font-bold text-secondary-900 mb-1">おかえりなさい</h1>
+              <p className="text-secondary-500">{todayStr}</p>
             </div>
-            <div className="flex items-center gap-4 sm:gap-6">
+            <div className="flex items-center gap-6 sm:gap-8">
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-400">{workingCount}</div>
-                <div className="text-xs text-secondary-400">勤務中</div>
+                <div className="text-3xl font-bold text-green-600">{workingCount}</div>
+                <div className="text-xs text-secondary-500 font-medium">勤務中</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-amber-400">{breakCount}</div>
-                <div className="text-xs text-secondary-400">休憩中</div>
+                <div className="text-3xl font-bold text-amber-600">{breakCount}</div>
+                <div className="text-xs text-secondary-500 font-medium">休憩中</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-blue-400">{finishedCount}</div>
-                <div className="text-xs text-secondary-400">退勤済</div>
+                <div className="text-3xl font-bold text-blue-600">{finishedCount}</div>
+                <div className="text-xs text-secondary-500 font-medium">退勤済</div>
               </div>
             </div>
           </div>
@@ -177,26 +179,35 @@ export function AdminDashboard() {
 
         {/* Today's Status */}
         <div className="card mb-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-semibold text-secondary-800 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-primary-500" />
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold text-secondary-800 flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4 text-primary-600" />
+              </div>
               本日の出勤状況
             </h2>
-            <span className="text-sm text-secondary-500 bg-secondary-100 px-3 py-1 rounded-full">
+            <span className="text-sm text-secondary-500 bg-secondary-50 px-3.5 py-1.5 rounded-full font-medium border border-secondary-100">
               {staffList.length}名
             </span>
           </div>
 
           {isLoading ? (
-            <div className="py-8">
+            <div className="py-10">
               <Loading />
             </div>
           ) : staffList.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-secondary-100 flex items-center justify-center">
-                <Users className="w-8 h-8 text-secondary-400" />
+            <div className="text-center py-14">
+              <div className="w-20 h-20 mx-auto mb-5 rounded-2xl bg-secondary-50 flex items-center justify-center">
+                <Users className="w-10 h-10 text-secondary-300" />
               </div>
-              <p className="text-secondary-500">スタッフが登録されていません</p>
+              <p className="text-secondary-400 text-lg">スタッフが登録されていません</p>
+              <Link
+                to="/admin/staff"
+                className="inline-flex items-center gap-2 mt-4 text-primary-600 hover:text-primary-700 font-medium"
+              >
+                スタッフを追加する
+                <ChevronRight className="w-4 h-4" />
+              </Link>
             </div>
           ) : (
             <div className="space-y-2">
@@ -207,14 +218,14 @@ export function AdminDashboard() {
                 return (
                   <div
                     key={staff.staffId}
-                    className={`flex items-center justify-between p-4 rounded-xl transition-colors ${statusInfo.bg}`}
+                    className={`flex items-center justify-between p-4 rounded-xl transition-all border border-transparent hover:border-secondary-200 ${statusInfo.bg}`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-2.5 h-2.5 rounded-full ${statusInfo.dot}`} />
+                      <div className={`w-3 h-3 rounded-full ${statusInfo.dot}`} />
                       <span className="font-medium text-secondary-800">{staff.name}</span>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className={`text-sm font-medium px-3 py-1 rounded-full ${statusInfo.bg} ${statusInfo.text}`}>
+                      <span className={`text-sm font-semibold px-3 py-1.5 rounded-full ${statusInfo.bg} ${statusInfo.text} border border-current/10`}>
                         {statusInfo.label}
                       </span>
                       {clockInTime && (
@@ -234,7 +245,7 @@ export function AdminDashboard() {
             <Link
               key={item.to}
               to={item.to}
-              className="group card hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+              className="group card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-transparent hover:border-primary-100"
             >
               <div className="flex items-start gap-4">
                 <div className={`w-12 h-12 bg-gradient-to-br ${item.color} rounded-xl flex items-center justify-center text-white shadow-lg ${item.shadowColor} group-hover:scale-110 transition-transform`}>
@@ -244,16 +255,16 @@ export function AdminDashboard() {
                   <h3 className="font-semibold text-secondary-800 group-hover:text-primary-600 transition-colors">{item.label}</h3>
                   <p className="text-sm text-secondary-500 mt-0.5">{item.description}</p>
                 </div>
-                <ChevronRight className="w-5 h-5 text-secondary-300 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0" />
+                <ChevronRight className="w-5 h-5 text-secondary-300 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0 mt-1" />
               </div>
             </Link>
           ))}
         </div>
 
         {/* Current Time */}
-        <div className="card card-gold text-center relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl" />
-          <div className="absolute bottom-0 left-0 w-24 h-24 bg-primary-500/5 rounded-full blur-2xl" />
+        <div className="card card-gold text-center relative overflow-hidden gold-border">
+          <div className="absolute top-0 right-0 w-36 h-36 bg-gradient-to-bl from-primary-200/20 to-transparent rounded-full" />
+          <div className="absolute bottom-0 left-0 w-28 h-28 bg-gradient-to-tr from-primary-200/20 to-transparent rounded-full" />
           <div className="relative">
             <Clock size="md" showDate={false} />
           </div>
