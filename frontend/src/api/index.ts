@@ -67,15 +67,15 @@ const mockStaffDetails: Staff[] = [
 // In-memory storage for demo mode
 let mockTodayRecords: Record<string, TodayAttendance> = {};
 
-// GAS API uses action parameter, not REST routes
+// GAS API - All requests use GET to avoid CORS issues
+// Data is passed via query parameters, with body encoded as JSON in 'data' param
 async function apiRequest<T>(
   action: string,
-  method: 'GET' | 'POST' = 'GET',
   body?: Record<string, unknown>,
   queryParams?: Record<string, string>
 ): Promise<ApiResponse<T>> {
   if (DEMO_MODE) {
-    return handleDemoRequest<T>(action, method, body, queryParams);
+    return handleDemoRequest<T>(action, body, queryParams);
   }
 
   try {
@@ -83,25 +83,26 @@ async function apiRequest<T>(
     const url = new URL(API_BASE_URL);
     url.searchParams.set('action', action);
 
-    // Add query params for GET requests
+    // Add query params
     if (queryParams) {
       Object.entries(queryParams).forEach(([key, value]) => {
         url.searchParams.set(key, value);
       });
     }
 
-    const options: RequestInit = {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    };
-
-    if (body && method === 'POST') {
-      options.body = JSON.stringify(body);
+    // Add body as JSON-encoded 'data' parameter for POST-like operations
+    if (body) {
+      url.searchParams.set('data', JSON.stringify(body));
     }
 
-    const response = await fetch(url.toString(), options);
+    // Use GET request to avoid CORS preflight issues with GAS
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
     const data = await response.json();
 
     // GAS returns success flag in response body
@@ -117,6 +118,7 @@ async function apiRequest<T>(
       };
     }
   } catch (error) {
+    console.error('API Error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Network error',
@@ -127,7 +129,6 @@ async function apiRequest<T>(
 // Demo mode request handler
 async function handleDemoRequest<T>(
   action: string,
-  method: string,
   body?: Record<string, unknown>,
   queryParams?: Record<string, string>
 ): Promise<ApiResponse<T>> {
@@ -135,7 +136,7 @@ async function handleDemoRequest<T>(
   await new Promise(resolve => setTimeout(resolve, 300));
 
   // Auth endpoint
-  if (action === 'auth' && method === 'POST') {
+  if (action === 'auth') {
     const staffId = body?.staffId as string;
     const pinCode = body?.pinCode as string;
     const staff = mockStaff.find(s => s.staffId === staffId);
@@ -155,7 +156,7 @@ async function handleDemoRequest<T>(
   }
 
   // Admin auth
-  if (action === 'admin-auth' && method === 'POST') {
+  if (action === 'admin-auth') {
     const pinCode = body?.pinCode as string;
     if (pinCode === ADMIN_PIN) {
       return {
@@ -167,12 +168,12 @@ async function handleDemoRequest<T>(
   }
 
   // Get staff list
-  if (action === 'staff' && method === 'GET') {
+  if (action === 'staff' && !body) {
     return { success: true, data: mockStaff as unknown as T };
   }
 
   // Get staff details
-  if (action === 'staff/detail' && method === 'GET') {
+  if (action === 'staff/detail') {
     const staffId = queryParams?.staffId;
     const staff = mockStaffDetails.find(s => s.staffId === staffId);
     if (staff) {
@@ -182,7 +183,7 @@ async function handleDemoRequest<T>(
   }
 
   // Create staff
-  if (action === 'staff' && method === 'POST') {
+  if (action === 'staff' && body) {
     const newStaffId = 'S' + String(Date.now()).slice(-6);
     const newStaff: Staff = {
       staffId: newStaffId,
@@ -204,7 +205,7 @@ async function handleDemoRequest<T>(
   }
 
   // Update staff
-  if (action === 'staff/update' && method === 'POST') {
+  if (action === 'staff/update') {
     const staffId = body?.staffId as string;
     const staffIndex = mockStaffDetails.findIndex(s => s.staffId === staffId);
     if (staffIndex !== -1) {
@@ -223,7 +224,7 @@ async function handleDemoRequest<T>(
   }
 
   // Delete staff
-  if (action === 'staff/delete' && method === 'POST') {
+  if (action === 'staff/delete') {
     const staffId = body?.staffId as string;
     const staffIndex = mockStaffDetails.findIndex(s => s.staffId === staffId);
     if (staffIndex !== -1) {
@@ -238,7 +239,7 @@ async function handleDemoRequest<T>(
   }
 
   // Clock endpoint
-  if (action === 'clock' && method === 'POST') {
+  if (action === 'clock') {
     const staffId = body?.staffId as string;
     const type = body?.type as ClockType;
     const timestamp = body?.timestamp as string || new Date().toISOString();
@@ -280,7 +281,7 @@ async function handleDemoRequest<T>(
   }
 
   // Today's attendance
-  if (action === 'attendance/today' && method === 'GET') {
+  if (action === 'attendance/today') {
     const staffId = queryParams?.staffId || '';
 
     const attendance = mockTodayRecords[staffId] || {
@@ -292,7 +293,7 @@ async function handleDemoRequest<T>(
   }
 
   // Paid leave balance
-  if (action === 'paid-leave/balance' && method === 'GET') {
+  if (action === 'paid-leave/balance') {
     const staffId = queryParams?.staffId || '';
     const staff = mockStaffDetails.find(s => s.staffId === staffId);
 
@@ -311,10 +312,10 @@ async function handleDemoRequest<T>(
 // Authentication API
 export const authApi = {
   login: (staffId: string, pinCode: string): Promise<ApiResponse<AuthResponse>> =>
-    apiRequest('auth', 'POST', { staffId, pinCode }),
+    apiRequest('auth', { staffId, pinCode }),
 
   adminLogin: (pinCode: string): Promise<ApiResponse<{ success: boolean; token: string }>> =>
-    apiRequest('admin-auth', 'POST', { pinCode }),
+    apiRequest('admin-auth', { pinCode }),
 
   verifyAdminPin: (pinCode: string): boolean => {
     // In demo mode, check against the configured admin PIN
@@ -325,19 +326,19 @@ export const authApi = {
 // Staff API - updated to use GAS action format
 export const staffApi = {
   getList: (): Promise<ApiResponse<StaffInfo[]>> =>
-    apiRequest('staff', 'GET'),
+    apiRequest('staff'),
 
   getDetails: (staffId: string): Promise<ApiResponse<Staff>> =>
-    apiRequest('staff/detail', 'GET', undefined, { staffId }),
+    apiRequest('staff/detail', undefined, { staffId }),
 
   create: (staff: Omit<Staff, 'staffId'>): Promise<ApiResponse<{ staffId: string }>> =>
-    apiRequest('staff', 'POST', staff as unknown as Record<string, unknown>),
+    apiRequest('staff', staff as unknown as Record<string, unknown>),
 
   update: (staffId: string, data: Partial<Staff>): Promise<ApiResponse<void>> =>
-    apiRequest('staff/update', 'POST', { staffId, ...data } as unknown as Record<string, unknown>),
+    apiRequest('staff/update', { staffId, ...data } as unknown as Record<string, unknown>),
 
   delete: (staffId: string): Promise<ApiResponse<void>> =>
-    apiRequest('staff/delete', 'POST', { staffId }),
+    apiRequest('staff/delete', { staffId }),
 };
 
 // Attendance API
@@ -348,7 +349,7 @@ export const attendanceApi = {
     latitude?: number,
     longitude?: number
   ): Promise<ApiResponse<{ success: boolean }>> =>
-    apiRequest('clock', 'POST', {
+    apiRequest('clock', {
       staffId,
       type,
       latitude,
@@ -357,14 +358,14 @@ export const attendanceApi = {
     }),
 
   getToday: (staffId: string): Promise<ApiResponse<TodayAttendance>> =>
-    apiRequest('attendance/today', 'GET', undefined, { staffId }),
+    apiRequest('attendance/today', undefined, { staffId }),
 
   getMonthly: (
     staffId: string,
     year: number,
     month: number
   ): Promise<ApiResponse<AttendanceRecord[]>> =>
-    apiRequest('attendance', 'GET', undefined, {
+    apiRequest('attendance', undefined, {
       staffId,
       year: String(year),
       month: String(month),
@@ -376,38 +377,38 @@ export const attendanceApi = {
     field: string,
     value: string | number
   ): Promise<ApiResponse<void>> =>
-    apiRequest('attendance/update', 'POST', { date, staffId, field, value }),
+    apiRequest('attendance/update', { date, staffId, field, value }),
 };
 
 // Paid leave API
 export const paidLeaveApi = {
   getBalance: (staffId: string): Promise<ApiResponse<PaidLeaveBalance>> =>
-    apiRequest('paid-leave/balance', 'GET', undefined, { staffId }),
+    apiRequest('paid-leave/balance', undefined, { staffId }),
 
   request: (staffId: string, leaveDate: string): Promise<ApiResponse<{ requestId: string }>> =>
-    apiRequest('paid-leave/request', 'POST', { staffId, leaveDate }),
+    apiRequest('paid-leave/request', { staffId, leaveDate }),
 
   updateStatus: (
     requestId: string,
     status: 'approved' | 'rejected'
   ): Promise<ApiResponse<void>> =>
-    apiRequest('paid-leave/update', 'POST', { requestId, status }),
+    apiRequest('paid-leave/update', { requestId, status }),
 
   getAll: (): Promise<ApiResponse<PaidLeaveRequest[]>> =>
-    apiRequest('paid-leave/all', 'GET'),
+    apiRequest('paid-leave/all'),
 };
 
 // Salary API
 export const salaryApi = {
   get: (staffId: string, year: number, month: number): Promise<ApiResponse<SalaryRecord>> =>
-    apiRequest('salary', 'GET', undefined, {
+    apiRequest('salary', undefined, {
       staffId,
       year: String(year),
       month: String(month),
     }),
 
   calculate: (year: number, month: number): Promise<ApiResponse<SalaryRecord[]>> =>
-    apiRequest('salary/calculate', 'POST', { year, month }),
+    apiRequest('salary/calculate', { year, month }),
 
   getPdf: (staffId: string, year: number, month: number): string =>
     `${API_BASE_URL}?action=salary/pdf&staffId=${staffId}&year=${year}&month=${month}`,
@@ -426,7 +427,7 @@ export const incentiveApi = {
     amount: number,
     remarks?: string
   ): Promise<ApiResponse<void>> =>
-    apiRequest('incentive', 'POST', {
+    apiRequest('incentive', {
       staffId,
       year,
       month,
@@ -436,7 +437,7 @@ export const incentiveApi = {
     }),
 
   getMonthly: (year: number, month: number): Promise<ApiResponse<Incentive[]>> =>
-    apiRequest('incentive', 'GET', undefined, {
+    apiRequest('incentive', undefined, {
       year: String(year),
       month: String(month),
     }),
@@ -451,7 +452,7 @@ export const taxApi = {
     incomeTax: number,
     residentTax: number
   ): Promise<ApiResponse<void>> =>
-    apiRequest('tax', 'POST', {
+    apiRequest('tax', {
       staffId,
       year,
       month,
@@ -460,7 +461,7 @@ export const taxApi = {
     }),
 
   getMonthly: (year: number, month: number): Promise<ApiResponse<TaxManual[]>> =>
-    apiRequest('tax', 'GET', undefined, {
+    apiRequest('tax', undefined, {
       year: String(year),
       month: String(month),
     }),
@@ -469,10 +470,10 @@ export const taxApi = {
 // Insurance rates API
 export const insuranceApi = {
   get: (): Promise<ApiResponse<{ rates: InsuranceRates; history: InsuranceRates[] }>> =>
-    apiRequest('insurance-rates', 'GET'),
+    apiRequest('insurance-rates'),
 
   update: (rates: Omit<InsuranceRates, 'updatedAt' | 'updatedBy'>): Promise<ApiResponse<void>> =>
-    apiRequest('insurance-rates', 'POST', rates as unknown as Record<string, unknown>),
+    apiRequest('insurance-rates', rates as unknown as Record<string, unknown>),
 };
 
 export default {

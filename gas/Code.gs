@@ -289,11 +289,20 @@ function handleRequest(e, method) {
     const path = e.parameter.action || e.pathInfo || '';
     let body = {};
 
+    // Parse body from POST request or from 'data' query parameter (for GET requests to avoid CORS)
     if (method === 'POST' && e.postData) {
       body = JSON.parse(e.postData.contents);
+    } else if (e.parameter.data) {
+      // Support GET requests with data parameter to avoid CORS preflight issues
+      try {
+        body = JSON.parse(e.parameter.data);
+      } catch (parseError) {
+        Logger.log('Failed to parse data parameter: ' + parseError.message);
+      }
     }
 
     const params = e.parameter;
+    const hasBody = Object.keys(body).length > 0;
 
     // Route the request
     let result;
@@ -327,10 +336,10 @@ function handleRequest(e, method) {
 
       // Staff
       case 'staff':
-        if (method === 'GET') {
-          result = handleGetStaffList();
-        } else {
+        if (hasBody) {
           result = handleCreateStaff(body);
+        } else {
+          result = handleGetStaffList();
         }
         break;
       case 'staff/detail':
@@ -367,28 +376,28 @@ function handleRequest(e, method) {
 
       // Tax
       case 'tax':
-        if (method === 'GET') {
-          result = handleGetTax(params);
-        } else {
+        if (hasBody) {
           result = handleUpdateTax(body);
+        } else {
+          result = handleGetTax(params);
         }
         break;
 
       // Incentive
       case 'incentive':
-        if (method === 'GET') {
-          result = handleGetIncentive(params);
-        } else {
+        if (hasBody) {
           result = handleCreateIncentive(body);
+        } else {
+          result = handleGetIncentive(params);
         }
         break;
 
       // Insurance rates
       case 'insurance-rates':
-        if (method === 'GET') {
-          result = handleGetInsuranceRates();
-        } else {
+        if (hasBody) {
           result = handleUpdateInsuranceRates(body);
+        } else {
+          result = handleGetInsuranceRates();
         }
         break;
 
