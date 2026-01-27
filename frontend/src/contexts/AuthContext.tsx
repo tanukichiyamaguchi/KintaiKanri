@@ -8,7 +8,7 @@ interface AuthContextType {
   staff: StaffInfo | null;
   token: string | null;
   login: (staffId: string, pinCode: string) => Promise<{ success: boolean; error?: string }>;
-  loginAsAdmin: () => void;
+  loginAsAdmin: (pinCode: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -24,6 +24,11 @@ interface StoredAuth {
   expiry: number;
 }
 
+interface StoredAdminAuth {
+  token: string;
+  expiry: number;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [staff, setStaff] = useState<StaffInfo | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -32,13 +37,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Restore session on mount
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
     const adminStored = localStorage.getItem(ADMIN_STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEY);
 
-    if (adminStored === 'true') {
-      setIsAdmin(true);
-      setIsLoading(false);
-      return;
+    if (adminStored) {
+      try {
+        const adminAuth: StoredAdminAuth = JSON.parse(adminStored);
+        // Check if admin session is still valid (8 hours)
+        if (adminAuth.expiry > Date.now()) {
+          setIsAdmin(true);
+          setToken(adminAuth.token);
+          setIsLoading(false);
+          return;
+        } else {
+          localStorage.removeItem(ADMIN_STORAGE_KEY);
+        }
+      } catch {
+        localStorage.removeItem(ADMIN_STORAGE_KEY);
+      }
     }
 
     if (stored) {
@@ -94,12 +110,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loginAsAdmin = useCallback(() => {
-    setIsAdmin(true);
-    setStaff(null);
-    setToken(null);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.setItem(ADMIN_STORAGE_KEY, 'true');
+  const loginAsAdmin = useCallback(async (pinCode: string) => {
+    try {
+      const response = await authApi.adminLogin(pinCode);
+
+      if (response.success && response.data?.success) {
+        const authToken = response.data.token || 'admin-token';
+
+        setIsAdmin(true);
+        setStaff(null);
+        setToken(authToken);
+
+        // Store admin session with 8-hour expiry
+        const stored: StoredAdminAuth = {
+          token: authToken,
+          expiry: Date.now() + 8 * 60 * 60 * 1000,
+        };
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(stored));
+
+        return { success: true };
+      }
+
+      return {
+        success: false,
+        error: response.error || '管理者PINが正しくありません',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: 'ネットワークエラーが発生しました',
+      };
+    }
   }, []);
 
   const logout = useCallback(() => {

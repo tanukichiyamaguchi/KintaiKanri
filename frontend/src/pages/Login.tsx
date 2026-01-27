@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, AlertCircle, Shield, Sparkles, Check } from 'lucide-react';
+import { ChevronDown, AlertCircle, Shield, Sparkles, Check, Lock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { staffApi } from '../api';
 import type { StaffInfo } from '../types';
-import { PinInput, Loading } from '../components/common';
+import { PinInput, Loading, Modal } from '../components/common';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -17,6 +17,12 @@ export function LoginPage() {
   const [isFetchingStaff, setIsFetchingStaff] = useState(true);
   const [error, setError] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+
+  // Admin login modal state
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminPin, setAdminPin] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [isAdminLoading, setIsAdminLoading] = useState(false);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -67,9 +73,32 @@ export function LoginPage() {
     setIsLoading(false);
   };
 
-  const handleAdminLogin = () => {
-    loginAsAdmin();
-    navigate('/admin');
+  const handleOpenAdminModal = () => {
+    setShowAdminModal(true);
+    setAdminPin('');
+    setAdminError('');
+  };
+
+  const handleCloseAdminModal = () => {
+    setShowAdminModal(false);
+    setAdminPin('');
+    setAdminError('');
+  };
+
+  const handleAdminPinComplete = async (pin: string) => {
+    setIsAdminLoading(true);
+    setAdminError('');
+
+    const result = await loginAsAdmin(pin);
+
+    if (result.success) {
+      navigate('/admin');
+    } else {
+      setAdminError(result.error || '管理者PINが正しくありません');
+      setAdminPin('');
+    }
+
+    setIsAdminLoading(false);
   };
 
   if (isFetchingStaff) {
@@ -213,21 +242,76 @@ export function LoginPage() {
         {/* Admin Login Link */}
         <div className="mt-8 text-center">
           <button
-            onClick={handleAdminLogin}
+            onClick={handleOpenAdminModal}
             className="inline-flex items-center gap-2 text-sm text-secondary-500 hover:text-primary-400 transition-colors group"
           >
             <Shield className="w-4 h-4 group-hover:text-primary-400 transition-colors" />
             管理者としてログイン
           </button>
         </div>
-
-        {/* Demo Mode Notice */}
-        <div className="mt-6 text-center">
-          <p className="text-xs text-secondary-600">
-            デモモード: 任意の4桁PINでログイン可能
-          </p>
-        </div>
       </div>
+
+      {/* Admin Login Modal */}
+      <Modal
+        isOpen={showAdminModal}
+        onClose={handleCloseAdminModal}
+        title="管理者ログイン"
+        size="sm"
+      >
+        <div className="py-4">
+          <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+            <Lock className="w-8 h-8 text-white" />
+          </div>
+
+          <p className="text-center text-secondary-600 mb-6">
+            管理者PINコードを入力してください
+          </p>
+
+          <div className="mb-6">
+            <PinInput
+              value={adminPin}
+              onChange={setAdminPin}
+              onComplete={handleAdminPinComplete}
+              disabled={isAdminLoading}
+              error={!!adminError}
+              darkMode={false}
+            />
+          </div>
+
+          {/* Admin Error Message */}
+          {adminError && (
+            <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl mb-4">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm">{adminError}</p>
+            </div>
+          )}
+
+          {/* Admin Loading */}
+          {isAdminLoading && (
+            <div className="flex justify-center mb-4">
+              <Loading size="sm" message="認証中..." />
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleCloseAdminModal}
+              className="btn btn-secondary flex-1"
+            >
+              キャンセル
+            </button>
+            <button
+              type="button"
+              onClick={() => adminPin.length === 4 && handleAdminPinComplete(adminPin)}
+              disabled={adminPin.length !== 4 || isAdminLoading}
+              className="btn btn-primary flex-1"
+            >
+              ログイン
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
