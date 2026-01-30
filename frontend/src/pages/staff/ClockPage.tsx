@@ -52,11 +52,19 @@ export function ClockPage() {
 
     try {
       const response = await attendanceApi.getToday(staff.staffId);
+      console.log('Attendance API response:', response);
+
       if (response.success && response.data) {
-        setStatus(response.data.status);
-        setRecords(response.data.records || []);
+        const newStatus = response.data.status || 'not_started';
+        const newRecords = response.data.records || [];
+        console.log('Setting status:', newStatus, 'records:', newRecords);
+        setStatus(newStatus);
+        setRecords(newRecords);
+      } else {
+        console.log('API returned error or no data:', response.error);
       }
-    } catch {
+    } catch (error) {
+      console.error('Fetch attendance error:', error);
       setMessage({ type: 'error', text: '勤怠情報の取得に失敗しました' });
     } finally {
       setIsLoading(false);
@@ -143,12 +151,14 @@ export function ClockPage() {
     const position = await getGpsPosition();
 
     try {
+      console.log('Clock request:', { staffId: staff.staffId, type, position });
       const response = await attendanceApi.clock(
         staff.staffId,
         type,
         position?.latitude,
         position?.longitude
       );
+      console.log('Clock response:', response);
 
       if (response.success) {
         const typeLabels: Record<ClockType, string> = {
@@ -168,12 +178,14 @@ export function ClockPage() {
         // Refresh attendance data
         await fetchTodayAttendance();
       } else {
+        console.log('Clock failed:', response.error);
         setMessage({
           type: 'error',
           text: response.error || '打刻に失敗しました',
         });
       }
-    } catch {
+    } catch (error) {
+      console.error('Clock error:', error);
       setMessage({ type: 'error', text: '打刻に失敗しました' });
     } finally {
       setIsClocking(false);
@@ -181,24 +193,39 @@ export function ClockPage() {
   };
 
   // Get button state based on current status
+  // Use status as the primary indicator (more reliable than records)
   const getButtonState = (type: ClockType): { disabled: boolean; active: boolean } => {
+    // Status-based logic (primary)
+    const isNotStarted = status === 'not_started';
+    const isWorking = status === 'working';
+    const isOnBreak = status === 'on_break';
+    const isFinished = status === 'finished';
+
+    // Also check records as backup
     const hasClockIn = records.some(r => r.type === 'clock_in');
     const hasClockOut = records.some(r =>
       ['clock_out', 'early_leave_company', 'early_leave_self'].includes(r.type)
     );
-    const isOnBreak = status === 'on_break';
+
+    // Determine if clocked in (either by status or records)
+    const clockedIn = isWorking || isOnBreak || isFinished || hasClockIn;
+    const clockedOut = isFinished || hasClockOut;
 
     switch (type) {
       case 'clock_in':
-        return { disabled: hasClockIn, active: hasClockIn };
+        // Can only clock in if not started
+        return { disabled: clockedIn, active: clockedIn };
       case 'break_start':
-        return { disabled: !hasClockIn || hasClockOut || isOnBreak, active: isOnBreak };
+        // Can start break if working (not on break, not finished)
+        return { disabled: !isWorking, active: isOnBreak };
       case 'break_end':
+        // Can end break only if on break
         return { disabled: !isOnBreak, active: false };
       case 'clock_out':
       case 'early_leave_company':
       case 'early_leave_self':
-        return { disabled: !hasClockIn || hasClockOut || isOnBreak, active: hasClockOut };
+        // Can clock out if working (not on break, not already finished)
+        return { disabled: !isWorking || clockedOut, active: clockedOut };
       default:
         return { disabled: false, active: false };
     }
