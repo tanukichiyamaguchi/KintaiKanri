@@ -52,19 +52,12 @@ export function ClockPage() {
 
     try {
       const response = await attendanceApi.getToday(staff.staffId);
-      console.log('Attendance API response:', response);
 
       if (response.success && response.data) {
-        const newStatus = response.data.status || 'not_started';
-        const newRecords = response.data.records || [];
-        console.log('Setting status:', newStatus, 'records:', newRecords);
-        setStatus(newStatus);
-        setRecords(newRecords);
-      } else {
-        console.log('API returned error or no data:', response.error);
+        setStatus(response.data.status || 'not_started');
+        setRecords(response.data.records || []);
       }
-    } catch (error) {
-      console.error('Fetch attendance error:', error);
+    } catch {
       setMessage({ type: 'error', text: '勤怠情報の取得に失敗しました' });
     } finally {
       setIsLoading(false);
@@ -151,14 +144,12 @@ export function ClockPage() {
     const position = await getGpsPosition();
 
     try {
-      console.log('Clock request:', { staffId: staff.staffId, type, position });
       const response = await attendanceApi.clock(
         staff.staffId,
         type,
         position?.latitude,
         position?.longitude
       );
-      console.log('Clock response:', response);
 
       if (response.success) {
         const typeLabels: Record<ClockType, string> = {
@@ -178,14 +169,12 @@ export function ClockPage() {
         // Refresh attendance data
         await fetchTodayAttendance();
       } else {
-        console.log('Clock failed:', response.error);
         setMessage({
           type: 'error',
           text: response.error || '打刻に失敗しました',
         });
       }
-    } catch (error) {
-      console.error('Clock error:', error);
+    } catch {
       setMessage({ type: 'error', text: '打刻に失敗しました' });
     } finally {
       setIsClocking(false);
@@ -196,7 +185,6 @@ export function ClockPage() {
   // Use status as the primary indicator (more reliable than records)
   const getButtonState = (type: ClockType): { disabled: boolean; active: boolean } => {
     // Status-based logic (primary)
-    const isNotStarted = status === 'not_started';
     const isWorking = status === 'working';
     const isOnBreak = status === 'on_break';
     const isFinished = status === 'finished';

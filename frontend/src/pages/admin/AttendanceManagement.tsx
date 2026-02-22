@@ -7,12 +7,13 @@ import {
   Edit2,
   Save,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, attendanceApi } from '../../api';
 import type { StaffInfo, AttendanceRecord } from '../../types';
 import { Header, Loading } from '../../components/common';
-import { formatMinutesAsTime } from '../../utils/calculations';
+import { formatMinutesAsTime, formatLocalDate } from '../../utils/calculations';
 
 export function AttendanceManagement() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export function AttendanceManagement() {
   const [isLoading, setIsLoading] = useState(true);
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<AttendanceRecord>>({});
+  const [error, setError] = useState<string | null>(null);
 
   // Redirect if not admin
   useEffect(() => {
@@ -42,12 +44,12 @@ export function AttendanceManagement() {
         if (response.success && response.data) {
           const activeStaff = response.data.filter(s => s.status === 'active');
           setStaffList(activeStaff);
-          if (activeStaff.length > 0 && !selectedStaff) {
-            setSelectedStaff(activeStaff[0].staffId);
+          if (activeStaff.length > 0) {
+            setSelectedStaff(prev => prev || activeStaff[0].staffId);
           }
         }
       } catch {
-        // Handle error
+        setError('スタッフ情報の取得に失敗しました');
       } finally {
         setIsLoading(false);
       }
@@ -75,6 +77,7 @@ export function AttendanceManagement() {
         }
       } catch {
         setAttendance([]);
+        setError('勤怠データの取得に失敗しました');
       } finally {
         setIsLoading(false);
       }
@@ -152,15 +155,14 @@ export function AttendanceManagement() {
     return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
   };
 
-  // Generate all days in the month
+  // Generate all days in the month (using local timezone)
   const getDaysInMonth = (): string[] => {
     const days: string[] = [];
-    const date = new Date(selectedYear, selectedMonth - 1, 1);
     const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
 
     for (let i = 1; i <= lastDay; i++) {
-      date.setDate(i);
-      days.push(date.toISOString().split('T')[0]);
+      const date = new Date(selectedYear, selectedMonth - 1, i);
+      days.push(formatLocalDate(date));
     }
 
     return days;
@@ -181,6 +183,14 @@ export function AttendanceManagement() {
           <ArrowLeft className="w-4 h-4" />
           ダッシュボードへ戻る
         </Link>
+
+        {/* Error */}
+        {error && (
+          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm">{error}</p>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="card mb-6">

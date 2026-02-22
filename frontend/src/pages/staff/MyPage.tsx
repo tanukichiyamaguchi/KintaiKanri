@@ -7,11 +7,13 @@ import {
   Wallet,
   ChevronRight,
   ChevronLeft,
+  AlertCircle,
+  CheckCircle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { attendanceApi, paidLeaveApi } from '../../api';
+import { attendanceApi, paidLeaveApi, salaryApi } from '../../api';
 import type { AttendanceRecord, PaidLeaveBalance } from '../../types';
-import { Header, Loading } from '../../components/common';
+import { Header, Loading, Modal } from '../../components/common';
 import { formatMinutesAsTime } from '../../utils/calculations';
 
 type Tab = 'attendance' | 'paidLeave' | 'salary';
@@ -26,6 +28,13 @@ export function MyPage() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [paidLeave, setPaidLeave] = useState<PaidLeaveBalance | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Paid leave request modal
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveDate, setLeaveDate] = useState('');
+  const [isRequesting, setIsRequesting] = useState(false);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -40,13 +49,16 @@ export function MyPage() {
 
     async function fetchAttendance() {
       setIsLoading(true);
+      setError(null);
       try {
         const response = await attendanceApi.getMonthly(staff!.staffId, selectedYear, selectedMonth);
         if (response.success && response.data) {
           setAttendance(response.data);
+        } else {
+          setError(response.error || '勤怠データの取得に失敗しました');
         }
       } catch {
-        // Handle error
+        setError('勤怠データの取得に失敗しました');
       } finally {
         setIsLoading(false);
       }
@@ -61,13 +73,16 @@ export function MyPage() {
 
     async function fetchPaidLeave() {
       setIsLoading(true);
+      setError(null);
       try {
         const response = await paidLeaveApi.getBalance(staff!.staffId);
         if (response.success && response.data) {
           setPaidLeave(response.data);
+        } else {
+          setError(response.error || '有給情報の取得に失敗しました');
         }
       } catch {
-        // Handle error
+        setError('有給情報の取得に失敗しました');
       } finally {
         setIsLoading(false);
       }
@@ -92,6 +107,37 @@ export function MyPage() {
     } else {
       setSelectedMonth(selectedMonth + 1);
     }
+  };
+
+  const handleRequestPaidLeave = async () => {
+    if (!staff || !leaveDate) return;
+
+    setIsRequesting(true);
+    try {
+      const response = await paidLeaveApi.request(staff.staffId, leaveDate);
+      if (response.success) {
+        setMessage({ type: 'success', text: '有給休暇を申請しました' });
+        setShowLeaveModal(false);
+        setLeaveDate('');
+        // Refresh data
+        const balanceResponse = await paidLeaveApi.getBalance(staff.staffId);
+        if (balanceResponse.success && balanceResponse.data) {
+          setPaidLeave(balanceResponse.data);
+        }
+      } else {
+        setMessage({ type: 'error', text: response.error || '申請に失敗しました' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: '申請に失敗しました' });
+    } finally {
+      setIsRequesting(false);
+    }
+  };
+
+  const handleDownloadPdf = () => {
+    if (!staff) return;
+    const url = salaryApi.getPdf(staff.staffId, selectedYear, selectedMonth);
+    window.open(url, '_blank');
   };
 
   const formatDate = (dateStr: string): string => {
@@ -130,12 +176,38 @@ export function MyPage() {
           打刻画面へ戻る
         </Link>
 
+        {/* Message */}
+        {message && (
+          <div
+            className={`flex items-center gap-2 px-4 py-3 rounded-lg mb-4 ${
+              message.type === 'success'
+                ? 'bg-green-50 text-green-700'
+                : 'bg-red-50 text-red-700'
+            }`}
+          >
+            {message.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            )}
+            <p className="text-sm">{message.text}</p>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm">{error}</p>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
           {tabs.map(tab => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => { setActiveTab(tab.key); setError(null); setMessage(null); }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
                 activeTab === tab.key
                   ? 'bg-primary-600 text-white'
@@ -250,7 +322,10 @@ export function MyPage() {
             </div>
 
             {/* Request Button */}
-            <button className="btn btn-primary w-full mb-4">
+            <button
+              onClick={() => setShowLeaveModal(true)}
+              className="btn btn-primary w-full mb-4"
+            >
               有給休暇を申請する
             </button>
 
@@ -326,13 +401,53 @@ export function MyPage() {
               <p className="text-gray-500 mb-4">
                 給与明細をPDFでダウンロードできます
               </p>
-              <button className="btn btn-primary">
+              <button
+                onClick={handleDownloadPdf}
+                className="btn btn-primary"
+              >
                 PDFをダウンロード
               </button>
             </div>
           </div>
         )}
       </main>
+
+      {/* Paid Leave Request Modal */}
+      <Modal
+        isOpen={showLeaveModal}
+        onClose={() => { setShowLeaveModal(false); setLeaveDate(''); }}
+        title="有給休暇申請"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">取得希望日</label>
+            <input
+              type="date"
+              value={leaveDate}
+              onChange={e => setLeaveDate(e.target.value)}
+              className="input"
+              min={new Date().toISOString().split('T')[0]}
+            />
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={() => { setShowLeaveModal(false); setLeaveDate(''); }}
+              className="btn btn-secondary flex-1"
+            >
+              キャンセル
+            </button>
+            <button
+              onClick={handleRequestPaidLeave}
+              disabled={!leaveDate || isRequesting}
+              className="btn btn-primary flex-1"
+            >
+              {isRequesting ? '申請中...' : '申請する'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

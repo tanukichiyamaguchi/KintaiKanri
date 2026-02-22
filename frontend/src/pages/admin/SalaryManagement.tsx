@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, salaryApi, taxApi } from '../../api';
@@ -29,6 +30,7 @@ export function SalaryManagement() {
   const [showTaxModal, setShowTaxModal] = useState(false);
   const [selectedStaffForTax, setSelectedStaffForTax] = useState<string | null>(null);
   const [taxInput, setTaxInput] = useState({ incomeTax: 0, residentTax: 0 });
+  const [error, setError] = useState<string | null>(null);
 
   // Redirect if not admin
   useEffect(() => {
@@ -54,7 +56,7 @@ export function SalaryManagement() {
           setTaxData(taxResponse.data);
         }
       } catch {
-        // Handle error
+        setError('データの取得に失敗しました');
       } finally {
         setIsLoading(false);
       }
@@ -87,9 +89,12 @@ export function SalaryManagement() {
       const response = await salaryApi.calculate(selectedYear, selectedMonth);
       if (response.success && response.data) {
         setSalaryData(response.data);
+        setError(null);
+      } else {
+        setError(response.error || '給与計算に失敗しました');
       }
     } catch {
-      // Handle error
+      setError('給与計算に失敗しました');
     } finally {
       setIsCalculating(false);
     }
@@ -126,7 +131,7 @@ export function SalaryManagement() {
       setShowTaxModal(false);
       setSelectedStaffForTax(null);
     } catch {
-      // Handle error
+      setError('税金の保存に失敗しました');
     }
   };
 
@@ -161,6 +166,14 @@ export function SalaryManagement() {
           <ArrowLeft className="w-4 h-4" />
           ダッシュボードへ戻る
         </Link>
+
+        {/* Error */}
+        {error && (
+          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm">{error}</p>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="card mb-6">

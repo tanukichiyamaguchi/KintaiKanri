@@ -143,7 +143,7 @@ export function groupByWeek(
   const endDate = new Date(year, month, 0);
 
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(d);
     const record = records.find(r => r.date === dateStr);
 
     // Sunday = 0, so we start a new week on Sunday
@@ -194,7 +194,7 @@ export function summarizeWorkHours(records: AttendanceRecord[]): WorkSummary {
   let totalWorkMinutes = 0;
   let lateMinutes = 0;
   let earlyLeaveMinutes = 0;
-  let nightMinutes = 0;
+  const nightMinutes = 0;
   let holidayMinutes = 0;
   let workDays = 0;
 
@@ -237,6 +237,16 @@ export function formatMinutesAsTime(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours}時間${mins}分`;
+}
+
+/**
+ * Format a Date object as YYYY-MM-DD using local timezone (not UTC)
+ */
+export function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { StaffInfo } from '../types';
 import { authApi } from '../api';
 
@@ -29,50 +29,43 @@ interface StoredAdminAuth {
   expiry: number;
 }
 
+// Synchronously restore session from localStorage
+function restoreSession(): { staff: StaffInfo | null; token: string | null; isAdmin: boolean } {
+  const adminStored = localStorage.getItem(ADMIN_STORAGE_KEY);
+  if (adminStored) {
+    try {
+      const adminAuth: StoredAdminAuth = JSON.parse(adminStored);
+      if (adminAuth.expiry > Date.now()) {
+        return { staff: null, token: adminAuth.token, isAdmin: true };
+      }
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+    } catch {
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+    }
+  }
+
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) {
+    try {
+      const auth: StoredAuth = JSON.parse(stored);
+      if (auth.expiry > Date.now()) {
+        return { staff: auth.staff, token: auth.token, isAdmin: false };
+      }
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }
+
+  return { staff: null, token: null, isAdmin: false };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [staff, setStaff] = useState<StaffInfo | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Restore session on mount
-  useEffect(() => {
-    const adminStored = localStorage.getItem(ADMIN_STORAGE_KEY);
-    const stored = localStorage.getItem(STORAGE_KEY);
-
-    if (adminStored) {
-      try {
-        const adminAuth: StoredAdminAuth = JSON.parse(adminStored);
-        // Check if admin session is still valid (8 hours)
-        if (adminAuth.expiry > Date.now()) {
-          setIsAdmin(true);
-          setToken(adminAuth.token);
-          setIsLoading(false);
-          return;
-        } else {
-          localStorage.removeItem(ADMIN_STORAGE_KEY);
-        }
-      } catch {
-        localStorage.removeItem(ADMIN_STORAGE_KEY);
-      }
-    }
-
-    if (stored) {
-      try {
-        const auth: StoredAuth = JSON.parse(stored);
-        // Check if session is still valid (24 hours)
-        if (auth.expiry > Date.now()) {
-          setStaff(auth.staff);
-          setToken(auth.token);
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    }
-    setIsLoading(false);
-  }, []);
+  // Lazy initialization from localStorage (avoids setState in useEffect)
+  const [session] = useState(restoreSession);
+  const [staff, setStaff] = useState<StaffInfo | null>(session.staff);
+  const [token, setToken] = useState<string | null>(session.token);
+  const [isAdmin, setIsAdmin] = useState(session.isAdmin);
 
   const login = useCallback(async (staffId: string, pinCode: string) => {
     try {
@@ -102,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         success: false,
         error: response.error || 'ログインに失敗しました',
       };
-    } catch (error) {
+    } catch {
       return {
         success: false,
         error: 'ネットワークエラーが発生しました',
@@ -136,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         success: false,
         error: response.error || '管理者PINが正しくありません',
       };
-    } catch (error) {
+    } catch {
       return {
         success: false,
         error: 'ネットワークエラーが発生しました',
@@ -160,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     loginAsAdmin,
     logout,
-    isLoading,
+    isLoading: false,
   };
 
   return (
@@ -170,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
   if (context === undefined) {
