@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { formatDateJapanese } from '../../utils/calculations';
+import { formatLocalDate, formatDateJapanese } from '../../utils/calculations';
 
 interface ClockProps {
   showDate?: boolean;
@@ -41,7 +41,7 @@ export function Clock({ showDate = true, size = 'lg' }: ClockProps) {
     },
   };
 
-  const todayStr = time.toISOString().split('T')[0];
+  const todayStr = formatLocalDate(time);
 
   return (
     <div className="text-center py-4">

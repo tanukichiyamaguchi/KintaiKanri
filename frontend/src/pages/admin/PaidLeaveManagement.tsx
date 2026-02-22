@@ -54,7 +54,7 @@ export function PaidLeaveManagement() {
           setRequests(requestsResponse.data);
         }
       } catch {
-        // Handle error
+        setMessage({ type: 'error', text: 'データの取得に失敗しました' });
       } finally {
         setIsLoading(false);
       }
