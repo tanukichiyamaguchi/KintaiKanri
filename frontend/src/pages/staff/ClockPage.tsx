@@ -196,7 +196,6 @@ export function ClockPage() {
   // Use status as the primary indicator (more reliable than records)
   const getButtonState = (type: ClockType): { disabled: boolean; active: boolean } => {
     // Status-based logic (primary)
-    const isNotStarted = status === 'not_started';
     const isWorking = status === 'working';
     const isOnBreak = status === 'on_break';
     const isFinished = status === 'finished';

@@ -194,7 +194,7 @@ export function summarizeWorkHours(records: AttendanceRecord[]): WorkSummary {
   let totalWorkMinutes = 0;
   let lateMinutes = 0;
   let earlyLeaveMinutes = 0;
-  let nightMinutes = 0;
+  const nightMinutes = 0;
   let holidayMinutes = 0;
   let workDays = 0;
 

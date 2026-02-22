@@ -42,8 +42,8 @@ export function AttendanceManagement() {
         if (response.success && response.data) {
           const activeStaff = response.data.filter(s => s.status === 'active');
           setStaffList(activeStaff);
-          if (activeStaff.length > 0 && !selectedStaff) {
-            setSelectedStaff(activeStaff[0].staffId);
+          if (activeStaff.length > 0) {
+            setSelectedStaff(prev => prev || activeStaff[0].staffId);
           }
         }
       } catch {

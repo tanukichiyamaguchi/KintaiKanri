@@ -65,7 +65,7 @@ const mockStaffDetails: Staff[] = [
 ];
 
 // In-memory storage for demo mode
-let mockTodayRecords: Record<string, TodayAttendance> = {};
+const mockTodayRecords: Record<string, TodayAttendance> = {};
 
 // GAS API - All requests use GET to avoid CORS issues
 // Data is passed via query parameters, with body encoded as JSON in 'data' param
