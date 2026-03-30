@@ -8,6 +8,7 @@ import {
   Save,
   X,
   AlertCircle,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, attendanceApi } from '../../api';
@@ -176,13 +177,22 @@ export function AttendanceManagement() {
 
       <main className="max-w-6xl mx-auto p-4">
         {/* Back Link */}
-        <Link
-          to="/admin"
-          className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          ダッシュボードへ戻る
-        </Link>
+        <div className="flex items-center justify-between mb-4">
+          <Link
+            to="/admin"
+            className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            ダッシュボードへ戻る
+          </Link>
+          <Link
+            to="/admin/bulk-entry"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+          >
+            <ClipboardList className="w-4 h-4" />
+            一括入力モード
+          </Link>
+        </div>
 
         {/* Error */}
         {error && (

@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   AlertCircle,
   CheckCircle,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi, paidLeaveApi, salaryApi } from '../../api';
@@ -168,13 +169,22 @@ export function MyPage() {
 
       <main className="max-w-2xl mx-auto p-4">
         {/* Back Link */}
-        <Link
-          to="/clock"
-          className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          打刻画面へ戻る
-        </Link>
+        <div className="flex items-center justify-between mb-4">
+          <Link
+            to="/clock"
+            className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            打刻画面へ戻る
+          </Link>
+          <Link
+            to="/bulk-entry"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+          >
+            <ClipboardList className="w-4 h-4" />
+            勤怠一括入力
+          </Link>
+        </div>
 
         {/* Message */}
         {message && (

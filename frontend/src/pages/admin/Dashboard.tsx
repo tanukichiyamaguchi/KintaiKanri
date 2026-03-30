@@ -10,6 +10,7 @@ import {
   Sparkles,
   TrendingUp,
   AlertCircle,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, attendanceApi } from '../../api';
@@ -105,6 +106,14 @@ export function AdminDashboard() {
       description: '打刻データの確認・修正',
       color: 'from-blue-500 to-indigo-600',
       shadowColor: 'shadow-blue-500/20',
+    },
+    {
+      to: '/admin/bulk-entry',
+      icon: <ClipboardList className="w-6 h-6" />,
+      label: '勤怠一括入力',
+      description: '月次勤怠のまとめて入力',
+      color: 'from-cyan-500 to-blue-600',
+      shadowColor: 'shadow-cyan-500/20',
     },
     {
       to: '/admin/paid-leave',

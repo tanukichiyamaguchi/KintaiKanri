@@ -12,6 +12,8 @@ import type {
   InsuranceRates,
   Incentive,
   TaxManual,
+  OvertimeRequest,
+  BulkAttendanceRow,
 } from '../types';
 
 // Base URL for the Google Apps Script Web App
@@ -77,6 +79,10 @@ const mockTodayRecords: Record<string, TodayAttendance> = {};
 const mockPaidLeaveRequests: PaidLeaveRequest[] = [];
 const mockTaxManual: Record<string, TaxManual[]> = {};
 const mockIncentives: Record<string, Incentive[]> = {};
+const mockOvertimeRequests: OvertimeRequest[] = [];
+// Key: "staffId-YYYY-MM", stores bulk-entered attendance
+const mockBulkAttendance: Record<string, AttendanceRecord[]> = {};
+
 let mockInsuranceRates: InsuranceRates = {
   effectiveDate: '2024-04',
   healthInsuranceRate: 4.905,
@@ -502,6 +508,90 @@ async function handleDemoRequest<T>(
     return { success: true, data: (mockIncentives[key] || []) as unknown as T };
   }
 
+  // --- Bulk Attendance ---
+  if (action === 'attendance/bulk-save') {
+    const staffId = body?.staffId as string;
+    const year = Number(body?.year);
+    const month = Number(body?.month);
+    const rows = body?.rows as unknown as BulkAttendanceRow[];
+    const staff = mockStaffDetails.find(s => s.staffId === staffId);
+    if (!staff || !rows) return { success: false, error: 'データが不正です' };
+
+    const key = `${staffId}-${year}-${month}`;
+    const records: AttendanceRecord[] = rows
+      .filter(r => r.clockIn && r.clockOut)
+      .map(row => ({
+        date: row.date,
+        staffId,
+        name: staff.name,
+        clockIn: row.clockIn ? `${row.date}T${row.clockIn}:00` : undefined,
+        clockOut: row.clockOut ? `${row.date}T${row.clockOut}:00` : undefined,
+        breakMinutes: row.breakMinutes,
+        workMinutes: row.workMinutes,
+        lateMinutes: 0,
+        earlyLeaveMinutes: 0,
+        isHoliday: row.isHoliday,
+        remarks: row.remarks || undefined,
+      }));
+    mockBulkAttendance[key] = records;
+
+    // Create overtime requests for rows with overtime
+    const overtimeRows = rows.filter(r => r.overtimeMinutes > 0 && r.overtimeReason);
+    for (const row of overtimeRows) {
+      const existing = mockOvertimeRequests.find(
+        o => o.staffId === staffId && o.date === row.date
+      );
+      if (!existing) {
+        mockOvertimeRequests.push({
+          id: 'OT' + Date.now() + Math.random().toString(36).slice(2, 6),
+          staffId,
+          name: staff.name,
+          date: row.date,
+          overtimeMinutes: row.overtimeMinutes,
+          reason: row.overtimeReason,
+          status: 'pending',
+          requestDate: fmtDate(new Date()),
+        });
+      }
+    }
+
+    return { success: true, data: { saved: records.length } as unknown as T };
+  }
+
+  if (action === 'attendance/bulk-get') {
+    const staffId = queryParams?.staffId || '';
+    const year = Number(queryParams?.year);
+    const month = Number(queryParams?.month);
+    const key = `${staffId}-${year}-${month}`;
+    const saved = mockBulkAttendance[key];
+    if (saved) {
+      return { success: true, data: saved as unknown as T };
+    }
+    // Fall back to generated mock data
+    const records = generateMockAttendance(staffId, year, month);
+    return { success: true, data: records as unknown as T };
+  }
+
+  // --- Overtime Requests ---
+  if (action === 'overtime/list') {
+    const staffId = queryParams?.staffId;
+    const filtered = staffId
+      ? mockOvertimeRequests.filter(r => r.staffId === staffId)
+      : mockOvertimeRequests;
+    return { success: true, data: filtered as unknown as T };
+  }
+
+  if (action === 'overtime/update') {
+    const requestId = body?.requestId as string;
+    const status = body?.status as 'approved' | 'rejected';
+    const req = mockOvertimeRequests.find(r => r.id === requestId);
+    if (req) {
+      req.status = status;
+      if (status === 'approved') req.approvedDate = new Date().toISOString();
+    }
+    return { success: true, data: undefined as unknown as T };
+  }
+
   return { success: false, error: 'Unknown endpoint: ' + action };
 }
 
@@ -646,6 +736,45 @@ export const taxApi = {
     }),
 };
 
+// Bulk Attendance API
+export const bulkAttendanceApi = {
+  save: (
+    staffId: string,
+    year: number,
+    month: number,
+    rows: BulkAttendanceRow[]
+  ): Promise<ApiResponse<{ saved: number }>> =>
+    apiRequest('attendance/bulk-save', {
+      staffId,
+      year,
+      month,
+      rows: rows as unknown as Record<string, unknown>[],
+    } as unknown as Record<string, unknown>),
+
+  get: (
+    staffId: string,
+    year: number,
+    month: number
+  ): Promise<ApiResponse<AttendanceRecord[]>> =>
+    apiRequest('attendance/bulk-get', undefined, {
+      staffId,
+      year: String(year),
+      month: String(month),
+    }),
+};
+
+// Overtime Request API
+export const overtimeApi = {
+  getList: (staffId?: string): Promise<ApiResponse<OvertimeRequest[]>> =>
+    apiRequest('overtime/list', undefined, staffId ? { staffId } : undefined),
+
+  updateStatus: (
+    requestId: string,
+    status: 'approved' | 'rejected'
+  ): Promise<ApiResponse<void>> =>
+    apiRequest('overtime/update', { requestId, status }),
+};
+
 // Insurance rates API
 export const insuranceApi = {
   get: (): Promise<ApiResponse<{ rates: InsuranceRates; history: InsuranceRates[] }>> =>
@@ -659,6 +788,8 @@ export default {
   auth: authApi,
   staff: staffApi,
   attendance: attendanceApi,
+  bulkAttendance: bulkAttendanceApi,
+  overtime: overtimeApi,
   paidLeave: paidLeaveApi,
   salary: salaryApi,
   incentive: incentiveApi,

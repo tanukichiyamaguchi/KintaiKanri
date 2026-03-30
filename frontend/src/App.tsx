@@ -4,6 +4,7 @@ import {
   LoginPage,
   ClockPage,
   MyPage,
+  BulkAttendanceEntry,
   AdminDashboard,
   StaffManagement,
   AttendanceManagement,
@@ -66,6 +67,14 @@ function AppRoutes() {
           </StaffRoute>
         }
       />
+      <Route
+        path="/bulk-entry"
+        element={
+          <StaffRoute>
+            <BulkAttendanceEntry />
+          </StaffRoute>
+        }
+      />
 
       {/* Admin Routes */}
       <Route
@@ -113,6 +122,14 @@ function AppRoutes() {
         element={
           <AdminRoute>
             <SettingsPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/bulk-entry"
+        element={
+          <AdminRoute>
+            <BulkAttendanceEntry />
           </AdminRoute>
         }
       />

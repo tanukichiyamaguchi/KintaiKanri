@@ -163,6 +163,34 @@ export interface AuthResponse {
   error?: string;
 }
 
+// Overtime request
+export type OvertimeRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface OvertimeRequest {
+  id: string;
+  staffId: string;
+  name: string;
+  date: string;
+  overtimeMinutes: number;
+  reason: string;
+  status: OvertimeRequestStatus;
+  requestDate: string;
+  approvedDate?: string;
+}
+
+// Bulk attendance entry (one row in the spreadsheet)
+export interface BulkAttendanceRow {
+  date: string;
+  clockIn: string;       // HH:MM format
+  clockOut: string;       // HH:MM format
+  breakMinutes: number;   // editable auto-calculated break
+  workMinutes: number;    // auto-calculated
+  isHoliday: boolean;
+  overtimeMinutes: number;
+  overtimeReason: string; // required if overtimeMinutes > 0
+  remarks: string;
+}
+
 // Work summary for calculations
 export interface WorkSummary {
   totalWorkMinutes: number;
