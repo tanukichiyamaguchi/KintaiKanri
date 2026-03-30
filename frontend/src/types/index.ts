@@ -148,6 +148,34 @@ export interface TaxManual {
   updatedAt?: string;
 }
 
+// Overtime request types
+export type OvertimeRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface OvertimeRequest {
+  id: string;
+  staffId: string;
+  name: string;
+  date: string;
+  overtimeMinutes: number;
+  reason: string;
+  requestDate: string;
+  status: OvertimeRequestStatus;
+  approvedDate?: string;
+}
+
+// Bulk attendance entry types
+export interface BulkAttendanceEntry {
+  date: string;
+  clockIn: string;
+  clockOut: string;
+  breakMinutes: number;
+  workMinutes: number;
+  remarks?: string;
+  hasOvertime: boolean;
+  overtimeMinutes: number;
+  overtimeReason: string;
+}
+
 // API Response types
 export interface ApiResponse<T> {
   success: boolean;

@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   AlertCircle,
   CheckCircle,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi, paidLeaveApi, salaryApi } from '../../api';
@@ -223,6 +224,23 @@ export function MyPage() {
         {/* Content */}
         {activeTab === 'attendance' && (
           <div className="card">
+            {/* Bulk Entry Button */}
+            <Link
+              to="/bulk-entry"
+              className="flex items-center justify-between w-full mb-4 px-4 py-3 bg-primary-50 hover:bg-primary-100 border border-primary-200 rounded-xl transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary-600 flex items-center justify-center">
+                  <ClipboardList className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="font-semibold text-primary-700">一括勤怠入力</p>
+                  <p className="text-xs text-primary-500">月末にまとめて勤怠を入力できます</p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-primary-400 group-hover:translate-x-1 transition-transform" />
+            </Link>
+
             {/* Month Selector */}
             <div className="flex items-center justify-between mb-6">
               <button

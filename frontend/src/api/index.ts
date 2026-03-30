@@ -12,6 +12,7 @@ import type {
   InsuranceRates,
   Incentive,
   TaxManual,
+  OvertimeRequest,
 } from '../types';
 
 // Base URL for the Google Apps Script Web App
@@ -86,6 +87,9 @@ let mockInsuranceRates: InsuranceRates = {
   updatedAt: '2024-04-01',
 };
 const mockInsuranceHistory: InsuranceRates[] = [mockInsuranceRates];
+const mockOvertimeRequests: OvertimeRequest[] = [];
+// In-memory store for bulk attendance updates (overrides generated data)
+const mockAttendanceOverrides: Record<string, Record<string, Partial<AttendanceRecord>>> = {};
 
 // --- Generate mock monthly attendance ---
 function generateMockAttendance(staffId: string, year: number, month: number): AttendanceRecord[] {
@@ -370,10 +374,46 @@ async function handleDemoRequest<T>(
     const year = Number(queryParams?.year);
     const month = Number(queryParams?.month);
     const records = generateMockAttendance(staffId, year, month);
+    // Merge any manual overrides
+    const overrideKey = `${staffId}-${year}-${month}`;
+    const overrides = mockAttendanceOverrides[overrideKey];
+    if (overrides) {
+      const staff = mockStaffDetails.find(s => s.staffId === staffId);
+      for (const [dateStr, fields] of Object.entries(overrides)) {
+        const existing = records.find(r => r.date === dateStr);
+        if (existing) {
+          Object.assign(existing, fields);
+        } else {
+          records.push({
+            date: dateStr,
+            staffId,
+            name: staff?.name || '',
+            breakMinutes: 0,
+            workMinutes: 0,
+            lateMinutes: 0,
+            earlyLeaveMinutes: 0,
+            isHoliday: false,
+            ...fields,
+          });
+        }
+      }
+      records.sort((a, b) => a.date.localeCompare(b.date));
+    }
     return { success: true, data: records as unknown as T };
   }
 
   if (action === 'attendance/update') {
+    const staffId = body?.staffId as string;
+    const dateStr = body?.date as string;
+    const field = body?.field as string;
+    const value = body?.value;
+    if (staffId && dateStr && field) {
+      const d = new Date(dateStr + 'T00:00:00');
+      const overrideKey = `${staffId}-${d.getFullYear()}-${d.getMonth() + 1}`;
+      if (!mockAttendanceOverrides[overrideKey]) mockAttendanceOverrides[overrideKey] = {};
+      if (!mockAttendanceOverrides[overrideKey][dateStr]) mockAttendanceOverrides[overrideKey][dateStr] = {};
+      (mockAttendanceOverrides[overrideKey][dateStr] as Record<string, unknown>)[field] = value;
+    }
     return { success: true, data: undefined as unknown as T };
   }
 
@@ -500,6 +540,50 @@ async function handleDemoRequest<T>(
   if (action === 'incentive' && !body) {
     const key = `${queryParams?.year}-${queryParams?.month}`;
     return { success: true, data: (mockIncentives[key] || []) as unknown as T };
+  }
+
+  // --- Overtime Requests ---
+  if (action === 'overtime/request') {
+    const staffId = body?.staffId as string;
+    const date = body?.date as string;
+    const reason = body?.reason as string;
+    const minutes = Number(body?.minutes) || 0;
+    const staff = mockStaffDetails.find(s => s.staffId === staffId);
+    const requestId = 'OT' + Date.now();
+    mockOvertimeRequests.push({
+      id: requestId,
+      staffId,
+      name: staff?.name || '',
+      date,
+      overtimeMinutes: minutes,
+      reason,
+      requestDate: fmtDate(new Date()),
+      status: 'pending',
+    });
+    return { success: true, data: { requestId } as unknown as T };
+  }
+
+  if (action === 'overtime/all') {
+    return { success: true, data: mockOvertimeRequests as unknown as T };
+  }
+
+  if (action === 'overtime/update') {
+    const requestId = body?.requestId as string;
+    const status = body?.status as 'approved' | 'rejected';
+    const req = mockOvertimeRequests.find(r => r.id === requestId);
+    if (req) {
+      req.status = status;
+      if (status === 'approved') {
+        req.approvedDate = new Date().toISOString();
+      }
+    }
+    return { success: true, data: undefined as unknown as T };
+  }
+
+  if (action === 'overtime/staff') {
+    const staffId = queryParams?.staffId || '';
+    const requests = mockOvertimeRequests.filter(r => r.staffId === staffId);
+    return { success: true, data: requests as unknown as T };
   }
 
   return { success: false, error: 'Unknown endpoint: ' + action };
@@ -655,6 +739,29 @@ export const insuranceApi = {
     apiRequest('insurance-rates', rates as unknown as Record<string, unknown>),
 };
 
+// Overtime request API
+export const overtimeApi = {
+  request: (
+    staffId: string,
+    date: string,
+    reason: string,
+    minutes: number
+  ): Promise<ApiResponse<{ requestId: string }>> =>
+    apiRequest('overtime/request', { staffId, date, reason, minutes }),
+
+  getAll: (): Promise<ApiResponse<OvertimeRequest[]>> =>
+    apiRequest('overtime/all'),
+
+  getByStaff: (staffId: string): Promise<ApiResponse<OvertimeRequest[]>> =>
+    apiRequest('overtime/staff', undefined, { staffId }),
+
+  updateStatus: (
+    requestId: string,
+    status: 'approved' | 'rejected'
+  ): Promise<ApiResponse<void>> =>
+    apiRequest('overtime/update', { requestId, status }),
+};
+
 export default {
   auth: authApi,
   staff: staffApi,
@@ -664,4 +771,5 @@ export default {
   incentive: incentiveApi,
   tax: taxApi,
   insurance: insuranceApi,
+  overtime: overtimeApi,
 };
