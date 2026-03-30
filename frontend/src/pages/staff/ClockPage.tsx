@@ -106,8 +106,8 @@ export function ClockPage() {
         },
         {
           enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
+          timeout: 5000,
+          maximumAge: 60000,
         }
       );
     });
@@ -140,8 +140,8 @@ export function ClockPage() {
     setShowConfirmModal(false);
     setPendingClockType(null);
 
-    // Get GPS position
-    const position = await getGpsPosition();
+    // Use cached GPS position (non-blocking) - GPS is fetched on mount
+    const position = gpsPosition;
 
     try {
       const response = await attendanceApi.clock(
