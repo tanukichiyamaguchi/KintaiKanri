@@ -164,22 +164,22 @@ export function MyPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="マイページ" />
 
-      <main className="max-w-2xl mx-auto p-4">
-        {/* Back Link */}
-        <div className="flex items-center justify-between mb-4">
+      <main className="max-w-2xl mx-auto p-4 sm:p-6">
+        {/* Back Link + Bulk Entry */}
+        <div className="flex items-center justify-between mb-5">
           <Link
             to="/clock"
-            className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600"
+            className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            打刻画面へ戻る
+            <span className="text-sm font-medium">打刻画面へ戻る</span>
           </Link>
           <Link
             to="/bulk-entry"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+            className="btn btn-primary !py-2 !px-4 !text-sm !rounded-xl"
           >
             <ClipboardList className="w-4 h-4" />
             勤怠一括入力
@@ -189,10 +189,10 @@ export function MyPage() {
         {/* Message */}
         {message && (
           <div
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg mb-4 ${
+            className={`flex items-center gap-3 px-5 py-4 rounded-xl mb-5 border ${
               message.type === 'success'
-                ? 'bg-green-50 text-green-700'
-                : 'bg-red-50 text-red-700'
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : 'bg-red-50 text-red-700 border-red-200'
             }`}
           >
             {message.type === 'success' ? (
@@ -200,15 +200,15 @@ export function MyPage() {
             ) : (
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
             )}
-            <p className="text-sm">{message.text}</p>
+            <p className="text-sm font-medium">{message.text}</p>
           </div>
         )}
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
+          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm">{error}</p>
+            <p className="text-sm font-medium">{error}</p>
           </div>
         )}
 
@@ -218,10 +218,10 @@ export function MyPage() {
             <button
               key={tab.key}
               onClick={() => { setActiveTab(tab.key); setError(null); setMessage(null); }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl whitespace-nowrap transition-all text-sm font-medium ${
                 activeTab === tab.key
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-100'
+                  ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25'
+                  : 'bg-white text-secondary-600 hover:bg-primary-50 hover:text-primary-700 border border-secondary-200 hover:border-primary-200'
               }`}
             >
               {tab.icon}

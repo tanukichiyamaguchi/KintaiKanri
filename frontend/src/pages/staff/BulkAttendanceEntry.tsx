@@ -7,9 +7,13 @@ import {
   Save,
   AlertCircle,
   CheckCircle,
-  Clock,
   AlertTriangle,
   Loader2,
+  CalendarDays,
+  Clock as ClockIcon,
+  Timer,
+  TrendingUp,
+  Info,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { bulkAttendanceApi, staffApi } from '../../api';
@@ -111,7 +115,6 @@ export function BulkAttendanceEntry() {
           const isHoliday = dateObj.getDay() === 0 || dateObj.getDay() === 6;
 
           if (existing && existing.clockIn && existing.clockOut) {
-            // Extract HH:MM from ISO string
             const clockIn = existing.clockIn.includes('T')
               ? existing.clockIn.split('T')[1].slice(0, 5)
               : existing.clockIn;
@@ -125,28 +128,14 @@ export function BulkAttendanceEntry() {
             const overtimeMinutes = Math.max(0, workMinutes - DAILY_STANDARD_MINUTES);
 
             return {
-              date,
-              clockIn,
-              clockOut,
-              breakMinutes,
-              workMinutes,
-              isHoliday,
-              overtimeMinutes,
-              overtimeReason: '',
-              remarks: existing.remarks || '',
+              date, clockIn, clockOut, breakMinutes, workMinutes,
+              isHoliday, overtimeMinutes, overtimeReason: '', remarks: existing.remarks || '',
             };
           }
 
           return {
-            date,
-            clockIn: '',
-            clockOut: '',
-            breakMinutes: 0,
-            workMinutes: 0,
-            isHoliday,
-            overtimeMinutes: 0,
-            overtimeReason: '',
-            remarks: '',
+            date, clockIn: '', clockOut: '', breakMinutes: 0, workMinutes: 0,
+            isHoliday, overtimeMinutes: 0, overtimeReason: '', remarks: '',
           };
         });
 
@@ -170,7 +159,6 @@ export function BulkAttendanceEntry() {
 
       if (field === 'clockIn' || field === 'clockOut') {
         (row as Record<string, unknown>)[field] = value;
-        // Recalculate work time and break
         const grossMinutes = calcGrossMinutes(
           field === 'clockIn' ? (value as string) : row.clockIn,
           field === 'clockOut' ? (value as string) : row.clockOut
@@ -214,11 +202,13 @@ export function BulkAttendanceEntry() {
 
   const overtimeRowCount = rows.filter(r => r.overtimeMinutes > 0).length;
   const filledRowCount = rows.filter(r => r.clockIn && r.clockOut).length;
+  const totalWorkMinutes = rows.reduce((sum, r) => sum + r.workMinutes, 0);
+  const totalOvertimeMinutes = rows.reduce((sum, r) => sum + r.overtimeMinutes, 0);
+  const progressPercent = allDays.length > 0 ? Math.round((filledRowCount / allDays.length) * 100) : 0;
 
   // Save handler
   const handleSave = async () => {
     if (!currentStaffId) return;
-
     if (validationErrors.length > 0) {
       setMessage({ type: 'error', text: '残業がある日の残業理由を入力してください' });
       return;
@@ -229,13 +219,7 @@ export function BulkAttendanceEntry() {
     setMessage(null);
 
     try {
-      const response = await bulkAttendanceApi.save(
-        currentStaffId,
-        selectedYear,
-        selectedMonth,
-        rows
-      );
-
+      const response = await bulkAttendanceApi.save(currentStaffId, selectedYear, selectedMonth, rows);
       if (response.success) {
         setMessage({
           type: 'success',
@@ -278,9 +262,9 @@ export function BulkAttendanceEntry() {
 
   const getDayClass = (dateStr: string): string => {
     const date = new Date(dateStr);
-    if (date.getDay() === 0) return 'text-red-600';
-    if (date.getDay() === 6) return 'text-blue-600';
-    return 'text-gray-800';
+    if (date.getDay() === 0) return 'text-red-500 font-semibold';
+    if (date.getDay() === 6) return 'text-blue-500 font-semibold';
+    return 'text-secondary-800';
   };
 
   const formatMinutes = (minutes: number): string => {
@@ -293,31 +277,27 @@ export function BulkAttendanceEntry() {
   const backLink = isAdmin ? '/admin/attendance' : '/mypage';
   const backLabel = isAdmin ? '勤怠管理へ戻る' : 'マイページへ戻る';
 
-  // Summary stats
-  const totalWorkMinutes = rows.reduce((sum, r) => sum + r.workMinutes, 0);
-  const totalOvertimeMinutes = rows.reduce((sum, r) => sum + r.overtimeMinutes, 0);
-
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="勤怠一括入力" />
 
-      <main className="max-w-7xl mx-auto p-4">
+      <main className="max-w-7xl mx-auto p-4 sm:p-6">
         {/* Back Link */}
         <Link
           to={backLink}
-          className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600 mb-4"
+          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
         >
           <ArrowLeft className="w-4 h-4" />
-          {backLabel}
+          <span className="text-sm font-medium">{backLabel}</span>
         </Link>
 
         {/* Message */}
         {message && (
           <div
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg mb-4 ${
+            className={`flex items-center gap-3 px-5 py-4 rounded-xl mb-5 border ${
               message.type === 'success'
-                ? 'bg-green-50 text-green-700 border border-green-200'
-                : 'bg-red-50 text-red-700 border border-red-200'
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : 'bg-red-50 text-red-700 border-red-200'
             }`}
           >
             {message.type === 'success' ? (
@@ -325,12 +305,86 @@ export function BulkAttendanceEntry() {
             ) : (
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
             )}
-            <p className="text-sm">{message.text}</p>
+            <p className="text-sm font-medium">{message.text}</p>
           </div>
         )}
 
-        {/* Controls */}
-        <div className="card mb-4">
+        {/* Summary Cards */}
+        {!isLoading && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+            {/* 入力進捗 */}
+            <div className="card card-gold relative overflow-hidden p-4 sm:p-5">
+              <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-primary-200/20 to-transparent rounded-full" />
+              <div className="relative">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                    <CalendarDays className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-xs font-medium text-secondary-500">入力進捗</span>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-secondary-800">{filledRowCount}</span>
+                  <span className="text-sm text-secondary-400">/ {allDays.length}日</span>
+                </div>
+                {/* Progress bar */}
+                <div className="mt-2 h-1.5 bg-secondary-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-primary-400 to-primary-600 rounded-full transition-all duration-500"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 総労働時間 */}
+            <div className="card p-4 sm:p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
+                  <ClockIcon className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-xs font-medium text-secondary-500">総労働時間</span>
+              </div>
+              <p className="text-2xl font-bold text-secondary-800">{formatMinutes(totalWorkMinutes)}</p>
+            </div>
+
+            {/* 残業日数 */}
+            <div className={`card p-4 sm:p-5 ${overtimeRowCount > 0 ? 'border-amber-200 bg-amber-50/30' : ''}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                  overtimeRowCount > 0
+                    ? 'bg-gradient-to-br from-amber-400 to-amber-600'
+                    : 'bg-gradient-to-br from-secondary-300 to-secondary-400'
+                }`}>
+                  <Timer className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-xs font-medium text-secondary-500">残業日数</span>
+              </div>
+              <p className={`text-2xl font-bold ${overtimeRowCount > 0 ? 'text-amber-600' : 'text-secondary-800'}`}>
+                {overtimeRowCount}<span className="text-sm ml-0.5">日</span>
+              </p>
+            </div>
+
+            {/* 総残業時間 */}
+            <div className={`card p-4 sm:p-5 ${totalOvertimeMinutes > 0 ? 'border-amber-200 bg-amber-50/30' : ''}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                  totalOvertimeMinutes > 0
+                    ? 'bg-gradient-to-br from-orange-400 to-orange-600'
+                    : 'bg-gradient-to-br from-secondary-300 to-secondary-400'
+                }`}>
+                  <TrendingUp className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-xs font-medium text-secondary-500">総残業時間</span>
+              </div>
+              <p className={`text-2xl font-bold ${totalOvertimeMinutes > 0 ? 'text-orange-600' : 'text-secondary-800'}`}>
+                {formatMinutes(totalOvertimeMinutes)}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Controls Bar */}
+        <div className="card card-gold gold-border mb-5 p-4 sm:p-5">
           <div className="flex flex-wrap items-center gap-4">
             {/* Admin: Staff Selector */}
             {isAdmin && (
@@ -349,30 +403,30 @@ export function BulkAttendanceEntry() {
             )}
 
             {/* Month Selector */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors border border-transparent hover:border-primary-200"
               >
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
+                <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <span className="text-lg font-semibold min-w-[120px] text-center">
+              <span className="text-lg font-bold min-w-[140px] text-center text-secondary-800">
                 {selectedYear}年{selectedMonth}月
               </span>
               <button
                 onClick={handleNextMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors border border-transparent hover:border-primary-200"
               >
-                <ChevronRight className="w-5 h-5 text-gray-600" />
+                <ChevronRight className="w-5 h-5 text-secondary-600" />
               </button>
             </div>
 
             {/* Save Button */}
             <div className="ml-auto flex items-center gap-3">
               {hasUnsavedChanges && (
-                <span className="text-sm text-amber-600 flex items-center gap-1">
-                  <AlertTriangle className="w-4 h-4" />
-                  未保存の変更あり
+                <span className="text-sm text-amber-600 flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  未保存
                 </span>
               )}
               <button
@@ -391,202 +445,196 @@ export function BulkAttendanceEntry() {
           </div>
         </div>
 
-        {/* Guide */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4">
-          <div className="flex items-start gap-2 text-sm text-blue-700">
-            <Clock className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-medium mb-1">入力ガイド</p>
-              <ul className="space-y-0.5 text-blue-600">
-                <li>出勤・退勤時刻を入力すると、休憩時間が自動計算されます（6h超→45分、8h超→60分）</li>
-                <li>休憩時間は手動で変更できます</li>
-                <li>1日8時間を超える勤務は残業として表示され、<strong>残業理由の入力が必須</strong>になります</li>
-              </ul>
+        {/* Guide - collapsible feel */}
+        <div className="bg-primary-50/50 border border-primary-200/50 rounded-2xl px-5 py-3.5 mb-5">
+          <div className="flex items-start gap-3 text-sm">
+            <div className="w-6 h-6 rounded-lg bg-primary-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Info className="w-3.5 h-3.5 text-primary-600" />
+            </div>
+            <div className="text-secondary-600 space-y-1">
+              <p>出退勤を入力すると<strong className="text-secondary-700">休憩時間が自動計算</strong>されます（6h超→45分 / 8h超→60分）。休憩は手動変更可。</p>
+              <p>1日8時間超の勤務は<strong className="text-amber-600">残業</strong>として表示され、<strong className="text-amber-600">理由の入力が必須</strong>です。</p>
             </div>
           </div>
         </div>
 
         {/* Spreadsheet Table */}
-        <div className="card overflow-x-auto">
+        <div className="card overflow-hidden p-0">
           {isLoading ? (
-            <Loading message="読み込み中..." />
+            <div className="p-10">
+              <Loading message="読み込み中..." />
+            </div>
           ) : (
-            <table className="w-full min-w-[900px]">
-              <thead className="bg-gray-50 sticky top-0 z-10">
-                <tr>
-                  <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-600 w-20">日付</th>
-                  <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-600 w-28">出勤</th>
-                  <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-600 w-28">退勤</th>
-                  <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-600 w-24">
-                    休憩
-                    <span className="text-gray-400 font-normal">（分）</span>
-                  </th>
-                  <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-600 w-20">実働</th>
-                  <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-600 w-20">残業</th>
-                  <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-600">
-                    残業理由
-                    <span className="text-red-400 font-normal">（残業時は必須）</span>
-                  </th>
-                  <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-600 w-32">備考</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.map((row, index) => {
-                  const dateObj = new Date(row.date);
-                  const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                  const hasOvertime = row.overtimeMinutes > 0;
-                  const missingReason = hasOvertime && !row.overtimeReason.trim();
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px]">
+                <thead>
+                  <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
+                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider w-20">日付</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider w-[108px]">出勤</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider w-[108px]">退勤</th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold tracking-wider w-20">
+                      休憩<span className="font-normal opacity-70">（分）</span>
+                    </th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold tracking-wider w-20">実働</th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold tracking-wider w-20">残業</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">
+                      残業理由<span className="font-normal opacity-70 ml-1">※残業時 必須</span>
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider w-[120px]">備考</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, index) => {
+                    const dateObj = new Date(row.date);
+                    const isSunday = dateObj.getDay() === 0;
+                    const isSaturday = dateObj.getDay() === 6;
+                    const isWeekend = isSunday || isSaturday;
+                    const hasOvertime = row.overtimeMinutes > 0;
+                    const missingReason = hasOvertime && !row.overtimeReason.trim();
+                    const hasFilled = row.clockIn && row.clockOut;
 
-                  return (
-                    <tr
-                      key={row.date}
-                      className={`
-                        ${isWeekend ? 'bg-gray-50/70' : ''}
-                        ${hasOvertime ? 'bg-amber-50/50' : ''}
-                        ${missingReason ? 'bg-red-50/40' : ''}
-                        hover:bg-blue-50/30 transition-colors
-                      `}
-                    >
-                      {/* 日付 */}
-                      <td className={`px-2 py-1.5 text-sm font-medium whitespace-nowrap ${getDayClass(row.date)}`}>
-                        {formatDate(row.date)}
-                      </td>
+                    return (
+                      <tr
+                        key={row.date}
+                        className={`
+                          border-b border-secondary-100 last:border-0
+                          transition-colors duration-150
+                          ${missingReason ? 'bg-red-50/60' : hasOvertime ? 'bg-amber-50/40' : isWeekend ? 'bg-secondary-50/60' : 'bg-white'}
+                          ${hasFilled ? '' : 'opacity-80'}
+                          hover:bg-primary-50/30
+                        `}
+                      >
+                        {/* 日付 */}
+                        <td className={`px-3 py-2 text-sm whitespace-nowrap ${getDayClass(row.date)}`}>
+                          {isSunday && <span className="inline-block w-1 h-1 rounded-full bg-red-400 mr-1 mb-0.5" />}
+                          {formatDate(row.date)}
+                        </td>
 
-                      {/* 出勤 */}
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="time"
-                          value={row.clockIn}
-                          onChange={e => updateRow(index, 'clockIn', e.target.value)}
-                          className="input py-1 px-2 text-sm w-full"
-                        />
-                      </td>
+                        {/* 出勤 */}
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="time"
+                            value={row.clockIn}
+                            onChange={e => updateRow(index, 'clockIn', e.target.value)}
+                            className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg
+                              focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none
+                              hover:border-secondary-300 transition-all bg-white"
+                          />
+                        </td>
 
-                      {/* 退勤 */}
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="time"
-                          value={row.clockOut}
-                          onChange={e => updateRow(index, 'clockOut', e.target.value)}
-                          className="input py-1 px-2 text-sm w-full"
-                        />
-                      </td>
+                        {/* 退勤 */}
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="time"
+                            value={row.clockOut}
+                            onChange={e => updateRow(index, 'clockOut', e.target.value)}
+                            className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg
+                              focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none
+                              hover:border-secondary-300 transition-all bg-white"
+                          />
+                        </td>
 
-                      {/* 休憩（分） */}
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          min={0}
-                          max={480}
-                          value={row.breakMinutes || ''}
-                          onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
-                          disabled={!row.clockIn || !row.clockOut}
-                          className="input py-1 px-2 text-sm w-full text-center"
-                          placeholder="-"
-                        />
-                      </td>
+                        {/* 休憩（分） */}
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="number"
+                            min={0}
+                            max={480}
+                            value={row.breakMinutes || ''}
+                            onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
+                            disabled={!row.clockIn || !row.clockOut}
+                            className="w-full py-1.5 px-2 text-sm text-center border border-secondary-200 rounded-lg
+                              focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none
+                              hover:border-secondary-300 transition-all bg-white
+                              disabled:bg-secondary-50 disabled:text-secondary-300 disabled:border-secondary-100"
+                            placeholder="-"
+                          />
+                        </td>
 
-                      {/* 実働 */}
-                      <td className="px-2 py-1.5 text-sm font-medium text-gray-900 text-center">
-                        {formatMinutes(row.workMinutes)}
-                      </td>
-
-                      {/* 残業 */}
-                      <td className={`px-2 py-1.5 text-sm font-medium text-center ${hasOvertime ? 'text-amber-600' : 'text-gray-400'}`}>
-                        {hasOvertime ? (
-                          <span className="flex items-center justify-center gap-1">
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                            {formatMinutes(row.overtimeMinutes)}
+                        {/* 実働 */}
+                        <td className="px-3 py-1.5 text-center">
+                          <span className={`text-sm font-mono ${hasFilled ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
+                            {formatMinutes(row.workMinutes)}
                           </span>
-                        ) : '-'}
-                      </td>
+                        </td>
 
-                      {/* 残業理由 */}
-                      <td className="px-2 py-1.5">
-                        {hasOvertime ? (
+                        {/* 残業 */}
+                        <td className="px-3 py-1.5 text-center">
+                          {hasOvertime ? (
+                            <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                              <AlertTriangle className="w-3 h-3" />
+                              {formatMinutes(row.overtimeMinutes)}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-secondary-300">-</span>
+                          )}
+                        </td>
+
+                        {/* 残業理由 */}
+                        <td className="px-2 py-1.5">
+                          {hasOvertime ? (
+                            <input
+                              type="text"
+                              value={row.overtimeReason}
+                              onChange={e => updateRow(index, 'overtimeReason', e.target.value)}
+                              className={`w-full py-1.5 px-2.5 text-sm border rounded-lg focus:outline-none transition-all ${
+                                missingReason
+                                  ? 'border-red-400 bg-red-50 focus:ring-2 focus:ring-red-200 placeholder:text-red-300'
+                                  : 'border-secondary-200 bg-white focus:border-primary-400 focus:ring-2 focus:ring-primary-200'
+                              }`}
+                              placeholder={missingReason ? '必須: 残業理由を入力' : '残業理由'}
+                            />
+                          ) : (
+                            <span className="text-secondary-200 text-sm px-2">-</span>
+                          )}
+                        </td>
+
+                        {/* 備考 */}
+                        <td className="px-2 py-1.5">
                           <input
                             type="text"
-                            value={row.overtimeReason}
-                            onChange={e => updateRow(index, 'overtimeReason', e.target.value)}
-                            className={`input py-1 px-2 text-sm w-full ${
-                              missingReason ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''
-                            }`}
-                            placeholder="残業理由を入力（必須）"
+                            value={row.remarks}
+                            onChange={e => updateRow(index, 'remarks', e.target.value)}
+                            className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg
+                              focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none
+                              hover:border-secondary-300 transition-all bg-white"
+                            placeholder=""
                           />
-                        ) : (
-                          <span className="text-gray-300 text-sm px-2">-</span>
-                        )}
-                      </td>
-
-                      {/* 備考 */}
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="text"
-                          value={row.remarks}
-                          onChange={e => updateRow(index, 'remarks', e.target.value)}
-                          className="input py-1 px-2 text-sm w-full"
-                          placeholder=""
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
-        {/* Summary */}
-        {!isLoading && (
-          <div className="card mt-4">
-            <h3 className="font-semibold text-gray-800 mb-3">月間サマリー</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-gray-500">入力済み日数</p>
-                <p className="text-xl font-bold text-gray-800">{filledRowCount}日</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">総労働時間</p>
-                <p className="text-xl font-bold text-gray-800">{formatMinutes(totalWorkMinutes)}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">残業日数</p>
-                <p className={`text-xl font-bold ${overtimeRowCount > 0 ? 'text-amber-600' : 'text-gray-800'}`}>
-                  {overtimeRowCount}日
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">総残業時間</p>
-                <p className={`text-xl font-bold ${totalOvertimeMinutes > 0 ? 'text-amber-600' : 'text-gray-800'}`}>
-                  {formatMinutes(totalOvertimeMinutes)}
-                </p>
-              </div>
-            </div>
-
-            {/* Validation Errors */}
-            {validationErrors.length > 0 && (
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm font-medium text-red-700 mb-2 flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4" />
-                  保存前に以下を修正してください
-                </p>
-                <ul className="space-y-1">
-                  {validationErrors.map((err, i) => (
-                    <li key={i} className="text-sm text-red-600 pl-6">・{err}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+        {/* Validation Errors */}
+        {!isLoading && validationErrors.length > 0 && (
+          <div className="mt-4 p-5 bg-red-50 border border-red-200 rounded-2xl">
+            <p className="text-sm font-semibold text-red-700 mb-3 flex items-center gap-2">
+              <AlertCircle className="w-4.5 h-4.5" />
+              保存前に以下を修正してください
+            </p>
+            <ul className="space-y-1.5">
+              {validationErrors.map((err, i) => (
+                <li key={i} className="text-sm text-red-600 pl-7 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                  {err}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
         {/* Bottom save button */}
         {!isLoading && (
-          <div className="flex justify-end mt-4 mb-8">
+          <div className="flex justify-end mt-5 mb-10">
             <button
               onClick={() => setShowConfirmModal(true)}
               disabled={isSaving || !hasUnsavedChanges || !currentStaffId}
-              className="btn btn-primary flex items-center gap-2 px-8 py-3 text-base"
+              className="btn btn-primary btn-large flex items-center gap-2.5 px-10"
             >
               {isSaving ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -606,39 +654,49 @@ export function BulkAttendanceEntry() {
         title="勤怠データの保存"
         size="md"
       >
-        <div className="space-y-4">
-          <p className="text-gray-700">
-            {selectedYear}年{selectedMonth}月の勤怠データを保存します。
+        <div className="space-y-5 py-2">
+          <p className="text-secondary-600">
+            <strong className="text-secondary-800">{selectedYear}年{selectedMonth}月</strong>の勤怠データを保存します。
           </p>
 
-          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">入力済み日数</span>
-              <span className="font-medium">{filledRowCount}日</span>
+          <div className="bg-secondary-50 rounded-xl p-5 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-secondary-500 flex items-center gap-2">
+                <CalendarDays className="w-4 h-4" />入力済み日数
+              </span>
+              <span className="font-bold text-secondary-800">{filledRowCount}日</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">総労働時間</span>
-              <span className="font-medium">{formatMinutes(totalWorkMinutes)}</span>
+            <div className="h-px bg-secondary-200" />
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-secondary-500 flex items-center gap-2">
+                <ClockIcon className="w-4 h-4" />総労働時間
+              </span>
+              <span className="font-bold text-secondary-800">{formatMinutes(totalWorkMinutes)}</span>
             </div>
             {overtimeRowCount > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-amber-600">残業申請</span>
-                <span className="font-medium text-amber-600">{overtimeRowCount}件</span>
-              </div>
+              <>
+                <div className="h-px bg-secondary-200" />
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-amber-600 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />残業申請
+                  </span>
+                  <span className="font-bold text-amber-600">{overtimeRowCount}件</span>
+                </div>
+              </>
             )}
           </div>
 
           {overtimeRowCount > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-              <p className="text-sm text-amber-700 flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4" />
-                残業のある{overtimeRowCount}日分の残業申請が同時に提出されます
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4">
+              <p className="text-sm text-amber-700 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                残業のある<strong>{overtimeRowCount}日</strong>分の残業申請が同時に提出されます
               </p>
             </div>
           )}
 
           {validationErrors.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+            <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4">
               <p className="text-sm text-red-700 font-medium">残業理由が未入力の日があります。保存できません。</p>
             </div>
           )}

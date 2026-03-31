@@ -172,22 +172,22 @@ export function AttendanceManagement() {
   const allDays = getDaysInMonth();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="勤怠管理" />
 
-      <main className="max-w-6xl mx-auto p-4">
-        {/* Back Link */}
-        <div className="flex items-center justify-between mb-4">
+      <main className="max-w-6xl mx-auto p-4 sm:p-6">
+        {/* Back Link + Bulk Entry */}
+        <div className="flex items-center justify-between mb-5">
           <Link
             to="/admin"
-            className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600"
+            className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            ダッシュボードへ戻る
+            <span className="text-sm font-medium">ダッシュボードへ戻る</span>
           </Link>
           <Link
             to="/admin/bulk-entry"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+            className="btn btn-primary !py-2 !px-4 !text-sm !rounded-xl"
           >
             <ClipboardList className="w-4 h-4" />
             一括入力モード
@@ -196,14 +196,14 @@ export function AttendanceManagement() {
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
+          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm">{error}</p>
+            <p className="text-sm font-medium">{error}</p>
           </div>
         )}
 
         {/* Filters */}
-        <div className="card mb-6">
+        <div className="card card-gold gold-border mb-5">
           <div className="flex flex-wrap items-center gap-4">
             {/* Staff Selector */}
             <div className="flex-1 min-w-[200px]">
@@ -243,40 +243,22 @@ export function AttendanceManagement() {
         </div>
 
         {/* Attendance Table */}
-        <div className="card overflow-x-auto">
+        <div className="card overflow-x-auto p-0 overflow-hidden">
           {isLoading ? (
             <Loading message="読み込み中..." />
           ) : (
             <table className="w-full min-w-[800px]">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-sm font-medium text-gray-600">
-                    日付
-                  </th>
-                  <th className="px-3 py-2 text-left text-sm font-medium text-gray-600">
-                    出勤
-                  </th>
-                  <th className="px-3 py-2 text-left text-sm font-medium text-gray-600">
-                    退勤
-                  </th>
-                  <th className="px-3 py-2 text-left text-sm font-medium text-gray-600">
-                    休憩開始
-                  </th>
-                  <th className="px-3 py-2 text-left text-sm font-medium text-gray-600">
-                    休憩終了
-                  </th>
-                  <th className="px-3 py-2 text-left text-sm font-medium text-gray-600">
-                    休憩
-                  </th>
-                  <th className="px-3 py-2 text-left text-sm font-medium text-gray-600">
-                    実働
-                  </th>
-                  <th className="px-3 py-2 text-left text-sm font-medium text-gray-600">
-                    備考
-                  </th>
-                  <th className="px-3 py-2 text-right text-sm font-medium text-gray-600">
-                    操作
-                  </th>
+              <thead>
+                <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">日付</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">出勤</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">退勤</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩開始</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩終了</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">実働</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">備考</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -471,33 +453,42 @@ export function AttendanceManagement() {
 
         {/* Summary */}
         {!isLoading && attendance.length > 0 && (
-          <div className="card mt-4">
-            <h3 className="font-semibold text-gray-800 mb-3">月間サマリー</h3>
+          <div className="card card-gold mt-5">
+            <h3 className="font-semibold text-secondary-800 mb-4 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                <span className="text-white text-xs font-bold">{String.fromCharCode(931)}</span>
+              </div>
+              月間サマリー
+            </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-gray-500">出勤日数</p>
-                <p className="text-xl font-bold text-gray-800">
-                  {attendance.filter(r => r.workMinutes > 0).length}日
+              <div className="bg-white rounded-xl p-4 border border-secondary-100">
+                <p className="text-xs font-medium text-secondary-500 mb-1">出勤日数</p>
+                <p className="text-2xl font-bold text-secondary-800">
+                  {attendance.filter(r => r.workMinutes > 0).length}<span className="text-sm ml-0.5">日</span>
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">総労働時間</p>
-                <p className="text-xl font-bold text-gray-800">
+              <div className="bg-white rounded-xl p-4 border border-secondary-100">
+                <p className="text-xs font-medium text-secondary-500 mb-1">総労働時間</p>
+                <p className="text-2xl font-bold text-secondary-800">
                   {formatMinutesAsTime(
                     attendance.reduce((sum, r) => sum + r.workMinutes, 0)
                   )}
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">遅刻時間</p>
-                <p className="text-xl font-bold text-red-600">
-                  {attendance.reduce((sum, r) => sum + r.lateMinutes, 0)}分
+              <div className="bg-white rounded-xl p-4 border border-red-100">
+                <p className="text-xs font-medium text-secondary-500 mb-1">遅刻時間</p>
+                <p className={`text-2xl font-bold ${
+                  attendance.reduce((sum, r) => sum + r.lateMinutes, 0) > 0 ? 'text-red-500' : 'text-secondary-800'
+                }`}>
+                  {attendance.reduce((sum, r) => sum + r.lateMinutes, 0)}<span className="text-sm ml-0.5">分</span>
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">早退時間</p>
-                <p className="text-xl font-bold text-red-600">
-                  {attendance.reduce((sum, r) => sum + r.earlyLeaveMinutes, 0)}分
+              <div className="bg-white rounded-xl p-4 border border-red-100">
+                <p className="text-xs font-medium text-secondary-500 mb-1">早退時間</p>
+                <p className={`text-2xl font-bold ${
+                  attendance.reduce((sum, r) => sum + r.earlyLeaveMinutes, 0) > 0 ? 'text-red-500' : 'text-secondary-800'
+                }`}>
+                  {attendance.reduce((sum, r) => sum + r.earlyLeaveMinutes, 0)}<span className="text-sm ml-0.5">分</span>
                 </p>
               </div>
             </div>
