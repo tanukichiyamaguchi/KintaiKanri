@@ -295,18 +295,20 @@ export function MyPage() {
             <div className="flex items-center justify-between mb-6">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="前月"
               >
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
+                <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-lg font-semibold text-secondary-800">
                 {selectedYear}年{selectedMonth}月
               </h2>
               <button
                 onClick={handleNextMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="次月"
               >
-                <ChevronRight className="w-5 h-5 text-gray-600" />
+                <ChevronRight className="w-5 h-5 text-secondary-600" />
               </button>
             </div>
 
@@ -315,13 +317,13 @@ export function MyPage() {
                 <Loading message="読み込み中..." />
               </div>
             ) : attendance.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">
+              <p className="text-center text-secondary-500 py-8 text-sm">
                 この月の勤怠データはありません
               </p>
             ) : (
               <div className="space-y-2">
                 {/* Header */}
-                <div className="grid grid-cols-5 gap-2 text-xs font-medium text-gray-500 pb-2 border-b">
+                <div className="grid grid-cols-5 gap-2 text-xs font-semibold text-secondary-500 pb-2 border-b border-secondary-200">
                   <div>日付</div>
                   <div>出勤</div>
                   <div>退勤</div>
@@ -333,11 +335,11 @@ export function MyPage() {
                 {attendance.map(record => (
                   <div
                     key={record.date}
-                    className="grid grid-cols-5 gap-2 text-sm py-2 border-b border-gray-100 last:border-0"
+                    className="grid grid-cols-5 gap-2 text-sm py-2 border-b border-secondary-100 last:border-0"
                   >
-                    <div className="font-medium">{formatDate(record.date)}</div>
-                    <div className="text-gray-700">{formatTime(record.clockIn)}</div>
-                    <div className="text-gray-700">
+                    <div className="font-medium text-secondary-800">{formatDate(record.date)}</div>
+                    <div className="text-secondary-700">{formatTime(record.clockIn)}</div>
+                    <div className="text-secondary-700">
                       {formatTime(record.clockOut)}
                       {record.clockOutType === 'early_company' && (
                         <span className="ml-1 text-xs text-blue-600">早上</span>
@@ -346,26 +348,26 @@ export function MyPage() {
                         <span className="ml-1 text-xs text-red-600">早退</span>
                       )}
                     </div>
-                    <div className="text-gray-700">
+                    <div className="text-secondary-700">
                       {record.breakMinutes > 0 ? `${record.breakMinutes}分` : '-'}
                     </div>
-                    <div className="text-gray-900 font-medium">
+                    <div className="text-secondary-900 font-medium">
                       {record.workMinutes > 0 ? formatMinutesAsTime(record.workMinutes) : '-'}
                     </div>
                   </div>
                 ))}
 
                 {/* Summary */}
-                <div className="pt-4 mt-4 border-t-2 border-gray-200">
+                <div className="pt-4 mt-4 border-t-2 border-secondary-200">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">出勤日数</span>
-                    <span className="font-medium">
+                    <span className="text-secondary-600">出勤日数</span>
+                    <span className="font-medium text-secondary-800">
                       {attendance.filter(r => r.workMinutes > 0).length}日
                     </span>
                   </div>
                   <div className="flex justify-between text-sm mt-2">
-                    <span className="text-gray-600">総労働時間</span>
-                    <span className="font-medium">
+                    <span className="text-secondary-600">総労働時間</span>
+                    <span className="font-medium text-secondary-800">
                       {formatMinutesAsTime(
                         attendance.reduce((sum, r) => sum + r.workMinutes, 0)
                       )}
@@ -382,8 +384,8 @@ export function MyPage() {
             {/* Balance Card */}
             <div className="card mb-4 text-center">
               <Palmtree className="w-12 h-12 text-green-500 mx-auto mb-2" />
-              <p className="text-gray-600 mb-1">有給休暇残日数</p>
-              <p className="text-4xl font-bold text-gray-800">
+              <p className="text-secondary-600 mb-1 text-sm">有給休暇残日数</p>
+              <p className="text-4xl font-bold text-secondary-800">
                 {isLoading ? '-' : paidLeave?.balance ?? 0}
                 <span className="text-lg ml-1">日</span>
               </p>
@@ -399,12 +401,12 @@ export function MyPage() {
 
             {/* History */}
             <div className="card">
-              <h3 className="font-semibold text-gray-800 mb-4">取得履歴</h3>
+              <h3 className="font-semibold text-secondary-800 mb-4">取得履歴</h3>
 
               {isLoading ? (
                 <Loading />
               ) : !paidLeave?.history || paidLeave.history.length === 0 ? (
-                <p className="text-center text-gray-500 py-4">
+                <p className="text-center text-secondary-500 py-4 text-sm">
                   取得履歴はありません
                 </p>
               ) : (
@@ -412,21 +414,21 @@ export function MyPage() {
                   {paidLeave.history.map(request => (
                     <div
                       key={request.id}
-                      className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                      className="flex items-center justify-between py-2 border-b border-secondary-100 last:border-0"
                     >
                       <div>
-                        <p className="font-medium">{request.leaveDate}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="font-medium text-secondary-800">{request.leaveDate}</p>
+                        <p className="text-xs text-secondary-500">
                           申請日: {request.requestDate}
                         </p>
                       </div>
                       <span
-                        className={`status-badge ${
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
                           request.status === 'approved'
-                            ? 'status-working'
+                            ? 'bg-green-100 text-green-700 border-green-200'
                             : request.status === 'rejected'
-                            ? 'bg-red-100 text-red-800'
-                            : 'status-break'
+                            ? 'bg-red-100 text-red-700 border-red-200'
+                            : 'bg-amber-100 text-amber-700 border-amber-200'
                         }`}
                       >
                         {request.status === 'approved'
@@ -449,24 +451,26 @@ export function MyPage() {
             <div className="flex items-center justify-between mb-6">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="前月"
               >
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
+                <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-lg font-semibold text-secondary-800">
                 {selectedYear}年{selectedMonth}月分
               </h2>
               <button
                 onClick={handleNextMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="次月"
               >
-                <ChevronRight className="w-5 h-5 text-gray-600" />
+                <ChevronRight className="w-5 h-5 text-secondary-600" />
               </button>
             </div>
 
             <div className="text-center py-8">
-              <Wallet className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 mb-4">
+              <Wallet className="w-16 h-16 text-secondary-300 mx-auto mb-4" />
+              <p className="text-secondary-500 mb-4 text-sm">
                 給与明細をPDFでダウンロードできます
               </p>
               <button

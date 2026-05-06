@@ -533,9 +533,9 @@ export function AttendanceManagement() {
         {/* Summary */}
         {!isLoading && attendance.length > 0 && (
           <div className="card card-gold mt-5">
-            <h3 className="font-semibold text-secondary-800 mb-4 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
-                <span className="text-white text-xs font-bold">{String.fromCharCode(931)}</span>
+            <h3 className="font-semibold text-secondary-800 mb-4 flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center">
+                <BarChart3 className="w-4 h-4 text-primary-600" />
               </div>
               月間サマリー
             </h3>

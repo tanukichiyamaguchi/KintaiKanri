@@ -322,8 +322,13 @@ export function AttendancePage() {
     setIsSubmitting(true);
     setMessage(null);
     try {
-      // Save first
-      await bulkAttendanceApi.save(currentStaffId, selectedYear, selectedMonth, rows);
+      // Save first; abort submit if the save itself fails (otherwise stale rows
+      // would be submitted without the user's latest edits).
+      const saveRes = await bulkAttendanceApi.save(currentStaffId, selectedYear, selectedMonth, rows);
+      if (!saveRes.success) {
+        setMessage({ type: 'error', text: saveRes.error || '保存に失敗したため提出を中止しました' });
+        return;
+      }
       const res = await submissionApi.submit(currentStaffId, yearMonthStr, submissionRemarks);
       if (res.success) {
         setMessage({ type: 'success', text: `${selectedYear}年${selectedMonth}月を提出しました` });
