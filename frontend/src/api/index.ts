@@ -549,6 +549,7 @@ async function handleDemoRequest<T>(
         clockIn: row.clockIn ? `${row.date}T${row.clockIn}:00` : undefined,
         clockOut: row.clockOut ? `${row.date}T${row.clockOut}:00` : undefined,
         breakMinutes: row.breakMinutes,
+        breakMinutesIsManual: row.breakMinutesIsManual,
         workMinutes: row.workMinutes,
         lateMinutes: 0,
         earlyLeaveMinutes: 0,

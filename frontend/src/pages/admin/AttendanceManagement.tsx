@@ -9,6 +9,7 @@ import {
   X,
   AlertCircle,
   ClipboardList,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, attendanceApi, submissionApi } from '../../api';
@@ -356,7 +357,7 @@ export function AttendanceManagement() {
                   <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-secondary-100">
                 {allDays.map(date => {
                   const record = attendance.find(r => r.date === date);
                   const isEditing = editingRow === date;
@@ -368,16 +369,16 @@ export function AttendanceManagement() {
                     <tr
                       key={date}
                       className={`${
-                        isWeekend ? 'bg-gray-50' : ''
-                      } hover:bg-gray-100`}
+                        isWeekend ? 'bg-secondary-50/60' : ''
+                      } hover:bg-primary-50/30 transition-colors`}
                     >
                       <td
                         className={`px-3 py-2 text-sm font-medium ${
                           dateObj.getDay() === 0
-                            ? 'text-red-600'
+                            ? 'text-red-500'
                             : dateObj.getDay() === 6
-                            ? 'text-blue-600'
-                            : 'text-gray-800'
+                            ? 'text-blue-500'
+                            : 'text-secondary-800'
                         }`}
                       >
                         {formatDate(date)}
@@ -397,7 +398,7 @@ export function AttendanceManagement() {
                                     : undefined,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-24"
+                              className="w-24 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -412,7 +413,7 @@ export function AttendanceManagement() {
                                     : undefined,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-24"
+                              className="w-24 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -426,10 +427,10 @@ export function AttendanceManagement() {
                                   breakMinutes: Number(e.target.value) || 0,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-20"
+                              className="w-20 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
                             />
                           </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">-</td>
+                          <td className="px-3 py-2 text-sm text-secondary-400">-</td>
                           <td className="px-3 py-2">
                             <input
                               type="text"
@@ -440,7 +441,7 @@ export function AttendanceManagement() {
                                   remarks: e.target.value,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-full"
+                              className="w-full py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
                               placeholder="備考"
                             />
                           </td>
@@ -448,13 +449,17 @@ export function AttendanceManagement() {
                             <div className="flex items-center justify-end gap-1">
                               <button
                                 onClick={() => handleSaveEdit(date)}
-                                className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                aria-label="保存"
+                                title="保存"
                               >
                                 <Save className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={handleCancelEdit}
-                                className="p-1 text-gray-600 hover:bg-gray-100 rounded"
+                                className="p-1.5 text-secondary-500 hover:bg-secondary-100 rounded-lg transition-colors"
+                                aria-label="キャンセル"
+                                title="キャンセル"
                               >
                                 <X className="w-4 h-4" />
                               </button>
@@ -463,10 +468,10 @@ export function AttendanceManagement() {
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-2 text-sm text-gray-700">
+                          <td className="px-3 py-2 text-sm text-secondary-700">
                             {formatTime(record?.clockIn)}
                           </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">
+                          <td className="px-3 py-2 text-sm text-secondary-700">
                             {formatTime(record?.clockOut)}
                             {record?.clockOutType === 'early_company' && (
                               <span className="ml-1 text-xs text-blue-600">
@@ -479,17 +484,17 @@ export function AttendanceManagement() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">
+                          <td className="px-3 py-2 text-sm text-secondary-700">
                             {record?.breakMinutes
                               ? `${record.breakMinutes}分`
                               : '-'}
                           </td>
-                          <td className="px-3 py-2 text-sm font-medium text-gray-900">
+                          <td className="px-3 py-2 text-sm font-medium text-secondary-900">
                             {record?.workMinutes
                               ? formatMinutesAsTime(record.workMinutes)
                               : '-'}
                           </td>
-                          <td className="px-3 py-2 text-sm text-gray-500">
+                          <td className="px-3 py-2 text-sm text-secondary-500">
                             {record?.remarks || '-'}
                           </td>
                           <td className="px-3 py-2">
@@ -508,7 +513,9 @@ export function AttendanceManagement() {
                                       isHoliday: isWeekend,
                                     })
                               }
-                              className="p-1 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded"
+                              className="p-1.5 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                              aria-label="編集"
+                              title="編集"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>

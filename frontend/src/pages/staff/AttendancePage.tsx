@@ -628,7 +628,14 @@ export function AttendancePage() {
                             type="number"
                             min={0}
                             max={480}
-                            value={row.breakMinutes || ''}
+                            // Show "0" as 0 when manually set to zero; only blank if no clock data yet
+                            value={
+                              !row.clockIn || !row.clockOut
+                                ? ''
+                                : row.breakMinutesIsManual
+                                  ? row.breakMinutes
+                                  : (row.breakMinutes || '')
+                            }
                             onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
                             disabled={cellDisabled || (!row.clockIn || !row.clockOut)}
                             className={`w-full py-1.5 px-2 text-sm text-center border rounded-lg focus:outline-none ${
