@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Send, AlertTriangle, Calendar, X } from 'lucide-react';
 import { Modal } from './Modal';
 import type { ApplicationType, ShiftDiff, ShiftDiffKind } from '../../types';
@@ -25,7 +25,10 @@ export function ApplicationModal({
   preselectedType,
   onSubmit,
 }: ApplicationModalProps) {
-  const availableKinds: ShiftDiffKind[] = diff?.kinds && diff.kinds.length > 0 ? diff.kinds : [];
+  const availableKinds = useMemo<ShiftDiffKind[]>(
+    () => (diff?.kinds && diff.kinds.length > 0 ? diff.kinds : []),
+    [diff]
+  );
   const [selectedType, setSelectedType] = useState<ApplicationType | null>(
     preselectedType || availableKinds[0] || null
   );

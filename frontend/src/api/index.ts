@@ -137,8 +137,6 @@ function generateMockAttendance(staffId: string, year: number, month: number): A
 
     const clockIn = `${dateStr}T${fmtTime(clockInH, clockInM)}:00`;
     const clockOut = `${dateStr}T${fmtTime(clockOutH, clockOutM)}:00`;
-    const breakStart = `${dateStr}T13:00:00`;
-    const breakEnd = `${dateStr}T14:00:00`;
     const breakMinutes = 60;
     const workMinutes = (clockOutH * 60 + clockOutM) - (clockInH * 60 + clockInM) - breakMinutes;
 
@@ -148,8 +146,6 @@ function generateMockAttendance(staffId: string, year: number, month: number): A
       name: staff.name,
       clockIn,
       clockOut,
-      breakStart,
-      breakEnd,
       breakMinutes,
       workMinutes,
       lateMinutes: 0,
@@ -321,6 +317,7 @@ async function handleDemoRequest<T>(
     const newStaffId = 'S' + String(Date.now()).slice(-6);
     const newStaff: Staff = {
       staffId: newStaffId,
+      email: (body.email as string) || '',
       name: body.name as string,
       monthlySalary: Number(body.monthlySalary) || 0,
       transportation: Number(body.transportation) || 0,
@@ -330,7 +327,7 @@ async function handleDemoRequest<T>(
       status: 'active',
     };
     mockStaffDetails.push(newStaff);
-    mockStaff.push({ staffId: newStaffId, name: newStaff.name, status: 'active' });
+    mockStaff.push({ staffId: newStaffId, email: newStaff.email, name: newStaff.name, status: 'active' });
     return { success: true, data: { staffId: newStaffId } as unknown as T };
   }
 

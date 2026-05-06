@@ -275,27 +275,44 @@ function getIncentiveSheet(year, month) {
   return sheet;
 }
 
-// PBKDF2-HMAC-SHA256 password hashing (manual implementation since GAS lacks bcrypt/scrypt)
+// PBKDF2-HMAC-SHA256 風のパスワードハッシュ（GAS には bcrypt / scrypt が無いため自前実装）。
+// 注: 厳密な RFC 2898 準拠ではない（GAS の computeHmacSha256Signature(value, key) は
+// "value=メッセージ / key=鍵" の順なので、ここでは password と salt の役割が標準とは
+// 入れ替わっているが、ハッシュ生成と検証で同じ手順を踏めば自己整合する）。
+// XOR の累積は JS 配列に確実にコピーしてから行う（GAS の戻り値は Java の Byte[] のため、
+// 直接書き戻すと環境によって反映されない可能性がある）。
 function hashPassword(password, salt) {
   if (!password || !salt) return '';
   const iterations = PBKDF2_ITERATIONS;
+  // 初回 HMAC: U_1
   let buffer = Utilities.computeHmacSha256Signature(password, salt);
-  let result = buffer;
+  // result は JS 配列にコピーして以降は通常配列として扱う
+  const result = [];
+  for (let j = 0; j < buffer.length; j++) {
+    result[j] = buffer[j];
+  }
   for (let i = 1; i < iterations; i++) {
     buffer = Utilities.computeHmacSha256Signature(buffer, salt);
-    // XOR accumulator (PBKDF2 spec)
     for (let j = 0; j < buffer.length; j++) {
-      result[j] = result[j] ^ buffer[j];
+      // signed byte 同士の XOR は signed byte 範囲に収まる(-128..127)
+      result[j] = (result[j] ^ buffer[j]) | 0;
+      // -128..127 にクランプ（万一 32bit 拡張で範囲外になった場合の保険）
+      if (result[j] > 127) result[j] -= 256;
+      else if (result[j] < -128) result[j] += 256;
     }
   }
   return Utilities.base64Encode(result);
 }
 
-// Generate a random salt (16 bytes -> base64)
+// 16バイトの salt を生成して base64 エンコード。
+// GAS の base64Encode は signed byte (-128..127) の配列を受け付ける。
 function generateSalt() {
   const bytes = [];
   for (let i = 0; i < 16; i++) {
-    bytes.push(Math.floor(Math.random() * 256) - 128);
+    // Math.random は暗号学的に弱いが GAS には crypto.getRandomValues が無いため、
+    // タイムスタンプを混ぜてエントロピーを補強する。
+    const r = Math.floor(Math.random() * 256) ^ ((Date.now() >>> (i % 24)) & 0xFF);
+    bytes.push((r & 0xFF) - 128);
   }
   return Utilities.base64Encode(bytes);
 }
@@ -665,12 +682,14 @@ function handleClock(body) {
     return { success: false, error: 'Staff not found' };
   }
 
-  // Find or create today's record
+  // Find or create today's record。
+  // date 列は文字列で書き込んでいるが、Sheets が Date 型に自動変換する場合があるため両対応。
   let rowIndex = -1;
   const data = sheet.getDataRange().getValues();
 
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === dateStr && data[i][1] === staffId) {
+    const rowDate = formatDateOnly_(data[i][0]);
+    if (rowDate === dateStr && data[i][1] === staffId) {
       rowIndex = i + 1;
       break;
     }
@@ -697,14 +716,30 @@ function handleClock(body) {
 
     if (type === 'clock_in') {
       newRow[3] = timeStr;
+    } else {
+      // 出勤打刻が無いまま退勤等を打とうとした場合のガード
+      return { success: false, error: '出勤打刻が記録されていません' };
     }
 
     sheet.appendRow(newRow);
     rowIndex = sheet.getLastRow();
   } else {
     if (type === 'clock_in') {
+      // 同日2回目以降の出勤打刻はブロック（誤操作防止）。
+      const existingClockIn = sheet.getRange(rowIndex, 4).getValue();
+      if (existingClockIn) {
+        return { success: false, error: '本日は既に出勤打刻されています' };
+      }
       sheet.getRange(rowIndex, 4).setValue(timeStr);
     } else if (type === 'clock_out' || type === 'early_leave_company' || type === 'early_leave_self') {
+      const existingClockIn = sheet.getRange(rowIndex, 4).getValue();
+      if (!existingClockIn) {
+        return { success: false, error: '出勤打刻が記録されていません' };
+      }
+      const existingClockOut = sheet.getRange(rowIndex, 5).getValue();
+      if (existingClockOut) {
+        return { success: false, error: '本日は既に退勤打刻されています' };
+      }
       sheet.getRange(rowIndex, 5).setValue(timeStr);
       sheet.getRange(rowIndex, 6).setValue(
         type === 'clock_out' ? 'normal' :
@@ -712,12 +747,12 @@ function handleClock(body) {
       );
 
       // Auto-calculate break (legal minimum) + work minutes
-      const clockIn = sheet.getRange(rowIndex, 4).getValue();
-      if (clockIn) {
-        const startTime = new Date(clockIn);
+      // existingClockIn は Date / 文字列のどちらでもありうる（Sheets が自動変換するため）
+      const startTime = existingClockIn instanceof Date ? existingClockIn : new Date(existingClockIn);
+      if (!isNaN(startTime.getTime())) {
         const elapsedMinutes = Math.floor((now - startTime) / 60000);
         const isManual = sheet.getRange(rowIndex, 8).getValue() === true;
-        let breakMinutes = sheet.getRange(rowIndex, 7).getValue() || 0;
+        let breakMinutes = Number(sheet.getRange(rowIndex, 7).getValue()) || 0;
         if (!isManual) {
           breakMinutes = computeLegalBreakMinutes_(elapsedMinutes);
           sheet.getRange(rowIndex, 7).setValue(breakMinutes);
@@ -757,7 +792,7 @@ function handleGetTodayAttendance(params) {
 
   const sheet = getAttendanceSheet(year, month);
   const data = sheetToObjects(sheet);
-  const todayRecord = data.find(r => r.date === dateStr && r.staff_id === staffId);
+  const todayRecord = data.find(r => formatDateOnly_(r.date) === dateStr && r.staff_id === staffId);
 
   if (!todayRecord) {
     return {
@@ -769,15 +804,15 @@ function handleGetTodayAttendance(params) {
     };
   }
 
-  // Build records array
+  // Build records array (Date オブジェクトは ISO 文字列に正規化)
   const records = [];
   if (todayRecord.clock_in) {
-    records.push({ type: 'clock_in', time: todayRecord.clock_in });
+    records.push({ type: 'clock_in', time: toIsoString_(todayRecord.clock_in) });
   }
   if (todayRecord.clock_out) {
     const clockOutType = todayRecord.clock_out_type === 'early_company' ? 'early_leave_company' :
                          todayRecord.clock_out_type === 'early_self' ? 'early_leave_self' : 'clock_out';
-    records.push({ type: clockOutType, time: todayRecord.clock_out });
+    records.push({ type: clockOutType, time: toIsoString_(todayRecord.clock_out) });
   }
 
   // Determine status (no break state in new model)
@@ -812,22 +847,44 @@ function handleGetAttendance(params) {
   return {
     success: true,
     data: staffRecords.map(r => ({
-      date: r.date,
+      date: formatDateOnly_(r.date),
       staffId: r.staff_id,
       name: r.name,
-      clockIn: r.clock_in,
-      clockOut: r.clock_out,
+      clockIn: toIsoString_(r.clock_in),
+      clockOut: toIsoString_(r.clock_out),
       clockOutType: r.clock_out_type,
-      breakMinutes: r.break_minutes || 0,
+      breakMinutes: Number(r.break_minutes) || 0,
       breakMinutesIsManual: r.break_minutes_is_manual === true || r.break_minutes_is_manual === 'TRUE',
-      workMinutes: r.work_minutes || 0,
-      lateMinutes: r.late_minutes || 0,
-      earlyLeaveMinutes: r.early_leave_minutes || 0,
+      workMinutes: Number(r.work_minutes) || 0,
+      lateMinutes: Number(r.late_minutes) || 0,
+      earlyLeaveMinutes: Number(r.early_leave_minutes) || 0,
       isHoliday: r.is_holiday === true || r.is_holiday === 'TRUE',
       remarks: r.remarks,
       source: r.source || 'punch'
     }))
   };
+}
+
+// Date / 文字列を ISO 文字列に正規化。空・無効値は空文字を返す。
+function toIsoString_(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? '' : value.toISOString();
+  }
+  // 既に ISO 文字列ならそのまま、その他はパースして再フォーマット
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return s;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? s : d.toISOString();
+}
+
+// 日付セル（Date / "YYYY-MM-DD" 文字列）を YYYY-MM-DD に正規化。
+function formatDateOnly_(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return String(value);
 }
 
 function handleGetStaffList() {
@@ -1454,10 +1511,10 @@ function handleUpdateAttendance(body) {
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
 
-  // Find the row
+  // Find the row（date 列は Date 型 / 文字列の両方ありうる）
   let rowIndex = -1;
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === date && data[i][1] === staffId) {
+    if (formatDateOnly_(data[i][0]) === date && data[i][1] === staffId) {
       rowIndex = i + 1;
       break;
     }
@@ -1521,16 +1578,19 @@ function handleUpdateAttendance(body) {
     const coCol = headers.indexOf('clock_out');
     const brCol = headers.indexOf('break_minutes');
     const wmCol = headers.indexOf('work_minutes');
-    if (wmCol !== -1) {
+    if (wmCol !== -1 && ciCol !== -1 && coCol !== -1 && brCol !== -1) {
       const ciVal = sheet.getRange(rowIndex, ciCol + 1).getValue();
       const coVal = sheet.getRange(rowIndex, coCol + 1).getValue();
-      const brVal = sheet.getRange(rowIndex, brCol + 1).getValue() || 0;
+      const brVal = Number(sheet.getRange(rowIndex, brCol + 1).getValue()) || 0;
       if (ciVal && coVal) {
-        const start = new Date(ciVal);
-        const end = new Date(coVal);
-        const elapsed = Math.floor((end - start) / 60000);
-        const workMin = Math.max(0, elapsed - Number(brVal));
-        sheet.getRange(rowIndex, wmCol + 1).setValue(workMin);
+        // Sheets は ISO 文字列を Date に自動変換することがあるため両対応する
+        const start = ciVal instanceof Date ? ciVal : new Date(ciVal);
+        const end = coVal instanceof Date ? coVal : new Date(coVal);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+          const elapsed = Math.floor((end - start) / 60000);
+          const workMin = Math.max(0, elapsed - brVal);
+          sheet.getRange(rowIndex, wmCol + 1).setValue(workMin);
+        }
       }
     }
   }

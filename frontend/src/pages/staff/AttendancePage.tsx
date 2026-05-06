@@ -26,7 +26,6 @@ import {
 } from '../../api';
 import type {
   BulkAttendanceRow,
-  Shift,
   Application,
   ApplicationType,
   MonthlySubmission,
@@ -48,7 +47,6 @@ export function AttendancePage() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [rows, setRows] = useState<BulkAttendanceRow[]>([]);
-  const [shifts, setShifts] = useState<Shift[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [submission, setSubmission] = useState<MonthlySubmission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -123,7 +121,6 @@ export function AttendancePage() {
       const apps = appsRes.success && appsRes.data ? appsRes.data : [];
       const sub = subRes.success && subRes.data ? subRes.data : null;
 
-      setShifts(shiftList);
       setApplications(apps);
       setSubmission(sub);
 
@@ -651,7 +648,7 @@ export function AttendancePage() {
                                   className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
                                 >
                                   <Send className="w-3 h-3" />
-                                  {kind}を申請
+                                  申請
                                 </button>
                               );
                             })}

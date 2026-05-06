@@ -18,7 +18,6 @@ import type {
   Application,
   ApplicationStatus,
   MonthlySubmission,
-  SubmissionStatus,
   StaffInfo,
 } from '../../types';
 import {

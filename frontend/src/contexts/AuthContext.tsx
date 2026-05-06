@@ -49,7 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     try {
-      const response = await authApi.login(email, password);
+      const normalizedEmail = email.trim().toLowerCase();
+      const response = await authApi.login(normalizedEmail, password);
       if (response.success && response.data?.success) {
         const data = response.data;
         const tokenStr = data.token || '';
@@ -76,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       return {
         success: false,
-        error: response.error || data_error(response) || 'ログインに失敗しました',
+        error: response.error || response.data?.error || 'ログインに失敗しました',
       };
     } catch {
       return { success: false, error: 'ネットワークエラーが発生しました' };
@@ -107,10 +108,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-function data_error(response: { data?: { error?: string } }): string | undefined {
-  return response.data?.error;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

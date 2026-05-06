@@ -95,8 +95,6 @@ export function AdminDashboard() {
     switch (status) {
       case 'working':
         return { bg: 'bg-green-50', text: 'text-green-700', label: '勤務中', dot: 'bg-green-500' };
-      case 'on_break':
-        return { bg: 'bg-amber-50', text: 'text-amber-700', label: '休憩中', dot: 'bg-amber-500' };
       case 'finished':
         return { bg: 'bg-blue-50', text: 'text-blue-700', label: '退勤済み', dot: 'bg-blue-500' };
       default:
@@ -181,7 +179,6 @@ export function AdminDashboard() {
 
   // Count staff by status
   const workingCount = staffList.filter(s => s.attendance?.status === 'working').length;
-  const breakCount = staffList.filter(s => s.attendance?.status === 'on_break').length;
   const finishedCount = staffList.filter(s => s.attendance?.status === 'finished').length;
 
   return (
@@ -217,10 +214,6 @@ export function AdminDashboard() {
               <div className="text-center">
                 <div className="text-3xl font-bold text-green-600">{workingCount}</div>
                 <div className="text-xs text-secondary-500 font-medium">勤務中</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-amber-600">{breakCount}</div>
-                <div className="text-xs text-secondary-500 font-medium">休憩中</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-blue-600">{finishedCount}</div>

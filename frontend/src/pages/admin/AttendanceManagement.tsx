@@ -257,7 +257,7 @@ export function AttendanceManagement() {
     <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="勤怠管理" />
 
-      <main className="max-w-6xl mx-auto p-4 sm:p-6">
+      <main className="max-w-7xl mx-auto p-4 sm:p-6">
         {/* Back Link + Bulk Entry */}
         <div className="flex items-center justify-between mb-5">
           <Link
@@ -304,21 +304,23 @@ export function AttendanceManagement() {
             </div>
 
             {/* Month Selector */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="前月"
               >
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
+                <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <span className="text-lg font-semibold min-w-[120px] text-center">
+              <span className="text-lg font-semibold min-w-[140px] text-center text-secondary-800">
                 {selectedYear}年{selectedMonth}月
               </span>
               <button
                 onClick={handleNextMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="次月"
               >
-                <ChevronRight className="w-5 h-5 text-gray-600" />
+                <ChevronRight className="w-5 h-5 text-secondary-600" />
               </button>
             </div>
 
