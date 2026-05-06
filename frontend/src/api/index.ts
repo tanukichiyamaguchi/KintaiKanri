@@ -87,6 +87,8 @@ const mockAdmin: AdminInfo = {
   name: 'システム管理者',
 };
 
+const mockAdmins: AdminInfo[] = [mockAdmin];
+
 // In-memory storage for demo mode
 const mockTodayRecords: Record<string, TodayAttendance> = {};
 const mockPaidLeaveRequests: PaidLeaveRequest[] = [];
@@ -337,7 +339,11 @@ async function handleDemoRequest<T>(
     if (idx !== -1) {
       mockStaffDetails[idx] = { ...mockStaffDetails[idx], ...body, staffId } as Staff;
       const listIdx = mockStaff.findIndex(s => s.staffId === staffId);
-      if (listIdx !== -1 && body?.name) mockStaff[listIdx].name = body.name as string;
+      if (listIdx !== -1) {
+        if (body?.name) mockStaff[listIdx].name = body.name as string;
+        if (body?.email) mockStaff[listIdx].email = String(body.email).toLowerCase();
+        if (body?.status) mockStaff[listIdx].status = body.status as 'active' | 'inactive';
+      }
       return { success: true, data: undefined as unknown as T };
     }
     return { success: false, error: 'スタッフが見つかりません' };
@@ -626,9 +632,20 @@ async function handleDemoRequest<T>(
     const staffId = String(body?.staffId || '');
     const yearMonth = String(body?.yearMonth || '');
     const remarks = body?.remarks as string | undefined;
-    const blocked = mockApplications
-      .filter(a => a.staffId === staffId && a.date.startsWith(yearMonth))
-      .filter(a => a.status !== 'approved');
+    // Group by (date, type) and only consider the most recent application per group.
+    // This way a re-submitted (newer) approved app supersedes an older rejected one.
+    const monthApps = mockApplications.filter(
+      a => a.staffId === staffId && a.date.startsWith(yearMonth)
+    );
+    const latestByKey = new Map<string, Application>();
+    monthApps.forEach(a => {
+      const key = `${a.date}|${a.type}`;
+      const cur = latestByKey.get(key);
+      if (!cur || cur.submittedAt < a.submittedAt) {
+        latestByKey.set(key, a);
+      }
+    });
+    const blocked = [...latestByKey.values()].filter(a => a.status !== 'approved');
     if (blocked.length > 0) {
       return {
         success: false,
@@ -721,17 +738,30 @@ async function handleDemoRequest<T>(
 
   // --- Admins (manager UI) ---
   if (action === 'admins' && !body) {
-    return { success: true, data: [mockAdmin] as unknown as T };
+    return { success: true, data: [...mockAdmins] as unknown as T };
   }
   if (action === 'admins' && body) {
-    const newAdmin = {
+    const newAdmin: AdminInfo = {
       adminId: 'A' + String(Date.now()).slice(-6),
       email: String(body.email || '').toLowerCase(),
       name: String(body.name || ''),
     };
+    mockAdmins.push(newAdmin);
     return { success: true, data: { adminId: newAdmin.adminId } as unknown as T };
   }
-  if (action === 'admins/update' || action === 'admins/delete') {
+  if (action === 'admins/update') {
+    const adminId = String(body?.adminId || '');
+    const idx = mockAdmins.findIndex(a => a.adminId === adminId);
+    if (idx !== -1) {
+      if (body?.name) mockAdmins[idx].name = String(body.name);
+      if (body?.email) mockAdmins[idx].email = String(body.email).toLowerCase();
+    }
+    return { success: true, data: undefined as unknown as T };
+  }
+  if (action === 'admins/delete') {
+    const adminId = String(body?.adminId || '');
+    const idx = mockAdmins.findIndex(a => a.adminId === adminId);
+    if (idx !== -1) mockAdmins.splice(idx, 1);
     return { success: true, data: undefined as unknown as T };
   }
 

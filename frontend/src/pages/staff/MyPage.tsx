@@ -49,12 +49,13 @@ export function MyPage() {
   // Fetch attendance data
   useEffect(() => {
     if (!staff || activeTab !== 'attendance') return;
+    const staffId = staff.staffId;
 
     async function fetchAttendance() {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await attendanceApi.getMonthly(staff!.staffId, selectedYear, selectedMonth);
+        const response = await attendanceApi.getMonthly(staffId, selectedYear, selectedMonth);
         if (response.success && response.data) {
           setAttendance(response.data);
         } else {
@@ -73,11 +74,12 @@ export function MyPage() {
   // Fetch submission status for selected month
   useEffect(() => {
     if (!staff || activeTab !== 'attendance') return;
+    const staffId = staff.staffId;
 
     async function fetchSubmission() {
       const yearMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
       try {
-        const response = await submissionApi.getStatus(staff!.staffId, yearMonth);
+        const response = await submissionApi.getStatus(staffId, yearMonth);
         if (response.success && response.data) {
           setSubmission(response.data);
         } else {
@@ -94,12 +96,13 @@ export function MyPage() {
   // Fetch paid leave data
   useEffect(() => {
     if (!staff || activeTab !== 'paidLeave') return;
+    const staffId = staff.staffId;
 
     async function fetchPaidLeave() {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await paidLeaveApi.getBalance(staff!.staffId);
+        const response = await paidLeaveApi.getBalance(staffId);
         if (response.success && response.data) {
           setPaidLeave(response.data);
         } else {

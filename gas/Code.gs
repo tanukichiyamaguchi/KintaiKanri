@@ -84,6 +84,10 @@ function setupSystem() {
       Logger.log('Created sheet: ' + sheetInfo.name);
     }
 
+    // 新規シートはデフォルトカラム数が少ない可能性があるため、必要数まで拡張する
+    if (sheet.getMaxColumns() < sheetInfo.headers.length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), sheetInfo.headers.length - sheet.getMaxColumns());
+    }
     // Set headers if row 1 is empty
     const firstRow = sheet.getRange(1, 1, 1, sheetInfo.headers.length).getValues()[0];
     if (!firstRow[0]) {
@@ -178,12 +182,15 @@ function getOrCreateSheet(sheetName) {
   return sheet;
 }
 
-// Initialize sheet with headers
+// Initialize sheet with headers (ヘッダーは setupSystem の定義と同期)
 function initializeSheet(sheet, sheetName) {
   const headers = {
     [SHEETS.STAFF_MASTER]: [
-      'staff_id', 'name', 'pin_code', 'monthly_salary', 'transportation',
-      'hire_date', 'paid_leave_balance', 'status', 'birth_date'
+      'staff_id', 'email', 'password_hash', 'password_salt', 'name',
+      'monthly_salary', 'transportation', 'hire_date', 'paid_leave_balance', 'status', 'birth_date'
+    ],
+    [SHEETS.ADMINS]: [
+      'admin_id', 'email', 'password_hash', 'password_salt', 'name', 'created_at'
     ],
     [SHEETS.PAID_LEAVE]: [
       'id', 'staff_id', 'name', 'request_date', 'leave_date',
@@ -196,9 +203,24 @@ function initializeSheet(sheet, sheetName) {
     [SHEETS.STANDARD_REMUNERATION]: [
       'grade', 'monthly_min', 'monthly_max', 'standard_monthly'
     ],
+    [SHEETS.APPLICATIONS]: [
+      'id', 'staff_id', 'staff_name', 'date', 'type', 'reason', 'details_json',
+      'status', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason'
+    ],
+    [SHEETS.SUBMISSIONS]: [
+      'staff_id', 'staff_name', 'year_month', 'status', 'submitted_at',
+      'reviewed_at', 'reviewed_by', 'remarks', 'rejection_reason'
+    ],
+    [SHEETS.ATTENDANCE_HISTORY]: [
+      'date', 'staff_id', 'field', 'old_value', 'new_value', 'edited_at',
+      'edited_by', 'editor_role', 'reason'
+    ],
   };
 
   if (headers[sheetName]) {
+    if (sheet.getMaxColumns() < headers[sheetName].length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), headers[sheetName].length - sheet.getMaxColumns());
+    }
     sheet.getRange(1, 1, 1, headers[sheetName].length).setValues([headers[sheetName]]);
   }
 }
@@ -1642,17 +1664,31 @@ function isNursingInsuranceTarget(birthDate) {
  *  - 末尾 "(仮)"   → tentative:true
  */
 function parseShiftCell_(cellValue) {
-  const raw = cellValue == null ? '' : String(cellValue).trim();
+  if (cellValue == null) return { defined: false, isTentative: false, isOff: false };
+  let raw;
+  if (cellValue instanceof Date) {
+    raw = String(cellValue);
+  } else {
+    raw = String(cellValue);
+  }
+  raw = raw.trim();
   if (!raw) return { defined: false, isTentative: false, isOff: false };
 
-  const tentative = /\(仮\)/.test(raw);
-  const cleaned = raw.replace(/\(仮\)/g, '').trim();
+  // 半角・全角の "(仮)" 両対応
+  const tentative = /[\(（]仮[\)）]/.test(raw);
+  const cleaned = raw.replace(/[\(（]仮[\)）]/g, '').trim();
 
-  if (cleaned === '休') {
+  if (cleaned === '休' || cleaned === '×' || cleaned === '-' || cleaned === 'OFF' || cleaned === 'off') {
     return { defined: true, isOff: true, isTentative: tentative, rawCell: raw };
   }
 
-  const m = cleaned.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  // 全角コロン・全角ハイフン・全角数字を半角に正規化
+  const normalized = cleaned
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[:：]/g, ':')
+    .replace(/[~〜ー―—–-]/g, '-');
+
+  const m = normalized.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
   if (m) {
     const startTime = String(m[1]).padStart(2, '0') + ':' + m[2];
     const endTime = String(m[3]).padStart(2, '0') + ':' + m[4];
@@ -1721,24 +1757,29 @@ function readShiftSheet_(year, month) {
  *  - "7/1" → year/month を補って整形
  */
 function formatDateValue_(value, defaultYear, defaultMonth) {
+  if (value == null || value === '') return null;
   if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
     return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
   }
+  // 数値（シリアル値）として保持されているケースは GAS で日付セルから来ることがあるが、
+  // 通常 getValue() が Date を返すため通常は到達しない。念のため数値→文字列化してパース継続。
   const s = String(value).trim();
+  if (!s) return null;
   // M/D
   let m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
   if (m) {
-    return defaultYear + '-' + String(parseInt(m[1])).padStart(2, '0') + '-' + String(parseInt(m[2])).padStart(2, '0');
+    return defaultYear + '-' + String(parseInt(m[1], 10)).padStart(2, '0') + '-' + String(parseInt(m[2], 10)).padStart(2, '0');
   }
   // YYYY/M/D
   m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
   if (m) {
-    return m[1] + '-' + String(parseInt(m[2])).padStart(2, '0') + '-' + String(parseInt(m[3])).padStart(2, '0');
+    return m[1] + '-' + String(parseInt(m[2], 10)).padStart(2, '0') + '-' + String(parseInt(m[3], 10)).padStart(2, '0');
   }
   // YYYY-MM-DD
   m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (m) {
-    return m[1] + '-' + String(parseInt(m[2])).padStart(2, '0') + '-' + String(parseInt(m[3])).padStart(2, '0');
+    return m[1] + '-' + String(parseInt(m[2], 10)).padStart(2, '0') + '-' + String(parseInt(m[3], 10)).padStart(2, '0');
   }
   return null;
 }
@@ -1843,7 +1884,7 @@ function handleListApplications(params) {
   let filtered = data;
   if (staffId) filtered = filtered.filter(r => r.staff_id === staffId);
   if (status) filtered = filtered.filter(r => r.status === status);
-  if (yearMonth) filtered = filtered.filter(r => String(r.date).startsWith(yearMonth));
+  if (yearMonth) filtered = filtered.filter(r => formatDateOnly_(r.date).startsWith(yearMonth));
 
   return {
     success: true,
@@ -1851,13 +1892,13 @@ function handleListApplications(params) {
       id: r.id,
       staffId: r.staff_id,
       staffName: r.staff_name,
-      date: r.date,
+      date: formatDateOnly_(r.date),
       type: r.type,
       reason: r.reason,
       details: safeJsonParse_(r.details_json) || {},
       status: r.status,
-      submittedAt: r.submitted_at,
-      reviewedAt: r.reviewed_at,
+      submittedAt: toIsoString_(r.submitted_at),
+      reviewedAt: toIsoString_(r.reviewed_at),
       reviewedBy: r.reviewed_by,
       rejectionReason: r.rejection_reason
     }))
@@ -1930,8 +1971,8 @@ function handleGetSubmissionStatus(params) {
       staffName: rec.staff_name,
       yearMonth: rec.year_month,
       status: rec.status,
-      submittedAt: rec.submitted_at,
-      reviewedAt: rec.reviewed_at,
+      submittedAt: toIsoString_(rec.submitted_at),
+      reviewedAt: toIsoString_(rec.reviewed_at),
       reviewedBy: rec.reviewed_by,
       remarks: rec.remarks,
       rejectionReason: rec.rejection_reason
@@ -1953,7 +1994,7 @@ function handleSubmitMonthly(body) {
 
   // ゲート: 当月の全申請が approved か
   const apps = sheetToObjects(getOrCreateSheet(SHEETS.APPLICATIONS))
-    .filter(a => a.staff_id === staffId && String(a.date).startsWith(yearMonth));
+    .filter(a => a.staff_id === staffId && formatDateOnly_(a.date).startsWith(yearMonth));
   const blocked = apps.filter(a => a.status !== 'approved');
   if (blocked.length > 0) {
     return {
@@ -2009,8 +2050,8 @@ function handleListSubmissions(params) {
       staffName: r.staff_name,
       yearMonth: r.year_month,
       status: r.status,
-      submittedAt: r.submitted_at,
-      reviewedAt: r.reviewed_at,
+      submittedAt: toIsoString_(r.submitted_at),
+      reviewedAt: toIsoString_(r.reviewed_at),
       reviewedBy: r.reviewed_by,
       remarks: r.remarks,
       rejectionReason: r.rejection_reason
@@ -2184,16 +2225,16 @@ function handleGetAttendanceHistory(params) {
   const { staffId, date } = params;
   let filtered = data;
   if (staffId) filtered = filtered.filter(r => r.staff_id === staffId);
-  if (date) filtered = filtered.filter(r => r.date === date);
+  if (date) filtered = filtered.filter(r => formatDateOnly_(r.date) === date);
   return {
     success: true,
     data: filtered.map(r => ({
-      date: r.date,
+      date: formatDateOnly_(r.date),
       staffId: r.staff_id,
       field: r.field,
-      oldValue: r.old_value,
-      newValue: r.new_value,
-      editedAt: r.edited_at,
+      oldValue: r.old_value == null ? '' : String(r.old_value),
+      newValue: r.new_value == null ? '' : String(r.new_value),
+      editedAt: toIsoString_(r.edited_at),
       editedBy: r.edited_by,
       editorRole: r.editor_role,
       reason: r.reason
@@ -2213,6 +2254,8 @@ function getAdminEmails_() {
 function safeSendEmail_(to, subject, body) {
   try {
     if (!to) return;
+    // noReply: true は Google Workspace 契約のドメインでのみ有効。個人アカウントでは無視される。
+    // 失敗時は throw されることがあるので try/catch で握りつぶす。
     MailApp.sendEmail({
       to: to,
       subject: subject,
@@ -2220,7 +2263,12 @@ function safeSendEmail_(to, subject, body) {
       noReply: true
     });
   } catch (e) {
-    Logger.log('Mail send failed to=' + to + ' err=' + e.message);
+    // noReply 等のオプションで失敗するケースのため、フォールバックで再送
+    try {
+      MailApp.sendEmail(to, subject, body);
+    } catch (e2) {
+      Logger.log('Mail send failed to=' + to + ' err=' + e2.message);
+    }
   }
 }
 

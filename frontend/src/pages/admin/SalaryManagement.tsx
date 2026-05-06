@@ -154,24 +154,24 @@ export function SalaryManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="給与計算" />
 
-      <main className="max-w-6xl mx-auto p-4">
+      <main className="max-w-6xl mx-auto p-4 sm:p-6">
         {/* Back Link */}
         <Link
           to="/admin"
-          className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600 mb-4"
+          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
         >
           <ArrowLeft className="w-4 h-4" />
-          ダッシュボードへ戻る
+          <span className="text-sm font-medium">ダッシュボードへ戻る</span>
         </Link>
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
+          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm">{error}</p>
+            <p className="text-sm font-medium">{error}</p>
           </div>
         )}
 
@@ -179,21 +179,23 @@ export function SalaryManagement() {
         <div className="card mb-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             {/* Month Selector */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="前月"
               >
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
+                <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <span className="text-lg font-semibold min-w-[120px] text-center">
+              <span className="text-lg font-semibold min-w-[140px] text-center text-secondary-800">
                 {selectedYear}年{selectedMonth}月分
               </span>
               <button
                 onClick={handleNextMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="次月"
               >
-                <ChevronRight className="w-5 h-5 text-gray-600" />
+                <ChevronRight className="w-5 h-5 text-secondary-600" />
               </button>
             </div>
 
@@ -225,33 +227,33 @@ export function SalaryManagement() {
 
         {/* Tax Input Section */}
         <div className="card mb-6">
-          <h3 className="font-semibold text-gray-800 mb-4">税金入力（所得税・住民税）</h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <h3 className="font-semibold text-secondary-800 mb-2">税金入力（所得税・住民税）</h3>
+          <p className="text-sm text-secondary-500 mb-4">
             所得税と住民税は自動計算されないため、手動で入力してください。
           </p>
 
           {isLoading ? (
             <Loading />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {staffList.map(staff => {
                 const tax = getStaffTax(staff.staffId);
                 return (
                   <div
                     key={staff.staffId}
-                    className="p-4 bg-gray-50 rounded-lg flex items-center justify-between"
+                    className="p-4 bg-secondary-50 border border-secondary-100 rounded-xl flex items-center justify-between gap-3"
                   >
-                    <div>
-                      <p className="font-medium text-gray-800">{staff.name}</p>
-                      <div className="text-sm text-gray-600 mt-1">
+                    <div className="min-w-0">
+                      <p className="font-medium text-secondary-800 truncate">{staff.name}</p>
+                      <div className="text-xs text-secondary-600 mt-1">
                         <span>所得税: {formatCurrency(tax?.incomeTax || 0)}</span>
-                        <span className="mx-2">|</span>
+                        <span className="mx-2 text-secondary-300">|</span>
                         <span>住民税: {formatCurrency(tax?.residentTax || 0)}</span>
                       </div>
                     </div>
                     <button
                       onClick={() => handleOpenTaxModal(staff.staffId)}
-                      className="btn btn-secondary py-1 px-3 text-sm"
+                      className="btn btn-secondary !py-1.5 !px-3 !text-xs !rounded-lg flex-shrink-0"
                     >
                       編集
                     </button>
@@ -264,25 +266,27 @@ export function SalaryManagement() {
 
         {/* Salary Results */}
         {salaryData.length > 0 && (
-          <div className="card overflow-x-auto">
-            <h3 className="font-semibold text-gray-800 mb-4">給与計算結果</h3>
+          <div className="card overflow-x-auto p-0 overflow-hidden">
+            <div className="px-6 py-5">
+              <h3 className="font-semibold text-secondary-800">給与計算結果</h3>
+            </div>
 
             <table className="w-full min-w-[1000px] text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-600">氏名</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">基本給</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">残業手当</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">交通費</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">総支給額</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">社会保険料</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">税金</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">控除計</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">差引支給額</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-600">PDF</th>
+              <thead>
+                <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">氏名</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">基本給</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">残業手当</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">交通費</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">総支給額</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">社会保険料</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">税金</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">控除計</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">差引支給額</th>
+                  <th className="px-3 py-3 text-center text-xs font-semibold tracking-wider">PDF</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-secondary-100">
                 {salaryData.map(record => {
                   const socialInsurance =
                     record.healthInsurance +
@@ -292,20 +296,20 @@ export function SalaryManagement() {
                   const taxes = record.incomeTax + record.residentTax;
 
                   return (
-                    <tr key={record.staffId} className="hover:bg-gray-50">
-                      <td className="px-3 py-3 font-medium text-gray-800">
+                    <tr key={record.staffId} className="hover:bg-primary-50/30 transition-colors">
+                      <td className="px-3 py-3 font-medium text-secondary-800">
                         {record.name}
                       </td>
-                      <td className="px-3 py-3 text-right text-gray-700">
+                      <td className="px-3 py-3 text-right text-secondary-700">
                         {formatCurrency(record.baseSalary)}
                       </td>
-                      <td className="px-3 py-3 text-right text-gray-700">
+                      <td className="px-3 py-3 text-right text-secondary-700">
                         {formatCurrency(record.overtimePay)}
                       </td>
-                      <td className="px-3 py-3 text-right text-gray-700">
+                      <td className="px-3 py-3 text-right text-secondary-700">
                         {formatCurrency(record.transportation)}
                       </td>
-                      <td className="px-3 py-3 text-right font-medium text-gray-800">
+                      <td className="px-3 py-3 text-right font-medium text-secondary-800">
                         {formatCurrency(record.grossPay)}
                       </td>
                       <td className="px-3 py-3 text-right text-red-600">
@@ -323,7 +327,9 @@ export function SalaryManagement() {
                       <td className="px-3 py-3 text-center">
                         <button
                           onClick={() => handleDownloadPdf(record.staffId)}
-                          className="p-1 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded"
+                          className="p-1.5 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                          aria-label="PDFダウンロード"
+                          title="PDFダウンロード"
                         >
                           <FileText className="w-5 h-5" />
                         </button>
@@ -339,9 +345,9 @@ export function SalaryManagement() {
         {/* Empty State */}
         {!isLoading && salaryData.length === 0 && (
           <div className="card text-center py-12">
-            <Calculator className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500 mb-4">給与計算結果がありません</p>
-            <p className="text-sm text-gray-400">
+            <Calculator className="w-16 h-16 text-secondary-300 mx-auto mb-4" />
+            <p className="text-secondary-500 mb-2">給与計算結果がありません</p>
+            <p className="text-sm text-secondary-400">
               「給与計算実行」ボタンをクリックして計算を開始してください
             </p>
           </div>

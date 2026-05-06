@@ -30,6 +30,7 @@ import type {
   ApplicationType,
   MonthlySubmission,
   ShiftDiff,
+  StaffInfo,
 } from '../../types';
 import { Header, Loading, Modal, ApplicationModal, SubmissionStatusBadge, ShiftDiffKindBadge, ApplicationStatusBadge } from '../../components/common';
 import { formatLocalDate } from '../../utils/calculations';
@@ -61,7 +62,7 @@ export function AttendancePage() {
   const [appModalDiff, setAppModalDiff] = useState<ShiftDiff | null>(null);
 
   // Admin mode: staff selector
-  const [staffList, setStaffList] = useState<{ staffId: string; name: string }[]>([]);
+  const [staffList, setStaffList] = useState<StaffInfo[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
 
   const currentStaffId = isAdmin ? selectedStaffId : staff?.staffId;
@@ -78,7 +79,7 @@ export function AttendancePage() {
     if (!isAuthenticated) navigate('/');
   }, [isAuthenticated, navigate]);
 
-  // Load staff list for admin
+  // Load staff list for admin (once on entering admin mode)
   useEffect(() => {
     if (!isAdmin) return;
     (async () => {
@@ -86,12 +87,13 @@ export function AttendancePage() {
       if (res.success && res.data) {
         const active = res.data.filter(s => s.status === 'active');
         setStaffList(active);
-        if (active.length > 0 && !selectedStaffId) {
-          setSelectedStaffId(active[0].staffId);
-        }
+        // Default-select the first staff only if nothing is selected yet.
+        // Use functional update so this effect doesn't depend on selectedStaffId
+        // (otherwise it would refire on every selection change).
+        setSelectedStaffId(prev => prev || (active[0]?.staffId ?? ''));
       }
     })();
-  }, [isAdmin, selectedStaffId]);
+  }, [isAdmin]);
 
   // All days of the month
   const allDays = useMemo(() => {
@@ -206,7 +208,9 @@ export function AttendancePage() {
           row.overtimeMinutes = 0;
         }
       } else if (field === 'breakMinutes') {
-        row.breakMinutes = Number(value);
+        const parsed = Number(value);
+        const safe = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+        row.breakMinutes = safe;
         row.breakMinutesIsManual = true;
         const { workMinutes, overtimeMinutes } = computeWorkAndOvertime(
           row.clockIn, row.clockOut, row.breakMinutes
@@ -235,15 +239,36 @@ export function AttendancePage() {
     });
   }, [rows]);
 
-  // Map applications by date
+  // Map applications by date (sorted by submittedAt desc so newer first)
   const applicationsByDate = useMemo(() => {
     const map: Record<string, Application[]> = {};
     applications.forEach(a => {
       if (!map[a.date]) map[a.date] = [];
       map[a.date].push(a);
     });
+    // Sort each bucket: newest submittedAt first
+    Object.keys(map).forEach(date => {
+      map[date].sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
+    });
     return map;
   }, [applications]);
+
+  /**
+   * Pick the application that "represents" the current state for a given (date, kind).
+   * Priority: approved > pending > rejected; ties broken by most recent submittedAt.
+   * This avoids the stale-rejected bug where a re-submitted (newer) application would
+   * be ignored just because an older rejected entry came first.
+   */
+  const findRelevantApp = (apps: Application[], kind: string): Application | undefined => {
+    const ofKind = apps.filter(a => a.type === kind);
+    if (ofKind.length === 0) return undefined;
+    const priority: Record<string, number> = { approved: 0, pending: 1, rejected: 2 };
+    return [...ofKind].sort((a, b) => {
+      const p = (priority[a.status] ?? 99) - (priority[b.status] ?? 99);
+      if (p !== 0) return p;
+      return a.submittedAt < b.submittedAt ? 1 : -1;
+    })[0];
+  };
 
   // Submission gate calculation
   const submissionGate = useMemo(() => {
@@ -253,7 +278,7 @@ export function AttendancePage() {
       const apps = applicationsByDate[row.date] || [];
       if (diff && diff.hasIssue) {
         diff.kinds.forEach(kind => {
-          const matched = apps.find(a => a.type === kind);
+          const matched = findRelevantApp(apps, kind);
           if (!matched) {
             blockingReasons.push(`${row.date}: ${kind} の申請が必要です`);
           } else if (matched.status === 'pending') {
@@ -628,28 +653,37 @@ export function AttendancePage() {
                         <td className="px-3 py-1.5">
                           <div className="flex flex-wrap items-center gap-1.5">
                             {diff && diff.hasIssue && diff.kinds.map(kind => {
-                              const matched = dateApps.find(a => a.type === kind);
-                              if (matched) {
+                              const matched = findRelevantApp(dateApps, kind);
+                              // No application yet → show 申請 button
+                              // Rejected (latest) → also show re-apply button alongside the badge
+                              if (!matched || matched.status === 'rejected') {
                                 return (
                                   <div key={kind} className="flex items-center gap-1">
-                                    <ShiftDiffKindBadge kind={kind} />
-                                    <ApplicationStatusBadge status={matched.status} />
+                                    {matched && (
+                                      <>
+                                        <ShiftDiffKindBadge kind={kind} />
+                                        <ApplicationStatusBadge status={matched.status} />
+                                      </>
+                                    )}
+                                    <button
+                                      onClick={() => {
+                                        setAppModalDate(row.date);
+                                        setAppModalDiff(diff);
+                                      }}
+                                      disabled={cellDisabled}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
+                                    >
+                                      <Send className="w-3 h-3" />
+                                      {matched ? '再申請' : '申請'}
+                                    </button>
                                   </div>
                                 );
                               }
                               return (
-                                <button
-                                  key={kind}
-                                  onClick={() => {
-                                    setAppModalDate(row.date);
-                                    setAppModalDiff(diff);
-                                  }}
-                                  disabled={cellDisabled}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
-                                >
-                                  <Send className="w-3 h-3" />
-                                  申請
-                                </button>
+                                <div key={kind} className="flex items-center gap-1">
+                                  <ShiftDiffKindBadge kind={kind} />
+                                  <ApplicationStatusBadge status={matched.status} />
+                                </div>
                               );
                             })}
                           </div>

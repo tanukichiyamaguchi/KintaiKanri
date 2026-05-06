@@ -444,22 +444,22 @@ export function StaffManagement() {
 
   // ===== Render =====
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="スタッフ管理" />
 
-      <main className="max-w-4xl mx-auto p-4">
+      <main className="max-w-4xl mx-auto p-4 sm:p-6">
         {/* Back Link */}
         <Link
           to="/admin"
-          className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600 mb-4"
+          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
         >
           <ArrowLeft className="w-4 h-4" />
-          ダッシュボードへ戻る
+          <span className="text-sm font-medium">ダッシュボードへ戻る</span>
         </Link>
 
         {/* Staff Section Header */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-800">スタッフ一覧</h2>
+          <h2 className="text-xl font-semibold text-secondary-800">スタッフ一覧</h2>
           <button
             onClick={() => handleOpenModal()}
             className="btn btn-primary"
@@ -471,9 +471,9 @@ export function StaffManagement() {
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
+          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm">{error}</p>
+            <p className="text-sm font-medium">{error}</p>
           </div>
         )}
 
@@ -483,69 +483,69 @@ export function StaffManagement() {
             <Loading message="読み込み中..." />
           </div>
         ) : staffList.length === 0 ? (
-          <div className="card text-center py-8">
-            <User className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-            <p className="text-gray-500">スタッフが登録されていません</p>
+          <div className="card text-center py-10">
+            <User className="w-12 h-12 text-secondary-300 mx-auto mb-2" />
+            <p className="text-secondary-500">スタッフが登録されていません</p>
           </div>
         ) : (
-          <div className="card overflow-hidden p-0">
+          <div className="card overflow-x-auto p-0 overflow-hidden">
             <table className="w-full">
-              <thead className="bg-gray-50">
+              <thead className="bg-secondary-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
                     氏名
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 hidden sm:table-cell">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden sm:table-cell">
                     メール
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 hidden md:table-cell">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden md:table-cell">
                     月給
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 hidden lg:table-cell">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden lg:table-cell">
                     入社日
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 hidden md:table-cell">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden md:table-cell">
                     ステータス
                   </th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-secondary-600 tracking-wider">
                     操作
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-secondary-100">
                 {staffList.map(staff => (
-                  <tr key={staff.staffId} className="hover:bg-gray-50">
+                  <tr key={staff.staffId} className="hover:bg-primary-50/30 transition-colors">
                     <td className="px-4 py-3">
                       <div>
-                        <p className="font-medium text-gray-800">{staff.name}</p>
-                        <p className="text-xs text-gray-500 sm:hidden flex items-center gap-1 mt-0.5">
+                        <p className="font-medium text-secondary-800">{staff.name}</p>
+                        <p className="text-xs text-secondary-500 sm:hidden flex items-center gap-1 mt-0.5">
                           <Mail className="w-3 h-3" />
                           {staff.email || '-'}
                         </p>
-                        <p className="text-xs text-gray-500 md:hidden mt-0.5">
+                        <p className="text-xs text-secondary-500 md:hidden mt-0.5">
                           {formatCurrency(staff.monthlySalary)}
                         </p>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-700 hidden sm:table-cell">
+                    <td className="px-4 py-3 text-secondary-700 hidden sm:table-cell">
                       <span className="inline-flex items-center gap-1.5 text-sm">
-                        <Mail className="w-3.5 h-3.5 text-gray-400" />
+                        <Mail className="w-3.5 h-3.5 text-secondary-400" />
                         {staff.email || '-'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-700 hidden md:table-cell">
+                    <td className="px-4 py-3 text-secondary-700 hidden md:table-cell">
                       {formatCurrency(staff.monthlySalary)}
                     </td>
-                    <td className="px-4 py-3 text-gray-700 hidden lg:table-cell">
+                    <td className="px-4 py-3 text-secondary-700 hidden lg:table-cell">
                       {staff.hireDate || '-'}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       <span
-                        className={`status-badge ${
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
                           staff.status === 'active'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-600'
-                        } inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium`}
+                            ? 'bg-green-50 text-green-700 border-green-200'
+                            : 'bg-secondary-50 text-secondary-600 border-secondary-200'
+                        }`}
                       >
                         {staff.status === 'active' ? '有効' : '無効'}
                       </span>
@@ -554,7 +554,7 @@ export function StaffManagement() {
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => handleOpenPasswordReset(staff)}
-                          className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                          className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                           aria-label="パスワードリセット"
                           title="パスワードリセット"
                         >
@@ -562,7 +562,7 @@ export function StaffManagement() {
                         </button>
                         <button
                           onClick={() => handleOpenModal(staff)}
-                          className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                          className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                           aria-label="編集"
                           title="編集"
                         >
@@ -570,7 +570,7 @@ export function StaffManagement() {
                         </button>
                         <button
                           onClick={() => handleDelete(staff)}
-                          className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-2 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           aria-label="削除"
                           title="削除"
                         >
@@ -589,8 +589,8 @@ export function StaffManagement() {
         <div className="mt-12">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-gray-700" />
-              <h2 className="text-xl font-semibold text-gray-800">管理者アカウント</h2>
+              <Shield className="w-5 h-5 text-secondary-700" />
+              <h2 className="text-xl font-semibold text-secondary-800">管理者アカウント</h2>
             </div>
             <button
               onClick={() => handleOpenAdminModal()}
@@ -602,9 +602,9 @@ export function StaffManagement() {
           </div>
 
           {adminError && (
-            <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
+            <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm">{adminError}</p>
+              <p className="text-sm font-medium">{adminError}</p>
             </div>
           )}
 
@@ -613,41 +613,41 @@ export function StaffManagement() {
               <Loading message="読み込み中..." />
             </div>
           ) : adminList.length === 0 ? (
-            <div className="card text-center py-8">
-              <Shield className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-              <p className="text-gray-500">管理者が登録されていません</p>
+            <div className="card text-center py-10">
+              <Shield className="w-12 h-12 text-secondary-300 mx-auto mb-2" />
+              <p className="text-secondary-500">管理者が登録されていません</p>
             </div>
           ) : (
-            <div className="card overflow-hidden p-0">
+            <div className="card overflow-x-auto p-0 overflow-hidden">
               <table className="w-full">
-                <thead className="bg-gray-50">
+                <thead className="bg-secondary-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
                       氏名
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 hidden sm:table-cell">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden sm:table-cell">
                       メール
                     </th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-secondary-600 tracking-wider">
                       操作
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-secondary-100">
                   {adminList.map(admin => (
-                    <tr key={admin.adminId} className="hover:bg-gray-50">
+                    <tr key={admin.adminId} className="hover:bg-primary-50/30 transition-colors">
                       <td className="px-4 py-3">
                         <div>
-                          <p className="font-medium text-gray-800">{admin.name}</p>
-                          <p className="text-xs text-gray-500 sm:hidden flex items-center gap-1 mt-0.5">
+                          <p className="font-medium text-secondary-800">{admin.name}</p>
+                          <p className="text-xs text-secondary-500 sm:hidden flex items-center gap-1 mt-0.5">
                             <Mail className="w-3 h-3" />
                             {admin.email}
                           </p>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-700 hidden sm:table-cell">
+                      <td className="px-4 py-3 text-secondary-700 hidden sm:table-cell">
                         <span className="inline-flex items-center gap-1.5 text-sm">
-                          <Mail className="w-3.5 h-3.5 text-gray-400" />
+                          <Mail className="w-3.5 h-3.5 text-secondary-400" />
                           {admin.email}
                         </span>
                       </td>
@@ -655,7 +655,7 @@ export function StaffManagement() {
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => handleOpenAdminModal(admin)}
-                            className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                            className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                             aria-label="編集"
                             title="編集"
                           >
@@ -663,7 +663,7 @@ export function StaffManagement() {
                           </button>
                           <button
                             onClick={() => handleDeleteAdmin(admin)}
-                            className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            className="p-2 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             aria-label="削除"
                             title="削除"
                           >
@@ -683,7 +683,7 @@ export function StaffManagement() {
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-          <div className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2.5 rounded-lg shadow-lg">
+          <div className="flex items-center gap-2 bg-secondary-900 text-white px-4 py-2.5 rounded-xl shadow-lg">
             <CheckCircle2 className="w-4 h-4 text-green-400" />
             <span className="text-sm font-medium">{toast}</span>
           </div>
@@ -714,7 +714,7 @@ export function StaffManagement() {
             <div>
               <label className="label">メールアドレス *</label>
               <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
                 <input
                   type="email"
                   name="email"
@@ -731,7 +731,7 @@ export function StaffManagement() {
               <div>
                 <label className="label">初期パスワード *</label>
                 <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
                   <input
                     type={showStaffPassword ? 'text' : 'password'}
                     name="password"
@@ -744,13 +744,13 @@ export function StaffManagement() {
                   <button
                     type="button"
                     onClick={() => setShowStaffPassword(s => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-primary-600 transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-secondary-400 hover:text-primary-600 transition-colors"
                     aria-label={showStaffPassword ? 'パスワードを隠す' : 'パスワードを表示'}
                   >
                     {showStaffPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">8文字以上を推奨します</p>
+                <p className="text-xs text-secondary-500 mt-1">8文字以上を推奨します</p>
               </div>
             )}
 
@@ -815,7 +815,7 @@ export function StaffManagement() {
             </div>
 
             {editingStaff && (
-              <div className="border-t border-gray-100 pt-4">
+              <div className="border-t border-secondary-100 pt-4">
                 <button
                   type="button"
                   onClick={() => {
@@ -831,9 +831,9 @@ export function StaffManagement() {
             )}
 
             {error && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg">
+              <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm">{error}</p>
+                <p className="text-sm font-medium">{error}</p>
               </div>
             )}
           </div>
@@ -867,12 +867,12 @@ export function StaffManagement() {
         <form onSubmit={handleSubmitPasswordReset}>
           <div className="space-y-4">
             {passwordResetTarget && (
-              <div className="text-sm text-gray-600 bg-gray-50 px-4 py-3 rounded-lg">
+              <div className="text-sm text-secondary-600 bg-secondary-50 border border-secondary-100 px-4 py-3 rounded-xl">
                 <p>
-                  対象スタッフ: <span className="font-medium text-gray-800">{passwordResetTarget.name}</span>
+                  対象スタッフ: <span className="font-medium text-secondary-800">{passwordResetTarget.name}</span>
                 </p>
                 {passwordResetTarget.email && (
-                  <p className="text-xs text-gray-500 mt-0.5">{passwordResetTarget.email}</p>
+                  <p className="text-xs text-secondary-500 mt-0.5">{passwordResetTarget.email}</p>
                 )}
               </div>
             )}
@@ -880,7 +880,7 @@ export function StaffManagement() {
             <div>
               <label className="label">新しいパスワード *</label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
                 <input
                   type={showResetPassword ? 'text' : 'password'}
                   value={resetPassword}
@@ -892,19 +892,19 @@ export function StaffManagement() {
                 <button
                   type="button"
                   onClick={() => setShowResetPassword(s => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-primary-600 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-secondary-400 hover:text-primary-600 transition-colors"
                   aria-label={showResetPassword ? 'パスワードを隠す' : 'パスワードを表示'}
                 >
                   {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">8文字以上を推奨します</p>
+              <p className="text-xs text-secondary-500 mt-1">8文字以上を推奨します</p>
             </div>
 
             {resetError && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg">
+              <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm">{resetError}</p>
+                <p className="text-sm font-medium">{resetError}</p>
               </div>
             )}
           </div>
@@ -952,7 +952,7 @@ export function StaffManagement() {
             <div>
               <label className="label">メールアドレス *</label>
               <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
                 <input
                   type="email"
                   name="email"
@@ -970,7 +970,7 @@ export function StaffManagement() {
                 {editingAdmin ? 'パスワード（変更する場合のみ）' : '初期パスワード *'}
               </label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
                 <input
                   type={showAdminPassword ? 'text' : 'password'}
                   name="password"
@@ -983,19 +983,19 @@ export function StaffManagement() {
                 <button
                   type="button"
                   onClick={() => setShowAdminPassword(s => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-primary-600 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-secondary-400 hover:text-primary-600 transition-colors"
                   aria-label={showAdminPassword ? 'パスワードを隠す' : 'パスワードを表示'}
                 >
                   {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">8文字以上を推奨します</p>
+              <p className="text-xs text-secondary-500 mt-1">8文字以上を推奨します</p>
             </div>
 
             {adminError && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg">
+              <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm">{adminError}</p>
+                <p className="text-sm font-medium">{adminError}</p>
               </div>
             )}
           </div>
