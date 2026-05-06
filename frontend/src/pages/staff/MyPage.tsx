@@ -10,11 +10,12 @@ import {
   AlertCircle,
   CheckCircle,
   ClipboardList,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { attendanceApi, paidLeaveApi, salaryApi } from '../../api';
-import type { AttendanceRecord, PaidLeaveBalance } from '../../types';
-import { Header, Loading, Modal } from '../../components/common';
+import { attendanceApi, paidLeaveApi, salaryApi, submissionApi } from '../../api';
+import type { AttendanceRecord, PaidLeaveBalance, MonthlySubmission } from '../../types';
+import { Header, Loading, Modal, SubmissionStatusBadge } from '../../components/common';
 import { formatMinutesAsTime } from '../../utils/calculations';
 
 type Tab = 'attendance' | 'paidLeave' | 'salary';
@@ -28,6 +29,7 @@ export function MyPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [paidLeave, setPaidLeave] = useState<PaidLeaveBalance | null>(null);
+  const [submission, setSubmission] = useState<MonthlySubmission | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -66,6 +68,27 @@ export function MyPage() {
     }
 
     fetchAttendance();
+  }, [staff, selectedYear, selectedMonth, activeTab]);
+
+  // Fetch submission status for selected month
+  useEffect(() => {
+    if (!staff || activeTab !== 'attendance') return;
+
+    async function fetchSubmission() {
+      const yearMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+      try {
+        const response = await submissionApi.getStatus(staff!.staffId, yearMonth);
+        if (response.success && response.data) {
+          setSubmission(response.data);
+        } else {
+          setSubmission(null);
+        }
+      } catch {
+        setSubmission(null);
+      }
+    }
+
+    fetchSubmission();
   }, [staff, selectedYear, selectedMonth, activeTab]);
 
   // Fetch paid leave data
@@ -168,8 +191,8 @@ export function MyPage() {
       <Header title="マイページ" />
 
       <main className="max-w-2xl mx-auto p-4 sm:p-6">
-        {/* Back Link + Bulk Entry */}
-        <div className="flex items-center justify-between mb-5">
+        {/* Back Link + Attendance + Applications */}
+        <div className="flex items-center justify-between mb-5 gap-2 flex-wrap">
           <Link
             to="/clock"
             className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors"
@@ -177,13 +200,22 @@ export function MyPage() {
             <ArrowLeft className="w-4 h-4" />
             <span className="text-sm font-medium">打刻画面へ戻る</span>
           </Link>
-          <Link
-            to="/bulk-entry"
-            className="btn btn-primary !py-2 !px-4 !text-sm !rounded-xl"
-          >
-            <ClipboardList className="w-4 h-4" />
-            勤怠一括入力
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/attendance"
+              className="btn btn-primary !py-2 !px-4 !text-sm !rounded-xl"
+            >
+              <ClipboardList className="w-4 h-4" />
+              出勤簿
+            </Link>
+            <Link
+              to="/applications"
+              className="btn btn-secondary !py-2 !px-4 !text-sm !rounded-xl"
+            >
+              <FileText className="w-4 h-4" />
+              申請一覧
+            </Link>
+          </div>
         </div>
 
         {/* Message */}
@@ -209,6 +241,29 @@ export function MyPage() {
           <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <p className="text-sm font-medium">{error}</p>
+          </div>
+        )}
+
+        {/* Submission Status (attendance tab only) */}
+        {activeTab === 'attendance' && submission && (
+          <div className="card mb-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-secondary-700">
+                <span className="font-medium">
+                  {selectedYear}年{selectedMonth}月
+                </span>
+                <span className="text-secondary-500">の提出状況: </span>
+              </p>
+              <SubmissionStatusBadge status={submission.status} />
+            </div>
+            {submission.status === 'rejected' && submission.rejectionReason && (
+              <p className="mt-3 text-sm text-red-600">
+                差戻理由: {submission.rejectionReason}
+              </p>
+            )}
+            {(submission.status === 'submitted' || submission.status === 'approved') && (
+              <p className="mt-3 text-xs text-secondary-500">編集ロック中</p>
+            )}
           </div>
         )}
 

@@ -1,8 +1,11 @@
-// Staff related types
+// ============================================================
+// Staff / Admin (auth changed: email + password)
+// ============================================================
+
 export interface Staff {
   staffId: string;
+  email: string;
   name: string;
-  pinCode?: string; // Only used for authentication, hashed
   monthlySalary: number;
   transportation: number;
   hireDate: string;
@@ -13,30 +16,63 @@ export interface Staff {
 
 export interface StaffInfo {
   staffId: string;
+  email: string;
   name: string;
   status: 'active' | 'inactive';
 }
 
-// Clock types
+export interface Admin {
+  adminId: string;
+  email: string;
+  name: string;
+}
+
+export interface AdminInfo {
+  adminId: string;
+  email: string;
+  name: string;
+}
+
+// ============================================================
+// Clock types (no GPS, no break buttons)
+// ============================================================
+
 export type ClockType =
   | 'clock_in'
-  | 'break_start'
-  | 'break_end'
   | 'clock_out'
   | 'early_leave_company'
   | 'early_leave_self';
 
 export type ClockOutType = 'normal' | 'early_company' | 'early_self';
 
-export type WorkStatus = 'not_started' | 'working' | 'on_break' | 'finished';
+export type WorkStatus = 'not_started' | 'working' | 'finished';
 
-// Attendance related types
+export type AttendanceSource = 'punch' | 'manual';
+
 export interface ClockRecord {
   type: ClockType;
   time: string;
-  latitude?: number;
-  longitude?: number;
 }
+
+// ============================================================
+// Edit history (audit trail)
+// ============================================================
+
+export type EditorRole = 'staff' | 'admin';
+
+export interface ClockEditHistory {
+  editedAt: string;
+  editedBy: string;
+  editorRole: EditorRole;
+  field: string; // 'clockIn' | 'clockOut' | 'breakMinutes' | 'remarks'
+  oldValue: string | null;
+  newValue: string | null;
+  reason?: string;
+}
+
+// ============================================================
+// Attendance record (no GPS)
+// ============================================================
 
 export interface AttendanceRecord {
   date: string;
@@ -45,18 +81,15 @@ export interface AttendanceRecord {
   clockIn?: string;
   clockOut?: string;
   clockOutType?: ClockOutType;
-  breakStart?: string;
-  breakEnd?: string;
   breakMinutes: number;
+  breakMinutesIsManual?: boolean;
   workMinutes: number;
   lateMinutes: number;
   earlyLeaveMinutes: number;
-  clockInLat?: number;
-  clockInLng?: number;
-  clockOutLat?: number;
-  clockOutLng?: number;
   isHoliday: boolean;
   remarks?: string;
+  source?: AttendanceSource;
+  editHistory?: ClockEditHistory[];
 }
 
 export interface TodayAttendance {
@@ -65,7 +98,103 @@ export interface TodayAttendance {
   currentRecord?: AttendanceRecord;
 }
 
-// Paid leave types
+// ============================================================
+// Shift (read-only from spreadsheet)
+// ============================================================
+
+export interface Shift {
+  staffId: string;
+  staffName: string;
+  date: string;
+  startTime?: string; // HH:MM
+  endTime?: string;   // HH:MM
+  isOff: boolean;
+  isTentative: boolean;
+  parseError?: string;
+  rawCell?: string;
+}
+
+// ============================================================
+// Shift diff (actual vs scheduled)
+// ============================================================
+
+export type ShiftDiffKind =
+  | 'late_arrival'
+  | 'early_leave'
+  | 'overtime'
+  | 'absence'
+  | 'extra_work'
+  | 'shift_change'
+  | 'break_deviation';
+
+export interface ShiftDiffDetails {
+  plannedStart?: string;
+  plannedEnd?: string;
+  actualStart?: string;
+  actualEnd?: string;
+  overtimeMinutes?: number;
+  plannedBreak?: number;
+  actualBreak?: number;
+}
+
+export interface ShiftDiff {
+  date: string;
+  kinds: ShiftDiffKind[];
+  details: ShiftDiffDetails;
+  hasIssue: boolean;
+}
+
+// ============================================================
+// Application (申請ワークフロー)
+// ============================================================
+
+export type ApplicationType = ShiftDiffKind;
+export type ApplicationStatus = 'pending' | 'approved' | 'rejected';
+
+export interface Application {
+  id: string;
+  staffId: string;
+  staffName: string;
+  date: string;
+  type: ApplicationType;
+  reason: string;
+  details: ShiftDiffDetails;
+  status: ApplicationStatus;
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string;
+}
+
+// ============================================================
+// Monthly submission
+// ============================================================
+
+export type SubmissionStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
+
+export interface MonthlySubmission {
+  staffId: string;
+  staffName: string;
+  yearMonth: string; // 'YYYY-MM'
+  status: SubmissionStatus;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  remarks?: string;
+  rejectionReason?: string;
+}
+
+export interface SubmissionGateResult {
+  canSubmit: boolean;
+  blockingReasons: string[];     // 「3/15に未申請の遅刻があります」等
+  unappliedDiffs: ShiftDiff[];   // 申請が必要なのに未申請の差異
+  pendingApplicationIds: string[]; // 承認待ち申請
+}
+
+// ============================================================
+// Paid leave (unchanged)
+// ============================================================
+
 export type PaidLeaveStatus = 'pending' | 'approved' | 'rejected';
 
 export interface PaidLeaveRequest {
@@ -84,7 +213,10 @@ export interface PaidLeaveBalance {
   history: PaidLeaveRequest[];
 }
 
-// Salary related types
+// ============================================================
+// Salary (unchanged)
+// ============================================================
+
 export interface SalaryRecord {
   staffId: string;
   name: string;
@@ -111,7 +243,6 @@ export interface SalaryRecord {
   netPay: number;
 }
 
-// Incentive types
 export interface Incentive {
   staffId: string;
   name: string;
@@ -120,7 +251,6 @@ export interface Incentive {
   remarks?: string;
 }
 
-// Insurance rates
 export interface InsuranceRates {
   effectiveDate: string;
   healthInsuranceRate: number;
@@ -131,7 +261,6 @@ export interface InsuranceRates {
   updatedBy?: string;
 }
 
-// Standard remuneration
 export interface StandardRemuneration {
   grade: number;
   monthlyMin: number;
@@ -139,7 +268,6 @@ export interface StandardRemuneration {
   standardMonthly: number;
 }
 
-// Tax manual input
 export interface TaxManual {
   staffId: string;
   name: string;
@@ -148,7 +276,10 @@ export interface TaxManual {
   updatedAt?: string;
 }
 
-// API Response types
+// ============================================================
+// API responses
+// ============================================================
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -158,40 +289,38 @@ export interface ApiResponse<T> {
 
 export interface AuthResponse {
   success: boolean;
+  isAdmin?: boolean;
   staffInfo?: StaffInfo;
+  adminInfo?: AdminInfo;
   token?: string;
   error?: string;
 }
 
-// Overtime request
-export type OvertimeRequestStatus = 'pending' | 'approved' | 'rejected';
+// ============================================================
+// Bulk attendance row (used in /attendance edit table)
+// ============================================================
 
-export interface OvertimeRequest {
-  id: string;
-  staffId: string;
-  name: string;
-  date: string;
-  overtimeMinutes: number;
-  reason: string;
-  status: OvertimeRequestStatus;
-  requestDate: string;
-  approvedDate?: string;
-}
-
-// Bulk attendance entry (one row in the spreadsheet)
 export interface BulkAttendanceRow {
   date: string;
-  clockIn: string;       // HH:MM format
-  clockOut: string;       // HH:MM format
-  breakMinutes: number;   // editable auto-calculated break
-  workMinutes: number;    // auto-calculated
+  clockIn: string;
+  clockOut: string;
+  breakMinutes: number;
+  breakMinutesIsManual?: boolean;
+  workMinutes: number;
   isHoliday: boolean;
   overtimeMinutes: number;
-  overtimeReason: string; // required if overtimeMinutes > 0
+  overtimeReason: string;
   remarks: string;
+  // Display-only: attached shift / diff
+  shift?: Shift;
+  diff?: ShiftDiff;
+  applications?: Application[];
 }
 
-// Work summary for calculations
+// ============================================================
+// Work summary
+// ============================================================
+
 export interface WorkSummary {
   totalWorkMinutes: number;
   overtimeMinutes: number;

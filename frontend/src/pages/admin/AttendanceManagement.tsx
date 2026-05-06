@@ -11,14 +11,19 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { staffApi, attendanceApi } from '../../api';
-import type { StaffInfo, AttendanceRecord } from '../../types';
+import { staffApi, attendanceApi, submissionApi } from '../../api';
+import type {
+  StaffInfo,
+  AttendanceRecord,
+  MonthlySubmission,
+  SubmissionStatus,
+} from '../../types';
 import { Header, Loading } from '../../components/common';
 import { formatMinutesAsTime, formatLocalDate } from '../../utils/calculations';
 
 export function AttendanceManagement() {
   const navigate = useNavigate();
-  const { isAdmin, isAuthenticated } = useAuth();
+  const { isAdmin, isAuthenticated, admin } = useAuth();
 
   const [staffList, setStaffList] = useState<StaffInfo[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string>('');
@@ -29,6 +34,7 @@ export function AttendanceManagement() {
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<AttendanceRecord>>({});
   const [error, setError] = useState<string | null>(null);
+  const [submission, setSubmission] = useState<MonthlySubmission | null>(null);
 
   // Redirect if not admin
   useEffect(() => {
@@ -87,6 +93,30 @@ export function AttendanceManagement() {
     fetchAttendance();
   }, [selectedStaff, selectedYear, selectedMonth]);
 
+  // Fetch monthly submission status
+  useEffect(() => {
+    if (!selectedStaff) {
+      setSubmission(null);
+      return;
+    }
+
+    async function fetchSubmission() {
+      try {
+        const yearMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+        const response = await submissionApi.getStatus(selectedStaff, yearMonth);
+        if (response.success && response.data) {
+          setSubmission(response.data);
+        } else {
+          setSubmission(null);
+        }
+      } catch {
+        setSubmission(null);
+      }
+    }
+
+    fetchSubmission();
+  }, [selectedStaff, selectedYear, selectedMonth]);
+
   const handlePreviousMonth = () => {
     if (selectedMonth === 1) {
       setSelectedYear(selectedYear - 1);
@@ -110,8 +140,7 @@ export function AttendanceManagement() {
     setEditData({
       clockIn: record.clockIn,
       clockOut: record.clockOut,
-      breakStart: record.breakStart,
-      breakEnd: record.breakEnd,
+      breakMinutes: record.breakMinutes,
       remarks: record.remarks,
     });
   };
@@ -122,15 +151,68 @@ export function AttendanceManagement() {
   };
 
   const handleSaveEdit = async (date: string) => {
-    // In a real implementation, this would call the API
-    // For now, just update the local state
-    setAttendance(prev =>
-      prev.map(record =>
-        record.date === date ? { ...record, ...editData } : record
-      )
-    );
-    setEditingRow(null);
-    setEditData({});
+    const original = attendance.find(r => r.date === date);
+    const fields: Array<{ field: string; value: string | number | undefined }> = [
+      { field: 'clockIn', value: editData.clockIn },
+      { field: 'clockOut', value: editData.clockOut },
+      { field: 'breakMinutes', value: editData.breakMinutes },
+      { field: 'remarks', value: editData.remarks },
+    ];
+
+    try {
+      for (const { field, value } of fields) {
+        const originalValue = original ? (original as unknown as Record<string, unknown>)[field] : undefined;
+        if (value === undefined || value === originalValue) continue;
+        await attendanceApi.update(date, selectedStaff, field, value as string | number, {
+          editorRole: 'admin',
+          editorId: admin?.adminId,
+        });
+      }
+
+      setAttendance(prev => {
+        const idx = prev.findIndex(r => r.date === date);
+        if (idx === -1) {
+          return [
+            ...prev,
+            {
+              date,
+              staffId: selectedStaff,
+              name: '',
+              breakMinutes: 0,
+              workMinutes: 0,
+              lateMinutes: 0,
+              earlyLeaveMinutes: 0,
+              isHoliday: false,
+              ...editData,
+            } as AttendanceRecord,
+          ];
+        }
+        return prev.map(record =>
+          record.date === date ? { ...record, ...editData } : record
+        );
+      });
+      setEditingRow(null);
+      setEditData({});
+    } catch {
+      setError('保存に失敗しました');
+    }
+  };
+
+  const submissionStatusInfo = (
+    status?: SubmissionStatus
+  ): { label: string; cls: string } | null => {
+    switch (status) {
+      case 'submitted':
+        return { label: '提出済み（承認待ち）', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+      case 'approved':
+        return { label: '承認済み', cls: 'bg-green-50 text-green-700 border-green-200' };
+      case 'rejected':
+        return { label: '差戻し', cls: 'bg-red-50 text-red-700 border-red-200' };
+      case 'draft':
+        return { label: '未提出', cls: 'bg-secondary-50 text-secondary-600 border-secondary-200' };
+      default:
+        return null;
+    }
   };
 
   const formatDate = (dateStr: string): string => {
@@ -186,11 +268,11 @@ export function AttendanceManagement() {
             <span className="text-sm font-medium">ダッシュボードへ戻る</span>
           </Link>
           <Link
-            to="/admin/bulk-entry"
+            to="/admin/attendance/edit"
             className="btn btn-primary !py-2 !px-4 !text-sm !rounded-xl"
           >
             <ClipboardList className="w-4 h-4" />
-            一括入力モード
+            出勤簿編集
           </Link>
         </div>
 
@@ -239,6 +321,19 @@ export function AttendanceManagement() {
                 <ChevronRight className="w-5 h-5 text-gray-600" />
               </button>
             </div>
+
+            {/* Submission Status */}
+            {(() => {
+              const info = submissionStatusInfo(submission?.status);
+              if (!info) return null;
+              return (
+                <span
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${info.cls}`}
+                >
+                  {info.label}
+                </span>
+              );
+            })()}
           </div>
         </div>
 
@@ -253,9 +348,7 @@ export function AttendanceManagement() {
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">日付</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">出勤</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">退勤</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩開始</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩終了</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩(分)</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">実働</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">備考</th>
                   <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">操作</th>
@@ -322,35 +415,18 @@ export function AttendanceManagement() {
                           </td>
                           <td className="px-3 py-2">
                             <input
-                              type="time"
-                              value={extractTime(editData.breakStart)}
+                              type="number"
+                              min={0}
+                              value={editData.breakMinutes ?? 0}
                               onChange={e =>
                                 setEditData(prev => ({
                                   ...prev,
-                                  breakStart: e.target.value
-                                    ? `${date}T${e.target.value}:00`
-                                    : undefined,
+                                  breakMinutes: Number(e.target.value) || 0,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-24"
+                              className="input py-1 px-2 text-sm w-20"
                             />
                           </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="time"
-                              value={extractTime(editData.breakEnd)}
-                              onChange={e =>
-                                setEditData(prev => ({
-                                  ...prev,
-                                  breakEnd: e.target.value
-                                    ? `${date}T${e.target.value}:00`
-                                    : undefined,
-                                }))
-                              }
-                              className="input py-1 px-2 text-sm w-24"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">-</td>
                           <td className="px-3 py-2 text-sm text-gray-700">-</td>
                           <td className="px-3 py-2">
                             <input
@@ -400,12 +476,6 @@ export function AttendanceManagement() {
                                 早退
                               </span>
                             )}
-                          </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">
-                            {formatTime(record?.breakStart)}
-                          </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">
-                            {formatTime(record?.breakEnd)}
                           </td>
                           <td className="px-3 py-2 text-sm text-gray-700">
                             {record?.breakMinutes

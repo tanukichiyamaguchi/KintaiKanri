@@ -2,18 +2,25 @@ import type {
   ApiResponse,
   AuthResponse,
   StaffInfo,
+  AdminInfo,
   Staff,
   TodayAttendance,
   AttendanceRecord,
   ClockType,
+  ClockEditHistory,
   PaidLeaveRequest,
   PaidLeaveBalance,
   SalaryRecord,
   InsuranceRates,
   Incentive,
   TaxManual,
-  OvertimeRequest,
   BulkAttendanceRow,
+  Shift,
+  Application,
+  ApplicationType,
+  ApplicationStatus,
+  MonthlySubmission,
+  SubmissionStatus,
 } from '../types';
 
 // Base URL for the Google Apps Script Web App
@@ -21,9 +28,6 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 // Demo mode flag - when true, uses mock data instead of real API
 const DEMO_MODE = !API_BASE_URL || import.meta.env.VITE_DEMO_MODE === 'true';
-
-// Admin PIN (in production, this should be handled by the backend)
-const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || '9999';
 
 // --- Helper: format date as YYYY-MM-DD in local timezone ---
 function fmtDate(d: Date): string {
@@ -36,14 +40,15 @@ function fmtTime(h: number, m: number): string {
 
 // --- Mock data for demo mode ---
 const mockStaff: StaffInfo[] = [
-  { staffId: 'S001', name: '佐藤 花子', status: 'active' },
-  { staffId: 'S002', name: '田中 太郎', status: 'active' },
-  { staffId: 'S003', name: '山田 次郎', status: 'active' },
+  { staffId: 'S001', email: 'sato@example.com', name: '佐藤 花子', status: 'active' },
+  { staffId: 'S002', email: 'tanaka@example.com', name: '田中 太郎', status: 'active' },
+  { staffId: 'S003', email: 'yamada@example.com', name: '山田 次郎', status: 'active' },
 ];
 
 const mockStaffDetails: Staff[] = [
   {
     staffId: 'S001',
+    email: 'sato@example.com',
     name: '佐藤 花子',
     monthlySalary: 250000,
     transportation: 15000,
@@ -54,6 +59,7 @@ const mockStaffDetails: Staff[] = [
   },
   {
     staffId: 'S002',
+    email: 'tanaka@example.com',
     name: '田中 太郎',
     monthlySalary: 230000,
     transportation: 12000,
@@ -64,6 +70,7 @@ const mockStaffDetails: Staff[] = [
   },
   {
     staffId: 'S003',
+    email: 'yamada@example.com',
     name: '山田 次郎',
     monthlySalary: 220000,
     transportation: 10000,
@@ -74,12 +81,21 @@ const mockStaffDetails: Staff[] = [
   },
 ];
 
+const mockAdmin: AdminInfo = {
+  adminId: 'A001',
+  email: 'admin@example.com',
+  name: 'システム管理者',
+};
+
 // In-memory storage for demo mode
 const mockTodayRecords: Record<string, TodayAttendance> = {};
 const mockPaidLeaveRequests: PaidLeaveRequest[] = [];
 const mockTaxManual: Record<string, TaxManual[]> = {};
 const mockIncentives: Record<string, Incentive[]> = {};
-const mockOvertimeRequests: OvertimeRequest[] = [];
+const mockApplications: Application[] = [];
+const mockSubmissions: MonthlySubmission[] = [];
+const mockShifts: Record<string, Shift[]> = {};
+const mockEditHistory: ClockEditHistory[] = [];
 // Key: "staffId-YYYY-MM", stores bulk-entered attendance
 const mockBulkAttendance: Record<string, AttendanceRecord[]> = {};
 
@@ -255,29 +271,39 @@ async function handleDemoRequest<T>(
 ): Promise<ApiResponse<T>> {
   await new Promise(resolve => setTimeout(resolve, 300));
 
-  // --- Auth ---
-  if (action === 'auth') {
-    const staffId = body?.staffId as string;
-    const pinCode = body?.pinCode as string;
-    const staff = mockStaff.find(s => s.staffId === staffId);
-    if (staff && pinCode?.length === 4) {
-      return {
-        success: true,
-        data: { success: true, staffInfo: staff, token: 'demo-token-' + Date.now() } as unknown as T,
-      };
+  // --- Auth (email + password) ---
+  if (action === 'auth' || action === 'admin-auth') {
+    const email = String(body?.email || '').trim().toLowerCase();
+    const password = String(body?.password || '');
+    if (!email || !password) {
+      return { success: false, error: 'メールアドレスとパスワードを入力してください' };
     }
-    return { success: false, error: 'PINコードが正しくありません' };
-  }
 
-  if (action === 'admin-auth') {
-    const pinCode = body?.pinCode as string;
-    if (pinCode === ADMIN_PIN) {
+    // Demo: admin email / staff email
+    if (email === mockAdmin.email && password.length >= 4) {
       return {
         success: true,
-        data: { success: true, token: 'admin-token-' + Date.now() } as unknown as T,
+        data: {
+          success: true,
+          isAdmin: true,
+          adminInfo: mockAdmin,
+          token: 'admin-token-' + Date.now()
+        } as unknown as T,
       };
     }
-    return { success: false, error: '管理者PINが正しくありません' };
+    const staff = mockStaff.find(s => s.email === email);
+    if (staff && password.length >= 4) {
+      return {
+        success: true,
+        data: {
+          success: true,
+          isAdmin: false,
+          staffInfo: staff,
+          token: 'staff-token-' + Date.now()
+        } as unknown as T,
+      };
+    }
+    return { success: false, error: 'メールアドレスまたはパスワードが正しくありません' };
   }
 
   // --- Staff ---
@@ -332,7 +358,7 @@ async function handleDemoRequest<T>(
     return { success: false, error: 'スタッフが見つかりません' };
   }
 
-  // --- Clock ---
+  // --- Clock (no GPS, no break buttons) ---
   if (action === 'clock') {
     const staffId = body?.staffId as string;
     const type = body?.type as ClockType;
@@ -344,17 +370,10 @@ async function handleDemoRequest<T>(
     }
 
     const record = mockTodayRecords[staffId];
-    record.records.push({
-      type,
-      time: timestamp,
-      latitude: body?.latitude as number,
-      longitude: body?.longitude as number,
-    });
+    record.records.push({ type, time: timestamp });
 
     switch (type) {
       case 'clock_in': record.status = 'working'; break;
-      case 'break_start': record.status = 'on_break'; break;
-      case 'break_end': record.status = 'working'; break;
       case 'clock_out':
       case 'early_leave_company':
       case 'early_leave_self':
@@ -534,27 +553,6 @@ async function handleDemoRequest<T>(
         remarks: row.remarks || undefined,
       }));
     mockBulkAttendance[key] = records;
-
-    // Create overtime requests for rows with overtime
-    const overtimeRows = rows.filter(r => r.overtimeMinutes > 0 && r.overtimeReason);
-    for (const row of overtimeRows) {
-      const existing = mockOvertimeRequests.find(
-        o => o.staffId === staffId && o.date === row.date
-      );
-      if (!existing) {
-        mockOvertimeRequests.push({
-          id: 'OT' + Date.now() + Math.random().toString(36).slice(2, 6),
-          staffId,
-          name: staff.name,
-          date: row.date,
-          overtimeMinutes: row.overtimeMinutes,
-          reason: row.overtimeReason,
-          status: 'pending',
-          requestDate: fmtDate(new Date()),
-        });
-      }
-    }
-
     return { success: true, data: { saved: records.length } as unknown as T };
   }
 
@@ -572,40 +570,198 @@ async function handleDemoRequest<T>(
     return { success: true, data: records as unknown as T };
   }
 
-  // --- Overtime Requests ---
-  if (action === 'overtime/list') {
+  // --- Applications ---
+  if (action === 'applications/create') {
+    const id = 'AP' + Date.now() + Math.random().toString(36).slice(2, 6);
+    const staffId = String(body?.staffId || '');
+    const staff = mockStaff.find(s => s.staffId === staffId);
+    const app: Application = {
+      id,
+      staffId,
+      staffName: staff?.name || '',
+      date: String(body?.date || ''),
+      type: body?.type as ApplicationType,
+      reason: String(body?.reason || ''),
+      details: (body?.details as Application['details']) || {},
+      status: 'pending',
+      submittedAt: new Date().toISOString(),
+    };
+    mockApplications.push(app);
+    return { success: true, data: { id } as unknown as T };
+  }
+
+  if (action === 'applications/list') {
     const staffId = queryParams?.staffId;
-    const filtered = staffId
-      ? mockOvertimeRequests.filter(r => r.staffId === staffId)
-      : mockOvertimeRequests;
+    const status = queryParams?.status as ApplicationStatus | undefined;
+    const yearMonth = queryParams?.yearMonth;
+    let filtered: Application[] = mockApplications;
+    if (staffId) filtered = filtered.filter(r => r.staffId === staffId);
+    if (status) filtered = filtered.filter(r => r.status === status);
+    if (yearMonth) filtered = filtered.filter(r => r.date.startsWith(yearMonth));
     return { success: true, data: filtered as unknown as T };
   }
 
-  if (action === 'overtime/update') {
-    const requestId = body?.requestId as string;
-    const status = body?.status as 'approved' | 'rejected';
-    const req = mockOvertimeRequests.find(r => r.id === requestId);
-    if (req) {
-      req.status = status;
-      if (status === 'approved') req.approvedDate = new Date().toISOString();
+  if (action === 'applications/approve') {
+    const id = String(body?.id || '');
+    const app = mockApplications.find(a => a.id === id);
+    if (app) {
+      app.status = 'approved';
+      app.reviewedAt = new Date().toISOString();
+      app.reviewedBy = String(body?.reviewedBy || '');
     }
     return { success: true, data: undefined as unknown as T };
+  }
+
+  if (action === 'applications/reject') {
+    const id = String(body?.id || '');
+    const app = mockApplications.find(a => a.id === id);
+    if (app) {
+      app.status = 'rejected';
+      app.reviewedAt = new Date().toISOString();
+      app.reviewedBy = String(body?.reviewedBy || '');
+      app.rejectionReason = String(body?.rejectionReason || '');
+    }
+    return { success: true, data: undefined as unknown as T };
+  }
+
+  // --- Submissions ---
+  if (action === 'submissions/submit') {
+    const staffId = String(body?.staffId || '');
+    const yearMonth = String(body?.yearMonth || '');
+    const remarks = body?.remarks as string | undefined;
+    const blocked = mockApplications
+      .filter(a => a.staffId === staffId && a.date.startsWith(yearMonth))
+      .filter(a => a.status !== 'approved');
+    if (blocked.length > 0) {
+      return {
+        success: false,
+        error: '未承認の申請があります（' + blocked.length + '件）。承認後に再度提出してください。'
+      };
+    }
+    const staff = mockStaff.find(s => s.staffId === staffId);
+    const existing = mockSubmissions.find(s => s.staffId === staffId && s.yearMonth === yearMonth);
+    const now = new Date().toISOString();
+    if (existing) {
+      existing.status = 'submitted';
+      existing.submittedAt = now;
+      existing.remarks = remarks;
+      existing.rejectionReason = undefined;
+    } else {
+      mockSubmissions.push({
+        staffId,
+        staffName: staff?.name || '',
+        yearMonth,
+        status: 'submitted',
+        submittedAt: now,
+        remarks,
+      });
+    }
+    return { success: true, data: undefined as unknown as T };
+  }
+
+  if (action === 'submissions/status') {
+    const staffId = queryParams?.staffId || '';
+    const yearMonth = queryParams?.yearMonth || '';
+    const sub = mockSubmissions.find(s => s.staffId === staffId && s.yearMonth === yearMonth);
+    return {
+      success: true,
+      data: (sub || { staffId, staffName: '', yearMonth, status: 'draft' as SubmissionStatus }) as unknown as T,
+    };
+  }
+
+  if (action === 'submissions/list') {
+    const yearMonth = queryParams?.yearMonth;
+    const status = queryParams?.status as SubmissionStatus | undefined;
+    let filtered = mockSubmissions;
+    if (yearMonth) filtered = filtered.filter(s => s.yearMonth === yearMonth);
+    if (status) filtered = filtered.filter(s => s.status === status);
+    return { success: true, data: filtered as unknown as T };
+  }
+
+  if (action === 'submissions/approve') {
+    const staffId = String(body?.staffId || '');
+    const yearMonth = String(body?.yearMonth || '');
+    const sub = mockSubmissions.find(s => s.staffId === staffId && s.yearMonth === yearMonth);
+    if (sub) {
+      sub.status = 'approved';
+      sub.reviewedAt = new Date().toISOString();
+      sub.reviewedBy = String(body?.reviewedBy || '');
+    }
+    return { success: true, data: undefined as unknown as T };
+  }
+
+  if (action === 'submissions/reject') {
+    const staffId = String(body?.staffId || '');
+    const yearMonth = String(body?.yearMonth || '');
+    const sub = mockSubmissions.find(s => s.staffId === staffId && s.yearMonth === yearMonth);
+    if (sub) {
+      sub.status = 'rejected';
+      sub.reviewedAt = new Date().toISOString();
+      sub.reviewedBy = String(body?.reviewedBy || '');
+      sub.rejectionReason = String(body?.rejectionReason || '');
+    }
+    return { success: true, data: undefined as unknown as T };
+  }
+
+  // --- Shifts ---
+  if (action === 'shifts/staff-month' || action === 'shifts/monthly') {
+    const staffId = queryParams?.staffId;
+    const year = queryParams?.year;
+    const month = queryParams?.month;
+    const key = `${year}-${month}`;
+    const all = mockShifts[key] || [];
+    const filtered = staffId ? all.filter(s => s.staffId === staffId) : all;
+    return {
+      success: true,
+      data: { exists: !!mockShifts[key], shifts: filtered } as unknown as T,
+    };
+  }
+
+  // --- Password ---
+  if (action === 'password/change' || action === 'password/reset') {
+    return { success: true, data: undefined as unknown as T };
+  }
+
+  // --- Admins (manager UI) ---
+  if (action === 'admins' && !body) {
+    return { success: true, data: [mockAdmin] as unknown as T };
+  }
+  if (action === 'admins' && body) {
+    const newAdmin = {
+      adminId: 'A' + String(Date.now()).slice(-6),
+      email: String(body.email || '').toLowerCase(),
+      name: String(body.name || ''),
+    };
+    return { success: true, data: { adminId: newAdmin.adminId } as unknown as T };
+  }
+  if (action === 'admins/update' || action === 'admins/delete') {
+    return { success: true, data: undefined as unknown as T };
+  }
+
+  // --- Attendance history ---
+  if (action === 'attendance/history') {
+    const staffId = queryParams?.staffId;
+    const date = queryParams?.date;
+    let filtered = mockEditHistory;
+    if (staffId) filtered = filtered.filter(h => h.editedBy === staffId);
+    if (date) {
+      const filterDate = date;
+      filtered = filtered.filter(h => h.editedAt.startsWith(filterDate));
+    }
+    return { success: true, data: filtered as unknown as T };
   }
 
   return { success: false, error: 'Unknown endpoint: ' + action };
 }
 
-// Authentication API
+// Authentication API (email + password)
 export const authApi = {
-  login: (staffId: string, pinCode: string): Promise<ApiResponse<AuthResponse>> =>
-    apiRequest('auth', { staffId, pinCode }),
+  login: (email: string, password: string): Promise<ApiResponse<AuthResponse>> =>
+    apiRequest('auth', { email, password }),
 
-  adminLogin: (pinCode: string): Promise<ApiResponse<{ success: boolean; token: string }>> =>
-    apiRequest('admin-auth', { pinCode }),
-
-  verifyAdminPin: (pinCode: string): boolean => {
-    return pinCode === ADMIN_PIN;
-  },
+  // 後方互換: 統合ログインに収束しているため login を呼ぶだけ
+  adminLogin: (email: string, password: string): Promise<ApiResponse<AuthResponse>> =>
+    apiRequest('auth', { email, password }),
 };
 
 // Staff API
@@ -626,17 +782,15 @@ export const staffApi = {
     apiRequest('staff/delete', { staffId }),
 };
 
-// Attendance API
+// Attendance API (no GPS)
 export const attendanceApi = {
   clock: (
     staffId: string,
-    type: ClockType,
-    latitude?: number,
-    longitude?: number
+    type: ClockType
   ): Promise<ApiResponse<{ success: boolean }>> => {
     const now = new Date();
     const timestamp = `${fmtDate(now)}T${fmtTime(now.getHours(), now.getMinutes())}:${String(now.getSeconds()).padStart(2, '0')}`;
-    return apiRequest('clock', { staffId, type, latitude, longitude, timestamp });
+    return apiRequest('clock', { staffId, type, timestamp });
   },
 
   getToday: (staffId: string): Promise<ApiResponse<TodayAttendance>> =>
@@ -657,9 +811,21 @@ export const attendanceApi = {
     date: string,
     staffId: string,
     field: string,
-    value: string | number
+    value: string | number,
+    options?: { reason?: string; editorId?: string; editorRole?: 'staff' | 'admin' }
   ): Promise<ApiResponse<void>> =>
-    apiRequest('attendance/update', { date, staffId, field, value }),
+    apiRequest('attendance/update', {
+      date, staffId, field, value,
+      reason: options?.reason,
+      editorId: options?.editorId,
+      editorRole: options?.editorRole || 'staff',
+    }),
+
+  getHistory: (params: { staffId?: string; date?: string }): Promise<ApiResponse<ClockEditHistory[]>> =>
+    apiRequest('attendance/history', undefined, {
+      ...(params.staffId ? { staffId: params.staffId } : {}),
+      ...(params.date ? { date: params.date } : {}),
+    }),
 };
 
 // Paid leave API
@@ -763,18 +929,6 @@ export const bulkAttendanceApi = {
     }),
 };
 
-// Overtime Request API
-export const overtimeApi = {
-  getList: (staffId?: string): Promise<ApiResponse<OvertimeRequest[]>> =>
-    apiRequest('overtime/list', undefined, staffId ? { staffId } : undefined),
-
-  updateStatus: (
-    requestId: string,
-    status: 'approved' | 'rejected'
-  ): Promise<ApiResponse<void>> =>
-    apiRequest('overtime/update', { requestId, status }),
-};
-
 // Insurance rates API
 export const insuranceApi = {
   get: (): Promise<ApiResponse<{ rates: InsuranceRates; history: InsuranceRates[] }>> =>
@@ -784,15 +938,126 @@ export const insuranceApi = {
     apiRequest('insurance-rates', rates as unknown as Record<string, unknown>),
 };
 
+// Applications API
+export const applicationApi = {
+  create: (params: {
+    staffId: string;
+    date: string;
+    type: ApplicationType;
+    reason: string;
+    details?: Application['details'];
+  }): Promise<ApiResponse<{ id: string }>> =>
+    apiRequest('applications/create', params as unknown as Record<string, unknown>),
+
+  list: (params?: {
+    staffId?: string;
+    status?: ApplicationStatus;
+    yearMonth?: string;
+  }): Promise<ApiResponse<Application[]>> =>
+    apiRequest('applications/list', undefined, {
+      ...(params?.staffId ? { staffId: params.staffId } : {}),
+      ...(params?.status ? { status: params.status } : {}),
+      ...(params?.yearMonth ? { yearMonth: params.yearMonth } : {}),
+    }),
+
+  approve: (id: string, reviewedBy: string): Promise<ApiResponse<void>> =>
+    apiRequest('applications/approve', { id, reviewedBy }),
+
+  reject: (id: string, reviewedBy: string, rejectionReason: string): Promise<ApiResponse<void>> =>
+    apiRequest('applications/reject', { id, reviewedBy, rejectionReason }),
+};
+
+// Monthly Submission API
+export const submissionApi = {
+  submit: (staffId: string, yearMonth: string, remarks?: string): Promise<ApiResponse<void>> =>
+    apiRequest('submissions/submit', { staffId, yearMonth, remarks }),
+
+  getStatus: (staffId: string, yearMonth: string): Promise<ApiResponse<MonthlySubmission>> =>
+    apiRequest('submissions/status', undefined, { staffId, yearMonth }),
+
+  list: (params?: {
+    yearMonth?: string;
+    status?: SubmissionStatus;
+  }): Promise<ApiResponse<MonthlySubmission[]>> =>
+    apiRequest('submissions/list', undefined, {
+      ...(params?.yearMonth ? { yearMonth: params.yearMonth } : {}),
+      ...(params?.status ? { status: params.status } : {}),
+    }),
+
+  approve: (staffId: string, yearMonth: string, reviewedBy: string): Promise<ApiResponse<void>> =>
+    apiRequest('submissions/approve', { staffId, yearMonth, reviewedBy }),
+
+  reject: (
+    staffId: string,
+    yearMonth: string,
+    reviewedBy: string,
+    rejectionReason: string
+  ): Promise<ApiResponse<void>> =>
+    apiRequest('submissions/reject', { staffId, yearMonth, reviewedBy, rejectionReason }),
+};
+
+// Shifts API
+export const shiftApi = {
+  getStaffMonth: (
+    staffId: string,
+    year: number,
+    month: number
+  ): Promise<ApiResponse<{ exists: boolean; shifts: Shift[] }>> =>
+    apiRequest('shifts/staff-month', undefined, {
+      staffId,
+      year: String(year),
+      month: String(month),
+    }),
+
+  getMonthly: (year: number, month: number): Promise<ApiResponse<{ exists: boolean; shifts: Shift[] }>> =>
+    apiRequest('shifts/monthly', undefined, {
+      year: String(year),
+      month: String(month),
+    }),
+};
+
+// Password API
+export const passwordApi = {
+  change: (email: string, oldPassword: string, newPassword: string): Promise<ApiResponse<void>> =>
+    apiRequest('password/change', { email, oldPassword, newPassword }),
+
+  reset: (email: string, newPassword: string): Promise<ApiResponse<void>> =>
+    apiRequest('password/reset', { email, newPassword }),
+};
+
+// Admin management API (for super admin / setup)
+export const adminApi = {
+  list: (): Promise<ApiResponse<AdminInfo[]>> =>
+    apiRequest('admins'),
+
+  create: (params: { name: string; email: string; password: string }): Promise<ApiResponse<{ adminId: string }>> =>
+    apiRequest('admins', params as unknown as Record<string, unknown>),
+
+  update: (params: {
+    adminId: string;
+    name?: string;
+    email?: string;
+    password?: string;
+  }): Promise<ApiResponse<void>> =>
+    apiRequest('admins/update', params as unknown as Record<string, unknown>),
+
+  delete: (adminId: string): Promise<ApiResponse<void>> =>
+    apiRequest('admins/delete', { adminId }),
+};
+
 export default {
   auth: authApi,
   staff: staffApi,
   attendance: attendanceApi,
   bulkAttendance: bulkAttendanceApi,
-  overtime: overtimeApi,
+  application: applicationApi,
+  submission: submissionApi,
+  shift: shiftApi,
   paidLeave: paidLeaveApi,
   salary: salaryApi,
   incentive: incentiveApi,
   tax: taxApi,
   insurance: insuranceApi,
+  password: passwordApi,
+  adminMgmt: adminApi,
 };

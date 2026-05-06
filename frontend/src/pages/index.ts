@@ -1,10 +1,12 @@
 export { LoginPage } from './Login';
 export { ClockPage } from './staff/ClockPage';
 export { MyPage } from './staff/MyPage';
-export { BulkAttendanceEntry } from './staff/BulkAttendanceEntry';
+export { AttendancePage } from './staff/AttendancePage';
+export { ApplicationsPage } from './staff/ApplicationsPage';
 export { AdminDashboard } from './admin/Dashboard';
 export { StaffManagement } from './admin/StaffManagement';
 export { AttendanceManagement } from './admin/AttendanceManagement';
+export { AdminApprovalsPage } from './admin/AdminApprovalsPage';
 export { SalaryManagement } from './admin/SalaryManagement';
 export { PaidLeaveManagement } from './admin/PaidLeaveManagement';
 export { SettingsPage } from './admin/Settings';
