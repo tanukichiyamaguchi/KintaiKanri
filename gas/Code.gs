@@ -11,7 +11,7 @@
  */
 
 // Configuration
-const SPREADSHEET_ID = '1cQJf5tgTwRIpNUU-rtQMeSCn9DKti4qyzTm-1j2DXC0'; // Set your spreadsheet ID here
+const SPREADSHEET_ID = '1cQJf5tgTwRIpNUU-rtQMeSCn9DKti4qyzTm-1j2DXC0'; // KintaiKanri spreadsheet
 const WEEKLY_HOURS = 44; // Beauty industry special measure
 
 // PBKDF2 iteration count for password hashing
