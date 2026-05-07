@@ -53,10 +53,10 @@ export function AdminShiftRequestsPage() {
     return [...opens, ...past].sort();
   }, []);
 
-  const [filterMonth, setFilterMonth] = useState<string>(targetCandidates[0] || '');
+  const [filterMonth, setFilterMonth] = useState<string>('');
   const [staffFilter, setStaffFilter] = useState<string>('');
   const [staffList, setStaffList] = useState<StaffInfo[]>([]);
-  const [requests, setRequests] = useState<ShiftRequest[]>([]);
+  const [allRequests, setAllRequests] = useState<ShiftRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -79,21 +79,48 @@ export function AdminShiftRequestsPage() {
     setIsLoading(true);
     setError(null);
     try {
+      // 月フィルタはクライアント側で適用するため、ここでは全月分を取得する。
+      // ダッシュボードの未対応件数とフィルタ表示が一致せず、再申請が見つからないバグを防ぐ。
       const res = await shiftRequestApi.list({
-        targetYearMonth: filterMonth || undefined,
         staffId: staffFilter || undefined,
       });
-      if (res.success && res.data) setRequests(res.data);
-      else { setError(res.error || '取得に失敗しました'); setRequests([]); }
+      if (res.success && res.data) setAllRequests(res.data);
+      else { setError(res.error || '取得に失敗しました'); setAllRequests([]); }
     } catch {
       setError('取得に失敗しました');
-      setRequests([]);
+      setAllRequests([]);
     } finally {
       setIsLoading(false);
     }
-  }, [filterMonth, staffFilter]);
+  }, [staffFilter]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // 表示対象: 月フィルタを適用
+  const requests = useMemo(() => {
+    if (!filterMonth) return allRequests;
+    return allRequests.filter(r => r.targetYearMonth === filterMonth);
+  }, [allRequests, filterMonth]);
+
+  // 初回ロード後、未承認の希望休がある月へ自動的にフィルタを合わせる
+  useEffect(() => {
+    if (filterMonth) return;
+    if (isLoading) return;
+    if (allRequests.length > 0) {
+      const counts = new Map<string, number>();
+      for (const r of allRequests) {
+        const c = (r.offDays || []).filter(d => d.status === 'pending').length;
+        if (c > 0) counts.set(r.targetYearMonth, (counts.get(r.targetYearMonth) || 0) + c);
+      }
+      if (counts.size > 0) {
+        const sortedCounts = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+        setFilterMonth(sortedCounts[0][0]);
+        return;
+      }
+    }
+    const opens = availableTargetYearMonths(new Date());
+    setFilterMonth(opens[0] || targetCandidates[0] || '');
+  }, [filterMonth, isLoading, allRequests, targetCandidates]);
 
   const sorted = useMemo(() => {
     return [...requests].sort((a, b) => {
