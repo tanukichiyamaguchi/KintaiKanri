@@ -193,29 +193,29 @@ export function MyPage() {
     <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="マイページ" />
 
-      <main className="max-w-2xl mx-auto p-4 sm:p-6">
+      <main className="max-w-2xl mx-auto p-3 sm:p-6">
         {/* Back Link + Attendance + Applications */}
-        <div className="flex items-center justify-between mb-5 gap-2 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-5 gap-3">
           <Link
             to="/clock"
-            className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors"
+            className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors min-h-11 self-start"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4 flex-shrink-0" />
             <span className="text-sm font-medium">打刻画面へ戻る</span>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
             <Link
               to="/attendance"
-              className="btn btn-primary !py-2 !px-4 !text-sm !rounded-xl"
+              className="btn btn-primary !py-2.5 !px-4 !text-sm !rounded-xl !min-h-11"
             >
-              <ClipboardList className="w-4 h-4" />
+              <ClipboardList className="w-4 h-4 flex-shrink-0" />
               出勤簿
             </Link>
             <Link
               to="/applications"
-              className="btn btn-secondary !py-2 !px-4 !text-sm !rounded-xl"
+              className="btn btn-secondary !py-2.5 !px-4 !text-sm !rounded-xl !min-h-11"
             >
-              <FileText className="w-4 h-4" />
+              <FileText className="w-4 h-4 flex-shrink-0" />
               申請一覧
             </Link>
           </div>
@@ -271,12 +271,12 @@ export function MyPage() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+        <div className="flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scroll-smooth snap-x">
           {tabs.map(tab => (
             <button
               key={tab.key}
               onClick={() => { setActiveTab(tab.key); setError(null); setMessage(null); }}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl whitespace-nowrap transition-all text-sm font-medium ${
+              className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 min-h-11 rounded-xl whitespace-nowrap transition-all text-sm font-medium snap-start flex-shrink-0 ${
                 activeTab === tab.key
                   ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25'
                   : 'bg-white text-secondary-600 hover:bg-primary-50 hover:text-primary-700 border border-secondary-200 hover:border-primary-200'
@@ -290,22 +290,22 @@ export function MyPage() {
 
         {/* Content */}
         {activeTab === 'attendance' && (
-          <div className="card">
+          <div className="card !p-4 sm:!p-7">
             {/* Month Selector */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
                 aria-label="前月"
               >
                 <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <h2 className="text-lg font-semibold text-secondary-800">
+              <h2 className="text-base sm:text-lg font-semibold text-secondary-800 text-center">
                 {selectedYear}年{selectedMonth}月
               </h2>
               <button
                 onClick={handleNextMonth}
-                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
                 aria-label="次月"
               >
                 <ChevronRight className="w-5 h-5 text-secondary-600" />
@@ -323,7 +323,7 @@ export function MyPage() {
             ) : (
               <div className="space-y-2">
                 {/* Header */}
-                <div className="grid grid-cols-5 gap-2 text-xs font-semibold text-secondary-500 pb-2 border-b border-secondary-200">
+                <div className="grid grid-cols-5 gap-1 sm:gap-2 text-[11px] sm:text-xs font-semibold text-secondary-500 pb-2 border-b border-secondary-200">
                   <div>日付</div>
                   <div>出勤</div>
                   <div>退勤</div>
@@ -335,7 +335,7 @@ export function MyPage() {
                 {attendance.map(record => (
                   <div
                     key={record.date}
-                    className="grid grid-cols-5 gap-2 text-sm py-2 border-b border-secondary-100 last:border-0"
+                    className="grid grid-cols-5 gap-1 sm:gap-2 text-xs sm:text-sm py-2 border-b border-secondary-100 last:border-0"
                   >
                     <div className="font-medium text-secondary-800">{formatDate(record.date)}</div>
                     <div className="text-secondary-700">{formatTime(record.clockIn)}</div>
@@ -376,12 +376,12 @@ export function MyPage() {
         {activeTab === 'paidLeave' && (
           <div>
             {/* Balance Card */}
-            <div className="card mb-4 text-center">
-              <Palmtree className="w-12 h-12 text-green-500 mx-auto mb-2" />
+            <div className="card mb-4 text-center !p-5 sm:!p-7">
+              <Palmtree className="w-10 h-10 sm:w-12 sm:h-12 text-green-500 mx-auto mb-2" />
               <p className="text-secondary-600 mb-1 text-sm">有給休暇残日数</p>
-              <p className="text-4xl font-bold text-secondary-800">
+              <p className="text-3xl sm:text-4xl font-bold text-secondary-800">
                 {isLoading ? '-' : paidLeave?.balance ?? 0}
-                <span className="text-lg ml-1">日</span>
+                <span className="text-base sm:text-lg ml-1">日</span>
               </p>
             </div>
 
@@ -394,8 +394,8 @@ export function MyPage() {
             </button>
 
             {/* History */}
-            <div className="card">
-              <h3 className="font-semibold text-secondary-800 mb-4">取得履歴</h3>
+            <div className="card !p-5 sm:!p-7">
+              <h3 className="font-semibold text-secondary-800 mb-3 sm:mb-4">取得履歴</h3>
 
               {isLoading ? (
                 <Loading />
@@ -408,16 +408,16 @@ export function MyPage() {
                   {paidLeave.history.map(request => (
                     <div
                       key={request.id}
-                      className="flex items-center justify-between py-2 border-b border-secondary-100 last:border-0"
+                      className="flex items-center justify-between gap-2 py-2.5 border-b border-secondary-100 last:border-0"
                     >
-                      <div>
-                        <p className="font-medium text-secondary-800">{request.leaveDate}</p>
-                        <p className="text-xs text-secondary-500">
+                      <div className="min-w-0">
+                        <p className="font-medium text-secondary-800 text-sm sm:text-base truncate">{request.leaveDate}</p>
+                        <p className="text-xs text-secondary-500 truncate">
                           申請日: {request.requestDate}
                         </p>
                       </div>
                       <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border flex-shrink-0 ${
                           request.status === 'approved'
                             ? 'bg-green-100 text-green-700 border-green-200'
                             : request.status === 'rejected'
@@ -440,30 +440,30 @@ export function MyPage() {
         )}
 
         {activeTab === 'salary' && (
-          <div className="card">
+          <div className="card !p-4 sm:!p-7">
             {/* Month Selector */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
                 aria-label="前月"
               >
                 <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <h2 className="text-lg font-semibold text-secondary-800">
+              <h2 className="text-base sm:text-lg font-semibold text-secondary-800 text-center">
                 {selectedYear}年{selectedMonth}月分
               </h2>
               <button
                 onClick={handleNextMonth}
-                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
                 aria-label="次月"
               >
                 <ChevronRight className="w-5 h-5 text-secondary-600" />
               </button>
             </div>
 
-            <div className="text-center py-8">
-              <Wallet className="w-16 h-16 text-secondary-300 mx-auto mb-4" />
+            <div className="text-center py-6 sm:py-8">
+              <Wallet className="w-14 h-14 sm:w-16 sm:h-16 text-secondary-300 mx-auto mb-3 sm:mb-4" />
               <p className="text-secondary-500 mb-4 text-sm">
                 給与明細をPDFでダウンロードできます
               </p>
@@ -492,12 +492,12 @@ export function MyPage() {
               type="date"
               value={leaveDate}
               onChange={e => setLeaveDate(e.target.value)}
-              className="input"
+              className="input h-12"
               min={new Date().toISOString().split('T')[0]}
             />
           </div>
 
-          <div className="flex gap-3 pt-4">
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-4">
             <button
               onClick={() => { setShowLeaveModal(false); setLeaveDate(''); }}
               className="btn btn-secondary flex-1"
