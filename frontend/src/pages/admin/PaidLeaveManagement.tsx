@@ -173,21 +173,21 @@ export function PaidLeaveManagement() {
           <>
             {/* Staff Balance Overview */}
             <div className="card mb-6">
-              <h2 className="text-lg font-semibold text-secondary-800 mb-4 flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-semibold text-secondary-800 mb-4 flex items-center gap-2">
                 <Palmtree className="w-5 h-5 text-primary-500" />
                 スタッフ別有給残日数
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
                 {staffList.map(staff => (
                   <div
                     key={staff.staffId}
-                    className="p-4 bg-secondary-50 border border-secondary-100 rounded-xl text-center"
+                    className="p-3 sm:p-4 bg-secondary-50 border border-secondary-100 rounded-xl text-center"
                   >
-                    <p className="font-medium text-secondary-800">{staff.name}</p>
-                    <p className="text-3xl font-bold text-primary-600 mt-2">
+                    <p className="text-sm sm:text-base font-medium text-secondary-800 truncate">{staff.name}</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-primary-600 mt-2">
                       {staff.paidLeaveBalance}
-                      <span className="text-lg ml-1">日</span>
+                      <span className="text-base sm:text-lg ml-1">日</span>
                     </p>
                   </div>
                 ))}
@@ -196,7 +196,7 @@ export function PaidLeaveManagement() {
 
             {/* Pending Requests */}
             <div className="card mb-6">
-              <h2 className="text-lg font-semibold text-secondary-800 mb-4 flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-semibold text-secondary-800 mb-4 flex items-center gap-2">
                 承認待ち申請
                 {pendingRequests.length > 0 && (
                   <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold rounded-full">
@@ -214,10 +214,10 @@ export function PaidLeaveManagement() {
                   {pendingRequests.map(request => (
                     <div
                       key={request.id}
-                      className="flex flex-wrap items-center justify-between gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl"
+                      className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl"
                     >
-                      <div>
-                        <p className="font-medium text-secondary-800">{request.name}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-secondary-800 truncate">{request.name}</p>
                         <p className="text-sm text-secondary-600 mt-0.5">
                           取得希望日: {formatDate(request.leaveDate)}
                         </p>
@@ -228,14 +228,14 @@ export function PaidLeaveManagement() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleApprove(request.id)}
-                          className="btn btn-success !py-2 !px-4 !text-sm"
+                          className="btn btn-success flex-1 sm:flex-none !py-2.5 !px-4 !text-sm"
                         >
                           <Check className="w-4 h-4" />
                           承認
                         </button>
                         <button
                           onClick={() => handleReject(request.id)}
-                          className="btn btn-danger !py-2 !px-4 !text-sm"
+                          className="btn btn-danger flex-1 sm:flex-none !py-2.5 !px-4 !text-sm"
                         >
                           <X className="w-4 h-4" />
                           却下
@@ -248,52 +248,77 @@ export function PaidLeaveManagement() {
             </div>
 
             {/* Processed Requests */}
-            <div className="card overflow-x-auto p-0 overflow-hidden">
-              <div className="px-6 py-5">
-                <h2 className="text-lg font-semibold text-secondary-800">
+            <div>
+              <div className="mb-3 sm:mb-0 sm:px-6 sm:py-5 sm:card sm:rounded-b-none">
+                <h2 className="text-base sm:text-lg font-semibold text-secondary-800">
                   処理済み申請履歴
                 </h2>
               </div>
 
               {processedRequests.length === 0 ? (
-                <p className="text-center text-secondary-500 py-4 text-sm">
-                  処理済みの申請はありません
-                </p>
+                <div className="card sm:rounded-t-none">
+                  <p className="text-center text-secondary-500 py-4 text-sm">
+                    処理済みの申請はありません
+                  </p>
+                </div>
               ) : (
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
-                      <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
-                        氏名
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
-                        取得日
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
-                        申請日
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
-                        ステータス
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-secondary-100">
+                <>
+                  {/* Mobile: Card list */}
+                  <div className="sm:hidden space-y-3">
                     {processedRequests.map(request => (
-                      <tr key={request.id} className="hover:bg-primary-50/30 transition-colors">
-                        <td className="px-4 py-3 font-medium text-secondary-800">
-                          {request.name}
-                        </td>
-                        <td className="px-4 py-3 text-secondary-700">
-                          {formatDate(request.leaveDate)}
-                        </td>
-                        <td className="px-4 py-3 text-secondary-700">
-                          {formatDate(request.requestDate)}
-                        </td>
-                        <td className="px-4 py-3">{getStatusBadge(request.status)}</td>
-                      </tr>
+                      <div key={request.id} className="card !p-4">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <p className="font-semibold text-secondary-800 truncate">
+                            {request.name}
+                          </p>
+                          {getStatusBadge(request.status)}
+                        </div>
+                        <div className="text-xs text-secondary-600 space-y-0.5">
+                          <p>取得日: {formatDate(request.leaveDate)}</p>
+                          <p className="text-secondary-500">申請日: {formatDate(request.requestDate)}</p>
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+
+                  {/* Desktop: Table */}
+                  <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden rounded-t-none">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
+                          <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
+                            氏名
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
+                            取得日
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
+                            申請日
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
+                            ステータス
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-secondary-100">
+                        {processedRequests.map(request => (
+                          <tr key={request.id} className="hover:bg-primary-50/30 transition-colors">
+                            <td className="px-4 py-3 font-medium text-secondary-800">
+                              {request.name}
+                            </td>
+                            <td className="px-4 py-3 text-secondary-700">
+                              {formatDate(request.leaveDate)}
+                            </td>
+                            <td className="px-4 py-3 text-secondary-700">
+                              {formatDate(request.requestDate)}
+                            </td>
+                            <td className="px-4 py-3">{getStatusBadge(request.status)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </>

@@ -344,20 +344,20 @@ export function AdminApprovalsPage() {
     return (
       <div
         key={app.id}
-        className={`rounded-2xl border p-4 sm:p-5 transition-all ${
+        className={`rounded-2xl border p-3 sm:p-5 transition-all ${
           isPending
             ? 'border-amber-200 bg-amber-50/40'
             : 'border-secondary-200 bg-white'
         }`}
       >
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
           <div className="flex-1 min-w-0 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
               <div className="flex items-center gap-1.5 text-secondary-800 font-semibold">
                 <User className="w-4 h-4 text-secondary-500" />
                 {app.staffName}
               </div>
-              <span className="text-secondary-300">·</span>
+              <span className="text-secondary-300 hidden sm:inline">·</span>
               <span className="text-secondary-700 text-sm font-medium">
                 {formatDateWithDow(app.date)}
               </span>
@@ -439,7 +439,7 @@ export function AdminApprovalsPage() {
                     date: app.date,
                   })
                 }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-sm transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-sm transition-colors"
               >
                 <CheckCircle className="w-4 h-4" />
                 承認
@@ -455,7 +455,7 @@ export function AdminApprovalsPage() {
                     date: app.date,
                   })
                 }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-2 rounded-xl bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold transition-colors"
               >
                 <XCircle className="w-4 h-4" />
                 却下
@@ -475,20 +475,20 @@ export function AdminApprovalsPage() {
     return (
       <div
         key={`${sub.staffId}-${sub.yearMonth}`}
-        className={`rounded-2xl border p-4 sm:p-5 transition-all ${
+        className={`rounded-2xl border p-3 sm:p-5 transition-all ${
           isSubmitted
             ? 'border-blue-200 bg-blue-50/40'
             : 'border-secondary-200 bg-white'
         }`}
       >
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
           <div className="flex-1 min-w-0 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
               <div className="flex items-center gap-1.5 text-secondary-800 font-semibold">
                 <User className="w-4 h-4 text-secondary-500" />
                 {sub.staffName}
               </div>
-              <span className="text-secondary-300">·</span>
+              <span className="text-secondary-300 hidden sm:inline">·</span>
               <span className="text-secondary-700 text-sm font-medium">
                 {formatYearMonth(sub.yearMonth)}
               </span>
@@ -539,7 +539,7 @@ export function AdminApprovalsPage() {
                     yearMonth: sub.yearMonth,
                   })
                 }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-sm transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-sm transition-colors"
               >
                 <CheckCircle className="w-4 h-4" />
                 確定
@@ -555,7 +555,7 @@ export function AdminApprovalsPage() {
                     yearMonth: sub.yearMonth,
                   })
                 }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-2 rounded-xl bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold transition-colors"
               >
                 <Send className="w-4 h-4" />
                 差戻し
@@ -583,11 +583,11 @@ export function AdminApprovalsPage() {
     <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="承認管理" />
 
-      <main className="max-w-5xl mx-auto p-4 sm:p-6">
+      <main className="max-w-5xl mx-auto p-3 sm:p-6">
         {/* Back link */}
         <Link
           to="/admin"
-          className="inline-flex items-center gap-1 text-secondary-500 hover:text-primary-600 mb-4 text-sm font-medium"
+          className="inline-flex items-center gap-1 text-secondary-500 hover:text-primary-600 mb-3 sm:mb-4 text-sm font-medium"
         >
           <ChevronLeft className="w-4 h-4" />
           ダッシュボードへ戻る
@@ -612,18 +612,18 @@ export function AdminApprovalsPage() {
         )}
 
         {/* Tabs */}
-        <div className="card mb-4 p-2">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="card mb-3 sm:mb-4 p-2">
+          <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('applications')}
-              className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              className={`inline-flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 h-11 sm:h-auto sm:py-2.5 rounded-xl text-sm font-semibold transition-all ${
                 activeTab === 'applications'
                   ? 'bg-gradient-to-r from-primary-400 to-primary-600 text-white shadow-md shadow-primary-500/20'
                   : 'text-secondary-600 hover:bg-secondary-50'
               }`}
             >
-              <FileText className="w-4 h-4" />
+              <FileText className="w-4 h-4 flex-shrink-0" />
               申請一覧
               {pendingApps.length > 0 && activeTab !== 'applications' && (
                 <span className="ml-1 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold border border-amber-200">
@@ -634,13 +634,13 @@ export function AdminApprovalsPage() {
             <button
               type="button"
               onClick={() => setActiveTab('submissions')}
-              className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              className={`inline-flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 h-11 sm:h-auto sm:py-2.5 rounded-xl text-sm font-semibold transition-all ${
                 activeTab === 'submissions'
                   ? 'bg-gradient-to-r from-primary-400 to-primary-600 text-white shadow-md shadow-primary-500/20'
                   : 'text-secondary-600 hover:bg-secondary-50'
               }`}
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4 flex-shrink-0" />
               月次提出
               {submittedSubs.length > 0 && activeTab !== 'submissions' && (
                 <span className="ml-1 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200">
@@ -652,12 +652,12 @@ export function AdminApprovalsPage() {
         </div>
 
         {/* Filters */}
-        <div className="card mb-4">
-          <div className="flex items-center gap-2 mb-4 text-secondary-700">
+        <div className="card mb-3 sm:mb-4">
+          <div className="flex items-center gap-2 mb-3 sm:mb-4 text-secondary-700">
             <Filter className="w-4 h-4 text-primary-500" />
             <span className="text-sm font-semibold">絞り込み</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             {/* 期間モード */}
             <div>
               <label className="label">期間</label>
@@ -674,13 +674,13 @@ export function AdminApprovalsPage() {
 
             {/* 月指定モード: 月ピッカー */}
             {rangeMode === 'month' && (
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-1 md:col-span-2">
                 <label className="label">対象月</label>
-                <div className="flex items-center gap-1 max-w-xs">
+                <div className="flex items-center gap-1 sm:max-w-xs">
                   <button
                     type="button"
                     onClick={goPrevMonth}
-                    className="p-2 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600"
+                    className="h-11 w-11 flex items-center justify-center rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600 flex-shrink-0"
                     aria-label="前月へ"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -691,7 +691,7 @@ export function AdminApprovalsPage() {
                   <button
                     type="button"
                     onClick={goNextMonth}
-                    className="p-2 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600"
+                    className="h-11 w-11 flex items-center justify-center rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600 flex-shrink-0"
                     aria-label="翌月へ"
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -768,13 +768,13 @@ export function AdminApprovalsPage() {
         {/* Applications tab */}
         {activeTab === 'applications' && (
           <>
-            <section className="card mb-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  承認待ち
+            <section className="card mb-3 sm:mb-4">
+              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0">
+                  <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span className="truncate">承認待ち</span>
                 </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                   {pendingApps.length}件
                 </span>
               </div>
@@ -792,12 +792,12 @@ export function AdminApprovalsPage() {
             </section>
 
             <section className="card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-secondary-500" />
-                  処理済み
+              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0">
+                  <FileText className="w-4 h-4 text-secondary-500 flex-shrink-0" />
+                  <span className="truncate">処理済み</span>
                 </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                   {processedApps.length}件
                 </span>
               </div>
@@ -818,14 +818,14 @@ export function AdminApprovalsPage() {
         {/* Submissions tab */}
         {activeTab === 'submissions' && (
           <>
-            <section className="card mb-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-blue-600" />
-                  確認待ち
+            <section className="card mb-3 sm:mb-4">
+              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0 flex-wrap">
+                  <Clock className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span>確認待ち</span>
                   <span className="text-[11px] text-secondary-400 font-normal">（全期間）</span>
                 </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                   {submittedSubs.length}件
                 </span>
               </div>
@@ -843,15 +843,15 @@ export function AdminApprovalsPage() {
             </section>
 
             <section className="card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-secondary-500" />
-                  処理済み
+              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0 flex-wrap">
+                  <FileText className="w-4 h-4 text-secondary-500 flex-shrink-0" />
+                  <span>処理済み</span>
                   <span className="text-[11px] text-secondary-400 font-normal">
                     （{rangeMode === 'all' ? '全期間' : rangeMode === 'month' ? formatYearMonth(yearMonthStr) : `${rangeFrom} 〜 ${rangeTo}`}）
                   </span>
                 </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                   {processedSubs.length}件
                 </span>
               </div>
@@ -939,12 +939,12 @@ export function AdminApprovalsPage() {
               </div>
             )}
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
               <button
                 type="button"
                 onClick={closeModal}
                 disabled={isProcessing}
-                className="btn btn-secondary flex-1"
+                className="btn btn-secondary flex-1 min-h-[44px]"
               >
                 キャンセル
               </button>
@@ -955,7 +955,7 @@ export function AdminApprovalsPage() {
                   isProcessing ||
                   (!modalIsApprove && !rejectionReason.trim())
                 }
-                className={`btn flex-1 inline-flex items-center justify-center gap-2 ${
+                className={`btn flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 ${
                   modalIsApprove ? 'btn-success' : 'btn-danger'
                 }`}
               >

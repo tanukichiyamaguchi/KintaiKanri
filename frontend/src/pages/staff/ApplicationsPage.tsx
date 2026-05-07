@@ -213,9 +213,9 @@ export function ApplicationsPage() {
     <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="申請一覧" />
 
-      <main className="max-w-3xl mx-auto p-4 sm:p-6">
+      <main className="max-w-3xl mx-auto p-3 sm:p-6">
         {/* Back Links */}
-        <div className="flex items-center gap-4 mb-5 flex-wrap">
+        <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-5 flex-wrap">
           <Link
             to="/mypage"
             className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors"
@@ -233,13 +233,13 @@ export function ApplicationsPage() {
         </div>
 
         {/* Title + Month Selector */}
-        <div className="card mb-5 flex flex-wrap items-center gap-4 justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-sm shadow-primary-500/20">
+        <div className="card mb-3 sm:mb-5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 sm:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-sm shadow-primary-500/20 flex-shrink-0">
               <FileText className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <div className="text-xs text-secondary-500 mb-0.5">
+            <div className="min-w-0">
+              <div className="text-xs text-secondary-500 mb-0.5 truncate">
                 {staff?.name} さんの申請履歴
               </div>
               <div className="text-base font-bold text-secondary-800">
@@ -248,21 +248,21 @@ export function ApplicationsPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 self-stretch sm:self-auto">
             <button
               onClick={handlePreviousMonth}
-              className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+              className="h-11 w-11 flex items-center justify-center rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
               aria-label="前月"
             >
               <ChevronLeft className="w-5 h-5 text-secondary-600" />
             </button>
-            <span className="text-sm font-medium min-w-[110px] text-center text-secondary-700">
+            <span className="text-sm font-medium flex-1 sm:flex-none sm:min-w-[110px] text-center text-secondary-700">
               {selectedYear}年{selectedMonth}月
             </span>
             <button
               onClick={handleNextMonth}
               disabled={isFutureMonth}
-              className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              className="h-11 w-11 flex items-center justify-center rounded-xl hover:bg-primary-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent flex-shrink-0"
               aria-label="次月"
             >
               <ChevronRight className="w-5 h-5 text-secondary-600" />
@@ -272,21 +272,21 @@ export function ApplicationsPage() {
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
+          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-4 sm:px-5 py-3 sm:py-4 rounded-xl mb-3 sm:mb-5">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <p className="text-sm font-medium">{error}</p>
           </div>
         )}
 
         {/* Status Filter Tabs */}
-        <div className="card mb-5 p-3">
+        <div className="card mb-3 sm:mb-5 p-3">
           <div className="flex items-center gap-2 mb-3 px-2">
             <Filter className="w-4 h-4 text-secondary-500" />
             <span className="text-xs font-medium text-secondary-500">
               ステータスで絞り込み
             </span>
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
             {STATUS_FILTERS.map(f => {
               const active = statusFilter === f.key;
               const count = counts[f.key];
@@ -294,7 +294,7 @@ export function ApplicationsPage() {
                 <button
                   key={f.key}
                   onClick={() => setStatusFilter(f.key)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap transition-all text-sm font-medium ${
+                  className={`flex items-center gap-2 px-4 h-11 sm:h-auto sm:py-2 rounded-xl whitespace-nowrap transition-all text-sm font-medium flex-shrink-0 ${
                     active
                       ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/25'
                       : 'bg-white text-secondary-600 hover:bg-primary-50 hover:text-primary-700 border border-secondary-200 hover:border-primary-200'
@@ -336,8 +336,8 @@ export function ApplicationsPage() {
                 }`}
               >
                 {/* Header row */}
-                <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
-                  <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-start justify-between gap-2 sm:gap-3 mb-3 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
                     <Calendar className="w-4 h-4 text-secondary-400 flex-shrink-0" />
                     <span className="text-sm font-semibold text-secondary-800 font-mono">
                       {formatDateLabel(app.date)}
@@ -349,7 +349,7 @@ export function ApplicationsPage() {
 
                 {/* Details */}
                 {renderDetails(app) && (
-                  <div className="bg-secondary-50/60 border border-secondary-100 rounded-xl px-4 py-3 mb-3">
+                  <div className="bg-secondary-50/60 border border-secondary-100 rounded-xl px-3 sm:px-4 py-3 mb-3">
                     {renderDetails(app)}
                   </div>
                 )}
@@ -368,7 +368,7 @@ export function ApplicationsPage() {
 
                 {/* Rejection reason */}
                 {app.status === 'rejected' && app.rejectionReason && (
-                  <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                  <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-3 sm:px-4 py-3">
                     <div className="flex items-center gap-2 mb-1">
                       <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
                       <span className="text-xs font-semibold text-red-700">
@@ -382,9 +382,9 @@ export function ApplicationsPage() {
                 )}
 
                 {/* Footer: timestamps */}
-                <div className="flex items-center gap-4 pt-3 border-t border-secondary-100 text-xs text-secondary-500 flex-wrap">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 pt-3 border-t border-secondary-100 text-xs text-secondary-500 sm:flex-wrap">
                   <div className="flex items-center gap-1.5">
-                    <ClockIcon className="w-3.5 h-3.5" />
+                    <ClockIcon className="w-3.5 h-3.5 flex-shrink-0" />
                     <span>申請日時: {formatDateTime(app.submittedAt)}</span>
                   </div>
                   {app.reviewedAt && (

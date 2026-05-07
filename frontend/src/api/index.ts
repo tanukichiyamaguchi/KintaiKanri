@@ -98,6 +98,7 @@ const mockApplications: Application[] = [];
 const mockSubmissions: MonthlySubmission[] = [];
 const mockShifts: Record<string, Shift[]> = {};
 const mockEditHistory: ClockEditHistory[] = [];
+const mockShiftRequests: import('../types').ShiftRequest[] = [];
 // Key: "staffId-YYYY-MM", stores bulk-entered attendance
 const mockBulkAttendance: Record<string, AttendanceRecord[]> = {};
 
@@ -829,6 +830,44 @@ async function handleDemoRequest<T>(
     return { success: true, data: filtered as unknown as T };
   }
 
+  // --- Shift Requests ---
+  if (action === 'shift-requests/submit') {
+    const staffId = String(body?.staffId || '');
+    const targetYearMonth = String(body?.targetYearMonth || '');
+    const days = Array.isArray(body?.days) ? (body!.days as import('../types').ShiftRequestDay[]) : [];
+    const remarks = body?.remarks ? String(body.remarks) : undefined;
+    const staff = mockStaff.find(s => s.staffId === staffId);
+    const id = 'SR' + Date.now() + Math.random().toString(36).slice(2, 6);
+    // 既存（同じ staffId × targetYearMonth）があれば上書き
+    const existingIdx = mockShiftRequests.findIndex(
+      r => r.staffId === staffId && r.targetYearMonth === targetYearMonth
+    );
+    const record: import('../types').ShiftRequest = {
+      id,
+      staffId,
+      staffName: staff?.name || '',
+      targetYearMonth,
+      days,
+      remarks,
+      submittedAt: new Date().toISOString(),
+    };
+    if (existingIdx !== -1) {
+      mockShiftRequests[existingIdx] = record;
+    } else {
+      mockShiftRequests.push(record);
+    }
+    return { success: true, data: { id } as unknown as T };
+  }
+
+  if (action === 'shift-requests/list') {
+    const staffId = queryParams?.staffId;
+    const targetYearMonth = queryParams?.targetYearMonth;
+    let filtered: import('../types').ShiftRequest[] = mockShiftRequests;
+    if (staffId) filtered = filtered.filter(r => r.staffId === staffId);
+    if (targetYearMonth) filtered = filtered.filter(r => r.targetYearMonth === targetYearMonth);
+    return { success: true, data: filtered as unknown as T };
+  }
+
   return { success: false, error: 'Unknown endpoint: ' + action };
 }
 
@@ -1110,6 +1149,28 @@ export const passwordApi = {
 
   reset: (email: string, newPassword: string): Promise<ApiResponse<void>> =>
     apiRequest('password/reset', { email, newPassword }),
+};
+
+// Shift request API (希望シフト・希望休 申請)
+export const shiftRequestApi = {
+  // スタッフが提出。target_year_month は 'YYYY-MM'。
+  submit: (params: {
+    staffId: string;
+    targetYearMonth: string;
+    days: import('../types').ShiftRequestDay[];
+    remarks?: string;
+  }): Promise<ApiResponse<{ id: string }>> =>
+    apiRequest('shift-requests/submit', params as unknown as Record<string, unknown>),
+
+  // 管理者が一覧取得（または該当スタッフのみ）。
+  list: (params?: {
+    staffId?: string;
+    targetYearMonth?: string;
+  }): Promise<ApiResponse<import('../types').ShiftRequest[]>> =>
+    apiRequest('shift-requests/list', undefined, {
+      ...(params?.staffId ? { staffId: params.staffId } : {}),
+      ...(params?.targetYearMonth ? { targetYearMonth: params.targetYearMonth } : {}),
+    }),
 };
 
 // Admin management API (for super admin / setup)

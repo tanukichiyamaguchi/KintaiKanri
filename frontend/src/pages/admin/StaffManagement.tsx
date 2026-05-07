@@ -458,14 +458,15 @@ export function StaffManagement() {
         </Link>
 
         {/* Staff Section Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-secondary-800">スタッフ一覧</h2>
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <h2 className="text-lg sm:text-xl font-semibold text-secondary-800">スタッフ一覧</h2>
           <button
             onClick={() => handleOpenModal()}
-            className="btn btn-primary"
+            className="btn btn-primary !py-2.5 !px-3 sm:!px-5"
           >
             <Plus className="w-5 h-5" />
-            新規登録
+            <span className="hidden sm:inline">新規登録</span>
+            <span className="sm:hidden">追加</span>
           </button>
         </div>
 
@@ -488,116 +489,173 @@ export function StaffManagement() {
             <p className="text-secondary-500">スタッフが登録されていません</p>
           </div>
         ) : (
-          <div className="card overflow-x-auto p-0 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-secondary-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
-                    氏名
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden sm:table-cell">
-                    メール
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden md:table-cell">
-                    月給
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden lg:table-cell">
-                    入社日
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden md:table-cell">
-                    ステータス
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-secondary-600 tracking-wider">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-secondary-100">
-                {staffList.map(staff => (
-                  <tr key={staff.staffId} className="hover:bg-primary-50/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-medium text-secondary-800">{staff.name}</p>
-                        <p className="text-xs text-secondary-500 sm:hidden flex items-center gap-1 mt-0.5">
-                          <Mail className="w-3 h-3" />
-                          {staff.email || '-'}
-                        </p>
-                        <p className="text-xs text-secondary-500 md:hidden mt-0.5">
-                          {formatCurrency(staff.monthlySalary)}
-                        </p>
+          <>
+            {/* Mobile: Card list */}
+            <div className="sm:hidden space-y-3">
+              {staffList.map(staff => (
+                <div key={staff.staffId} className="card !p-4">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-semibold text-secondary-800 truncate">{staff.name}</p>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${
+                            staff.status === 'active'
+                              ? 'bg-green-50 text-green-700 border-green-200'
+                              : 'bg-secondary-50 text-secondary-600 border-secondary-200'
+                          }`}
+                        >
+                          {staff.status === 'active' ? '有効' : '無効'}
+                        </span>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-secondary-700 hidden sm:table-cell">
-                      <span className="inline-flex items-center gap-1.5 text-sm">
-                        <Mail className="w-3.5 h-3.5 text-secondary-400" />
-                        {staff.email || '-'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-secondary-700 hidden md:table-cell">
-                      {formatCurrency(staff.monthlySalary)}
-                    </td>
-                    <td className="px-4 py-3 text-secondary-700 hidden lg:table-cell">
-                      {staff.hireDate || '-'}
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                          staff.status === 'active'
-                            ? 'bg-green-50 text-green-700 border-green-200'
-                            : 'bg-secondary-50 text-secondary-600 border-secondary-200'
-                        }`}
+                      <p className="text-xs text-secondary-500 flex items-center gap-1 truncate">
+                        <Mail className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{staff.email || '-'}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-secondary-600 border-t border-secondary-100 pt-3">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-secondary-400">月給</span>
+                      <span className="font-medium text-secondary-700">{formatCurrency(staff.monthlySalary)}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenPasswordReset(staff)}
+                        className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                        aria-label="パスワードリセット"
                       >
-                        {staff.status === 'active' ? '有効' : '無効'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleOpenPasswordReset(staff)}
-                          className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                          aria-label="パスワードリセット"
-                          title="パスワードリセット"
-                        >
-                          <Key className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleOpenModal(staff)}
-                          className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                          aria-label="編集"
-                          title="編集"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(staff)}
-                          className="p-2 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          aria-label="削除"
-                          title="削除"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
+                        <Key className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => handleOpenModal(staff)}
+                        className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                        aria-label="編集"
+                      >
+                        <Edit2 className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(staff)}
+                        className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        aria-label="削除"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop: Table */}
+            <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-secondary-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
+                      氏名
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
+                      メール
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden md:table-cell">
+                      月給
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden lg:table-cell">
+                      入社日
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden md:table-cell">
+                      ステータス
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-secondary-600 tracking-wider">
+                      操作
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-secondary-100">
+                  {staffList.map(staff => (
+                    <tr key={staff.staffId} className="hover:bg-primary-50/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="font-medium text-secondary-800">{staff.name}</p>
+                          <p className="text-xs text-secondary-500 md:hidden mt-0.5">
+                            {formatCurrency(staff.monthlySalary)}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-secondary-700">
+                        <span className="inline-flex items-center gap-1.5 text-sm">
+                          <Mail className="w-3.5 h-3.5 text-secondary-400" />
+                          {staff.email || '-'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-secondary-700 hidden md:table-cell">
+                        {formatCurrency(staff.monthlySalary)}
+                      </td>
+                      <td className="px-4 py-3 text-secondary-700 hidden lg:table-cell">
+                        {staff.hireDate || '-'}
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                            staff.status === 'active'
+                              ? 'bg-green-50 text-green-700 border-green-200'
+                              : 'bg-secondary-50 text-secondary-600 border-secondary-200'
+                          }`}
+                        >
+                          {staff.status === 'active' ? '有効' : '無効'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleOpenPasswordReset(staff)}
+                            className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                            aria-label="パスワードリセット"
+                            title="パスワードリセット"
+                          >
+                            <Key className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenModal(staff)}
+                            className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                            aria-label="編集"
+                            title="編集"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(staff)}
+                            className="p-2 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            aria-label="削除"
+                            title="削除"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {/* ===== Admin Section ===== */}
         <div className="mt-12">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-secondary-700" />
-              <h2 className="text-xl font-semibold text-secondary-800">管理者アカウント</h2>
+          <div className="flex items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-2 min-w-0">
+              <Shield className="w-5 h-5 text-secondary-700 flex-shrink-0" />
+              <h2 className="text-lg sm:text-xl font-semibold text-secondary-800 truncate">管理者アカウント</h2>
             </div>
             <button
               onClick={() => handleOpenAdminModal()}
-              className="btn btn-primary"
+              className="btn btn-primary !py-2.5 !px-3 sm:!px-5 flex-shrink-0"
             >
               <Plus className="w-5 h-5" />
-              管理者を追加
+              <span className="hidden sm:inline">管理者を追加</span>
+              <span className="sm:hidden">追加</span>
             </button>
           </div>
 
@@ -618,64 +676,94 @@ export function StaffManagement() {
               <p className="text-secondary-500">管理者が登録されていません</p>
             </div>
           ) : (
-            <div className="card overflow-x-auto p-0 overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-secondary-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
-                      氏名
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden sm:table-cell">
-                      メール
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-secondary-600 tracking-wider">
-                      操作
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-secondary-100">
-                  {adminList.map(admin => (
-                    <tr key={admin.adminId} className="hover:bg-primary-50/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-secondary-800">{admin.name}</p>
-                          <p className="text-xs text-secondary-500 sm:hidden flex items-center gap-1 mt-0.5">
-                            <Mail className="w-3 h-3" />
-                            {admin.email}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-secondary-700 hidden sm:table-cell">
-                        <span className="inline-flex items-center gap-1.5 text-sm">
-                          <Mail className="w-3.5 h-3.5 text-secondary-400" />
-                          {admin.email}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleOpenAdminModal(admin)}
-                            className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                            aria-label="編集"
-                            title="編集"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteAdmin(admin)}
-                            className="p-2 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            aria-label="削除"
-                            title="削除"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
+            <>
+              {/* Mobile: Card list */}
+              <div className="sm:hidden space-y-3">
+                {adminList.map(admin => (
+                  <div key={admin.adminId} className="card !p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-secondary-800 truncate">{admin.name}</p>
+                        <p className="text-xs text-secondary-500 flex items-center gap-1 mt-0.5 truncate">
+                          <Mail className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{admin.email}</span>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => handleOpenAdminModal(admin)}
+                          className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                          aria-label="編集"
+                        >
+                          <Edit2 className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAdmin(admin)}
+                          className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          aria-label="削除"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: Table */}
+              <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-secondary-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
+                        氏名
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
+                        メール
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-secondary-600 tracking-wider">
+                        操作
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-secondary-100">
+                    {adminList.map(admin => (
+                      <tr key={admin.adminId} className="hover:bg-primary-50/30 transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-secondary-800">{admin.name}</p>
+                        </td>
+                        <td className="px-4 py-3 text-secondary-700">
+                          <span className="inline-flex items-center gap-1.5 text-sm">
+                            <Mail className="w-3.5 h-3.5 text-secondary-400" />
+                            {admin.email}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleOpenAdminModal(admin)}
+                              className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                              aria-label="編集"
+                              title="編集"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAdmin(admin)}
+                              className="p-2 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              aria-label="削除"
+                              title="削除"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </main>

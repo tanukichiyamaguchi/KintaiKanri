@@ -101,27 +101,27 @@ export function LoginPage() {
     || (mode === 'signup' && (!name.trim() || !passwordConfirm));
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-white via-primary-50/30 to-white p-4 relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-gradient-to-br from-primary-200/20 to-transparent rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
-      <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-gradient-to-tl from-primary-200/20 to-transparent rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-white via-primary-50/30 to-white px-4 py-6 sm:p-4 relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-gradient-to-br from-primary-200/20 to-transparent rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+      <div className="absolute bottom-0 right-0 w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-gradient-to-tl from-primary-200/20 to-transparent rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
 
       <div className="w-full max-w-md relative z-10">
         {/* Logo / Title */}
-        <div className="text-center mb-10">
-          <div className="w-24 h-24 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-primary-400 via-primary-500 to-primary-600 flex items-center justify-center shadow-xl shadow-primary-500/30 transform hover:scale-105 transition-transform gold-shine">
-            <Sparkles className="w-12 h-12 text-white" />
+        <div className="text-center mb-6 sm:mb-10">
+          <div className="w-16 h-16 sm:w-24 sm:h-24 mx-auto mb-4 sm:mb-6 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-primary-400 via-primary-500 to-primary-600 flex items-center justify-center shadow-xl shadow-primary-500/30 transform hover:scale-105 transition-transform gold-shine">
+            <Sparkles className="w-8 h-8 sm:w-12 sm:h-12 text-white" />
           </div>
-          <h1 className="text-4xl font-bold logo-text mb-3 tracking-wider">KATEstageLASH</h1>
-          <div className="divider-elegant w-32 mx-auto mb-3" />
-          <p className="text-secondary-500 text-sm tracking-[0.2em] uppercase">Attendance Management</p>
+          <h1 className="text-2xl sm:text-4xl font-bold logo-text mb-2 sm:mb-3 tracking-wider">KATEstageLASH</h1>
+          <div className="divider-elegant w-24 sm:w-32 mx-auto mb-2 sm:mb-3" />
+          <p className="text-secondary-500 text-xs sm:text-sm tracking-[0.15em] sm:tracking-[0.2em] uppercase">Attendance Management</p>
         </div>
 
         {/* Mode Tabs */}
-        <div className="grid grid-cols-2 gap-2 mb-5 bg-white/60 backdrop-blur-sm rounded-2xl p-1.5 border border-secondary-200">
+        <div className="grid grid-cols-2 gap-2 mb-4 sm:mb-5 bg-white/60 backdrop-blur-sm rounded-2xl p-1.5 border border-secondary-200">
           <button
             type="button"
             onClick={() => handleSwitchMode('login')}
-            className={`py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            className={`min-h-11 py-2.5 rounded-xl text-sm font-semibold transition-all ${
               isLoginMode
                 ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/25'
                 : 'text-secondary-500 hover:text-primary-600'
@@ -132,7 +132,7 @@ export function LoginPage() {
           <button
             type="button"
             onClick={() => handleSwitchMode('signup')}
-            className={`py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            className={`min-h-11 py-2.5 rounded-xl text-sm font-semibold transition-all ${
               !isLoginMode
                 ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/25'
                 : 'text-secondary-500 hover:text-primary-600'
@@ -143,19 +143,19 @@ export function LoginPage() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="card card-gold gold-border">
-          <h2 className="text-lg font-semibold text-center text-secondary-800 mb-7 flex items-center justify-center gap-3">
-            <span className="w-8 h-px bg-gradient-to-r from-transparent to-primary-400" />
+        <form onSubmit={handleSubmit} className="card card-gold gold-border !p-5 sm:!p-7">
+          <h2 className="text-base sm:text-lg font-semibold text-center text-secondary-800 mb-5 sm:mb-7 flex items-center justify-center gap-2 sm:gap-3">
+            <span className="w-6 sm:w-8 h-px bg-gradient-to-r from-transparent to-primary-400" />
             <span>{isLoginMode ? 'ログイン' : 'スタッフ新規登録'}</span>
-            <span className="w-8 h-px bg-gradient-to-l from-transparent to-primary-400" />
+            <span className="w-6 sm:w-8 h-px bg-gradient-to-l from-transparent to-primary-400" />
           </h2>
 
           {/* Name (signup only) */}
           {!isLoginMode && (
-            <div className="mb-5">
+            <div className="mb-4 sm:mb-5">
               <label className="label">氏名</label>
               <div className="relative">
-                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400" />
+                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400 pointer-events-none" />
                 <input
                   type="text"
                   value={name}
@@ -163,17 +163,17 @@ export function LoginPage() {
                   placeholder="例: 佐藤 花子"
                   disabled={isLoading}
                   autoComplete="name"
-                  className="input pl-11"
+                  className="input pl-11 h-12"
                 />
               </div>
             </div>
           )}
 
           {/* Email */}
-          <div className="mb-5">
+          <div className="mb-4 sm:mb-5">
             <label className="label">メールアドレス</label>
             <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400" />
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400 pointer-events-none" />
               <input
                 type="email"
                 value={email}
@@ -181,19 +181,20 @@ export function LoginPage() {
                 placeholder="staff@example.com"
                 disabled={isLoading}
                 autoComplete="email"
-                className="input pl-11"
+                inputMode="email"
+                className="input pl-11 h-12"
               />
             </div>
           </div>
 
           {/* Password */}
-          <div className="mb-5">
+          <div className="mb-4 sm:mb-5">
             <label className="label">
               パスワード
               {!isLoginMode && <span className="ml-2 text-xs text-secondary-400 font-normal">（8文字以上）</span>}
             </label>
             <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400" />
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400 pointer-events-none" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
@@ -201,12 +202,12 @@ export function LoginPage() {
                 placeholder={isLoginMode ? 'パスワード' : '新しいパスワード'}
                 disabled={isLoading}
                 autoComplete={isLoginMode ? 'current-password' : 'new-password'}
-                className="input pl-11 pr-11"
+                className="input pl-11 pr-12 h-12"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(s => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-secondary-400 hover:text-primary-600 transition-colors"
+                className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-11 h-11 text-secondary-400 hover:text-primary-600 transition-colors"
                 aria-label={showPassword ? 'パスワードを隠す' : 'パスワードを表示'}
               >
                 {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
@@ -216,10 +217,10 @@ export function LoginPage() {
 
           {/* Password confirm (signup only) */}
           {!isLoginMode && (
-            <div className="mb-6">
+            <div className="mb-5 sm:mb-6">
               <label className="label">パスワード（確認）</label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400 pointer-events-none" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={passwordConfirm}
@@ -227,7 +228,7 @@ export function LoginPage() {
                   placeholder="同じパスワードをもう一度"
                   disabled={isLoading}
                   autoComplete="new-password"
-                  className="input pl-11"
+                  className="input pl-11 h-12"
                 />
               </div>
             </div>
@@ -237,7 +238,7 @@ export function LoginPage() {
           {error && (
             <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-4 py-3.5 rounded-xl mb-5">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm font-medium">{error}</p>
+              <p className="text-sm font-medium break-words">{error}</p>
             </div>
           )}
 
@@ -257,14 +258,14 @@ export function LoginPage() {
             {isLoginMode ? 'ログイン' : '登録してログイン'}
           </button>
 
-          <p className="mt-5 text-xs text-center text-secondary-500">
+          <p className="mt-4 sm:mt-5 text-xs text-center text-secondary-500">
             {isLoginMode
               ? '管理者・スタッフ共通のログイン画面です'
               : '管理者アカウントは別途、管理者にて作成されます'}
           </p>
         </form>
 
-        <div className="mt-12 text-center">
+        <div className="mt-6 sm:mt-12 text-center">
           <p className="text-xs text-secondary-400 tracking-wider">
             &copy; 2025 KATEstageLASH. All rights reserved.
           </p>

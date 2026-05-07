@@ -177,22 +177,22 @@ export function SalaryManagement() {
 
         {/* Controls */}
         <div className="card mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 sm:gap-4">
             {/* Month Selector */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center justify-center gap-1">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors"
                 aria-label="前月"
               >
                 <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <span className="text-lg font-semibold min-w-[140px] text-center text-secondary-800">
+              <span className="text-base sm:text-lg font-semibold min-w-[140px] text-center text-secondary-800">
                 {selectedYear}年{selectedMonth}月分
               </span>
               <button
                 onClick={handleNextMonth}
-                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors"
                 aria-label="次月"
               >
                 <ChevronRight className="w-5 h-5 text-secondary-600" />
@@ -204,22 +204,24 @@ export function SalaryManagement() {
               <button
                 onClick={handleCalculate}
                 disabled={isCalculating}
-                className="btn btn-primary"
+                className="btn btn-primary flex-1 sm:flex-none !text-sm sm:!text-base !py-2.5 !px-3 sm:!px-5"
               >
                 {isCalculating ? (
                   <RefreshCw className="w-5 h-5 animate-spin" />
                 ) : (
                   <Calculator className="w-5 h-5" />
                 )}
-                給与計算実行
+                <span className="hidden sm:inline">給与計算実行</span>
+                <span className="sm:hidden">計算</span>
               </button>
               <button
                 onClick={handleDownloadAllPdf}
                 disabled={salaryData.length === 0}
-                className="btn btn-secondary"
+                className="btn btn-secondary flex-1 sm:flex-none !text-sm sm:!text-base !py-2.5 !px-3 sm:!px-5"
               >
                 <Download className="w-5 h-5" />
-                一括PDF
+                <span className="hidden sm:inline">一括PDF</span>
+                <span className="sm:hidden">PDF</span>
               </button>
             </div>
           </div>
@@ -253,7 +255,7 @@ export function SalaryManagement() {
                     </div>
                     <button
                       onClick={() => handleOpenTaxModal(staff.staffId)}
-                      className="btn btn-secondary !py-1.5 !px-3 !text-xs !rounded-lg flex-shrink-0"
+                      className="btn btn-secondary !py-2 !px-4 !text-xs !rounded-lg flex-shrink-0"
                     >
                       編集
                     </button>
@@ -266,80 +268,151 @@ export function SalaryManagement() {
 
         {/* Salary Results */}
         {salaryData.length > 0 && (
-          <div className="card overflow-x-auto p-0 overflow-hidden">
-            <div className="px-6 py-5">
+          <>
+            {/* Section header */}
+            <div className="mb-3 sm:hidden">
               <h3 className="font-semibold text-secondary-800">給与計算結果</h3>
             </div>
 
-            <table className="w-full min-w-[1000px] text-sm">
-              <thead>
-                <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
-                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">氏名</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">基本給</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">残業手当</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">交通費</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">総支給額</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">社会保険料</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">税金</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">控除計</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">差引支給額</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold tracking-wider">PDF</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-secondary-100">
-                {salaryData.map(record => {
-                  const socialInsurance =
-                    record.healthInsurance +
-                    record.nursingInsurance +
-                    record.pension +
-                    record.employmentInsurance;
-                  const taxes = record.incomeTax + record.residentTax;
+            {/* Mobile: Card list */}
+            <div className="sm:hidden space-y-3">
+              {salaryData.map(record => {
+                const socialInsurance =
+                  record.healthInsurance +
+                  record.nursingInsurance +
+                  record.pension +
+                  record.employmentInsurance;
+                const taxes = record.incomeTax + record.residentTax;
 
-                  return (
-                    <tr key={record.staffId} className="hover:bg-primary-50/30 transition-colors">
-                      <td className="px-3 py-3 font-medium text-secondary-800">
+                return (
+                  <div key={record.staffId} className="card !p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <p className="font-semibold text-secondary-800 truncate">
                         {record.name}
-                      </td>
-                      <td className="px-3 py-3 text-right text-secondary-700">
-                        {formatCurrency(record.baseSalary)}
-                      </td>
-                      <td className="px-3 py-3 text-right text-secondary-700">
-                        {formatCurrency(record.overtimePay)}
-                      </td>
-                      <td className="px-3 py-3 text-right text-secondary-700">
-                        {formatCurrency(record.transportation)}
-                      </td>
-                      <td className="px-3 py-3 text-right font-medium text-secondary-800">
-                        {formatCurrency(record.grossPay)}
-                      </td>
-                      <td className="px-3 py-3 text-right text-red-600">
-                        -{formatCurrency(socialInsurance)}
-                      </td>
-                      <td className="px-3 py-3 text-right text-red-600">
-                        -{formatCurrency(taxes)}
-                      </td>
-                      <td className="px-3 py-3 text-right text-red-600">
-                        -{formatCurrency(record.totalDeduction)}
-                      </td>
-                      <td className="px-3 py-3 text-right font-bold text-primary-700">
-                        {formatCurrency(record.netPay)}
-                      </td>
-                      <td className="px-3 py-3 text-center">
-                        <button
-                          onClick={() => handleDownloadPdf(record.staffId)}
-                          className="p-1.5 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                          aria-label="PDFダウンロード"
-                          title="PDFダウンロード"
-                        >
-                          <FileText className="w-5 h-5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </p>
+                      <button
+                        onClick={() => handleDownloadPdf(record.staffId)}
+                        className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors flex-shrink-0"
+                        aria-label="PDFダウンロード"
+                      >
+                        <FileText className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-secondary-500">基本給</span>
+                        <span className="text-secondary-700">{formatCurrency(record.baseSalary)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-secondary-500">残業手当</span>
+                        <span className="text-secondary-700">{formatCurrency(record.overtimePay)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-secondary-500">交通費</span>
+                        <span className="text-secondary-700">{formatCurrency(record.transportation)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-secondary-100 pt-1.5">
+                        <span className="text-secondary-600 font-medium">総支給額</span>
+                        <span className="font-medium text-secondary-800">{formatCurrency(record.grossPay)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-secondary-500">社会保険料</span>
+                        <span className="text-red-600">-{formatCurrency(socialInsurance)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-secondary-500">税金</span>
+                        <span className="text-red-600">-{formatCurrency(taxes)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-secondary-500">控除計</span>
+                        <span className="text-red-600">-{formatCurrency(record.totalDeduction)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-secondary-100 pt-1.5">
+                        <span className="text-secondary-700 font-semibold">差引支給額</span>
+                        <span className="font-bold text-primary-700">{formatCurrency(record.netPay)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop: Table */}
+            <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden">
+              <div className="px-6 py-5">
+                <h3 className="font-semibold text-secondary-800">給与計算結果</h3>
+              </div>
+
+              <table className="w-full min-w-[1000px] text-sm">
+                <thead>
+                  <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
+                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">氏名</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">基本給</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">残業手当</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">交通費</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">総支給額</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">社会保険料</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">税金</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">控除計</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">差引支給額</th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold tracking-wider">PDF</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-secondary-100">
+                  {salaryData.map(record => {
+                    const socialInsurance =
+                      record.healthInsurance +
+                      record.nursingInsurance +
+                      record.pension +
+                      record.employmentInsurance;
+                    const taxes = record.incomeTax + record.residentTax;
+
+                    return (
+                      <tr key={record.staffId} className="hover:bg-primary-50/30 transition-colors">
+                        <td className="px-3 py-3 font-medium text-secondary-800">
+                          {record.name}
+                        </td>
+                        <td className="px-3 py-3 text-right text-secondary-700">
+                          {formatCurrency(record.baseSalary)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-secondary-700">
+                          {formatCurrency(record.overtimePay)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-secondary-700">
+                          {formatCurrency(record.transportation)}
+                        </td>
+                        <td className="px-3 py-3 text-right font-medium text-secondary-800">
+                          {formatCurrency(record.grossPay)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-red-600">
+                          -{formatCurrency(socialInsurance)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-red-600">
+                          -{formatCurrency(taxes)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-red-600">
+                          -{formatCurrency(record.totalDeduction)}
+                        </td>
+                        <td className="px-3 py-3 text-right font-bold text-primary-700">
+                          {formatCurrency(record.netPay)}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <button
+                            onClick={() => handleDownloadPdf(record.staffId)}
+                            className="p-1.5 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                            aria-label="PDFダウンロード"
+                            title="PDFダウンロード"
+                          >
+                            <FileText className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {/* Empty State */}

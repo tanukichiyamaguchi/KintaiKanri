@@ -138,8 +138,8 @@ export function SettingsPage() {
             {/* Insurance Rates Form */}
             <div className="card mb-6">
               <div className="flex items-center gap-2 mb-6">
-                <SettingsIcon className="w-5 h-5 text-secondary-700" />
-                <h2 className="text-lg font-semibold text-secondary-800">
+                <SettingsIcon className="w-5 h-5 text-secondary-700 flex-shrink-0" />
+                <h2 className="text-base sm:text-lg font-semibold text-secondary-800">
                   社会保険料率設定
                 </h2>
               </div>
@@ -282,7 +282,7 @@ export function SettingsPage() {
             {/* Rate History */}
             <div className="card">
               <div className="flex items-center gap-2 mb-4">
-                <History className="w-5 h-5 text-secondary-700" />
+                <History className="w-5 h-5 text-secondary-700 flex-shrink-0" />
                 <h3 className="font-semibold text-secondary-800">料率履歴</h3>
               </div>
 
@@ -299,17 +299,17 @@ export function SettingsPage() {
                           : 'bg-secondary-50 border-secondary-100'
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium text-secondary-800">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-medium text-secondary-800 truncate">
                           {rate.effectiveDate.replace('-', '年')}月〜
                         </span>
                         {index === 0 && (
-                          <span className="text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full font-medium">
+                          <span className="text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full font-medium flex-shrink-0">
                             適用中
                           </span>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm text-secondary-600">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2 text-xs sm:text-sm text-secondary-600">
                         <span>健康保険: {rate.healthInsuranceRate}%</span>
                         <span>介護保険: {rate.nursingInsuranceRate}%</span>
                         <span>厚生年金: {rate.pensionRate}%</span>

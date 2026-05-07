@@ -15,7 +15,7 @@ import {
   Bell,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { staffApi, attendanceApi, applicationApi, submissionApi } from '../../api';
+import { staffApi, attendanceApi, applicationApi, submissionApi, paidLeaveApi, shiftRequestApi } from '../../api';
 import type { StaffInfo, TodayAttendance, WorkStatus } from '../../types';
 import { Header, Loading, Clock } from '../../components/common';
 
@@ -32,6 +32,8 @@ export function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [pendingApplications, setPendingApplications] = useState(0);
   const [pendingSubmissions, setPendingSubmissions] = useState(0);
+  const [pendingPaidLeave, setPendingPaidLeave] = useState(0);
+  const [shiftRequestCount, setShiftRequestCount] = useState(0);
 
   // Redirect if not admin
   useEffect(() => {
@@ -69,19 +71,27 @@ export function AdminDashboard() {
     fetchData();
   }, []);
 
-  // Fetch pending approvals counts
+  // Fetch pending approvals counts (申請 / 月次提出 / 有給申請 / 希望シフト)
   useEffect(() => {
     async function fetchApprovals() {
       try {
-        const [appsRes, subsRes] = await Promise.all([
+        const [appsRes, subsRes, leaveRes, shiftReqRes] = await Promise.all([
           applicationApi.list({ status: 'pending' }),
           submissionApi.list({ status: 'submitted' }),
+          paidLeaveApi.getAll(),
+          shiftRequestApi.list(),
         ]);
         if (appsRes.success && appsRes.data) {
           setPendingApplications(appsRes.data.length);
         }
         if (subsRes.success && subsRes.data) {
           setPendingSubmissions(subsRes.data.length);
+        }
+        if (leaveRes.success && leaveRes.data) {
+          setPendingPaidLeave(leaveRes.data.filter(r => r.status === 'pending').length);
+        }
+        if (shiftReqRes.success && shiftReqRes.data) {
+          setShiftRequestCount(shiftReqRes.data.length);
         }
       } catch {
         // Silently ignore — approvals widget is non-critical
@@ -148,6 +158,14 @@ export function AdminDashboard() {
       shadowColor: 'shadow-rose-500/20',
     },
     {
+      to: '/admin/shift-requests',
+      icon: <Calendar className="w-6 h-6" />,
+      label: '希望シフト',
+      description: 'スタッフからのシフト希望',
+      color: 'from-amber-500 to-orange-600',
+      shadowColor: 'shadow-amber-500/20',
+    },
+    {
       to: '/admin/paid-leave',
       icon: <Palmtree className="w-6 h-6" />,
       label: '有給管理',
@@ -207,16 +225,16 @@ export function AdminDashboard() {
                 </div>
                 <span className="text-primary-600 text-sm font-semibold tracking-wider uppercase">Dashboard</span>
               </div>
-              <h1 className="text-2xl font-bold text-secondary-900 mb-1">おかえりなさい</h1>
-              <p className="text-secondary-500">{todayStr}</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-secondary-900 mb-1">おかえりなさい</h1>
+              <p className="text-sm sm:text-base text-secondary-500">{todayStr}</p>
             </div>
-            <div className="flex items-center gap-6 sm:gap-8">
+            <div className="flex items-center justify-around sm:justify-end gap-6 sm:gap-8">
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">{workingCount}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-green-600">{workingCount}</div>
                 <div className="text-xs text-secondary-500 font-medium">勤務中</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600">{finishedCount}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-blue-600">{finishedCount}</div>
                 <div className="text-xs text-secondary-500 font-medium">退勤済</div>
               </div>
             </div>
@@ -224,36 +242,60 @@ export function AdminDashboard() {
         </div>
 
         {/* Pending Approvals */}
-        {(pendingApplications > 0 || pendingSubmissions > 0) && (
-          <Link
-            to="/admin/approvals"
-            className="card mb-6 group hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5 border border-rose-100 hover:border-rose-200 block"
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform">
-                  <Bell className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-secondary-800 group-hover:text-rose-600 transition-colors">
-                    承認待ち
-                  </h3>
-                  <p className="text-sm text-secondary-500 mt-0.5">対応が必要な項目があります</p>
-                </div>
+        {(pendingApplications > 0 || pendingSubmissions > 0 || pendingPaidLeave > 0 || shiftRequestCount > 0) && (
+          <div className="card mb-6 border border-rose-100">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 flex-shrink-0">
+                <Bell className="w-5 h-5" />
               </div>
-              <div className="flex items-center gap-5">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-rose-600">{pendingApplications}</div>
-                  <div className="text-xs text-secondary-500 font-medium">申請</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-rose-600">{pendingSubmissions}</div>
-                  <div className="text-xs text-secondary-500 font-medium">月次提出</div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-secondary-300 group-hover:text-rose-500 group-hover:translate-x-1 transition-all" />
+              <div className="min-w-0">
+                <h3 className="font-semibold text-secondary-800">承認待ち</h3>
+                <p className="text-xs sm:text-sm text-secondary-500 mt-0.5">対応が必要な項目があります</p>
               </div>
             </div>
-          </Link>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+              <Link
+                to="/admin/approvals"
+                className="group rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-50 px-3 py-3 transition-all flex items-center justify-between"
+              >
+                <div>
+                  <div className="text-xs text-secondary-600 font-medium mb-0.5">申請</div>
+                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{pendingApplications}</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-secondary-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
+              </Link>
+              <Link
+                to="/admin/approvals"
+                className="group rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-50 px-3 py-3 transition-all flex items-center justify-between"
+              >
+                <div>
+                  <div className="text-xs text-secondary-600 font-medium mb-0.5">月次提出</div>
+                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{pendingSubmissions}</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-secondary-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
+              </Link>
+              <Link
+                to="/admin/paid-leave"
+                className="group rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-50 px-3 py-3 transition-all flex items-center justify-between"
+              >
+                <div>
+                  <div className="text-xs text-secondary-600 font-medium mb-0.5">有給申請</div>
+                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{pendingPaidLeave}</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-secondary-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
+              </Link>
+              <Link
+                to="/admin/shift-requests"
+                className="group rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-50 px-3 py-3 transition-all flex items-center justify-between"
+              >
+                <div>
+                  <div className="text-xs text-secondary-600 font-medium mb-0.5">希望シフト</div>
+                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{shiftRequestCount}</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-secondary-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
+              </Link>
+            </div>
+          </div>
         )}
 
         {/* Today's Status */}
@@ -297,18 +339,18 @@ export function AdminDashboard() {
                 return (
                   <div
                     key={staff.staffId}
-                    className={`flex items-center justify-between p-4 rounded-xl transition-all border border-transparent hover:border-secondary-200 ${statusInfo.bg}`}
+                    className={`flex items-center justify-between gap-2 p-3 sm:p-4 rounded-xl transition-all border border-transparent hover:border-secondary-200 ${statusInfo.bg}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${statusInfo.dot}`} />
-                      <span className="font-medium text-secondary-800">{staff.name}</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${statusInfo.dot}`} />
+                      <span className="font-medium text-secondary-800 truncate">{staff.name}</span>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`text-sm font-semibold px-3 py-1.5 rounded-full ${statusInfo.bg} ${statusInfo.text} border border-current/10`}>
+                    <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+                      <span className={`text-xs sm:text-sm font-semibold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full ${statusInfo.bg} ${statusInfo.text} border border-current/10`}>
                         {statusInfo.label}
                       </span>
                       {clockInTime && (
-                        <span className="text-sm text-secondary-500 font-mono">{clockInTime}〜</span>
+                        <span className="hidden sm:inline text-sm text-secondary-500 font-mono">{clockInTime}〜</span>
                       )}
                     </div>
                   </div>
