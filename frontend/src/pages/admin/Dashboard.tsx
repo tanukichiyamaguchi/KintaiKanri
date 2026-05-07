@@ -91,7 +91,11 @@ export function AdminDashboard() {
           setPendingPaidLeave(leaveRes.data.filter(r => r.status === 'pending').length);
         }
         if (shiftReqRes.success && shiftReqRes.data) {
-          setShiftRequestCount(shiftReqRes.data.length);
+          // 未承認の希望休が1日でも残っているリクエスト数を「対応すべき件数」として表示
+          const pending = shiftReqRes.data.filter(r =>
+            (r.offDays || []).some(d => d.status === 'pending')
+          );
+          setShiftRequestCount(pending.length);
         }
       } catch {
         // Silently ignore — approvals widget is non-critical

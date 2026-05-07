@@ -834,20 +834,42 @@ async function handleDemoRequest<T>(
   if (action === 'shift-requests/submit') {
     const staffId = String(body?.staffId || '');
     const targetYearMonth = String(body?.targetYearMonth || '');
-    const days = Array.isArray(body?.days) ? (body!.days as import('../types').ShiftRequestDay[]) : [];
+    const incomingOffDays = Array.isArray(body?.offDays)
+      ? (body!.offDays as import('../types').ShiftRequestOffDay[])
+      : [];
     const remarks = body?.remarks ? String(body.remarks) : undefined;
     const staff = mockStaff.find(s => s.staffId === staffId);
     const id = 'SR' + Date.now() + Math.random().toString(36).slice(2, 6);
-    // 既存（同じ staffId × targetYearMonth）があれば上書き
+
     const existingIdx = mockShiftRequests.findIndex(
       r => r.staffId === staffId && r.targetYearMonth === targetYearMonth
     );
+    const existingOffDays = existingIdx !== -1 ? mockShiftRequests[existingIdx].offDays : [];
+
+    // マージ: approved/rejected は保持、pending は新セットの有無で残すかどうか決める
+    const newDateSet = new Set(incomingOffDays.map(d => d.date));
+    const merged: import('../types').ShiftRequestOffDay[] = [];
+    const seen = new Set<string>();
+    for (const e of existingOffDays) {
+      if (e.status === 'approved' || e.status === 'rejected') {
+        merged.push(e);
+        seen.add(e.date);
+      } else if (newDateSet.has(e.date)) {
+        merged.push(e);
+        seen.add(e.date);
+      }
+    }
+    for (const d of newDateSet) {
+      if (!seen.has(d)) merged.push({ date: d, status: 'pending' });
+    }
+    merged.sort((a, b) => (a.date < b.date ? -1 : 1));
+
     const record: import('../types').ShiftRequest = {
-      id,
+      id: existingIdx !== -1 ? mockShiftRequests[existingIdx].id : id,
       staffId,
       staffName: staff?.name || '',
       targetYearMonth,
-      days,
+      offDays: merged,
       remarks,
       submittedAt: new Date().toISOString(),
     };
@@ -856,7 +878,7 @@ async function handleDemoRequest<T>(
     } else {
       mockShiftRequests.push(record);
     }
-    return { success: true, data: { id } as unknown as T };
+    return { success: true, data: { id: record.id } as unknown as T };
   }
 
   if (action === 'shift-requests/list') {
@@ -866,6 +888,23 @@ async function handleDemoRequest<T>(
     if (staffId) filtered = filtered.filter(r => r.staffId === staffId);
     if (targetYearMonth) filtered = filtered.filter(r => r.targetYearMonth === targetYearMonth);
     return { success: true, data: filtered as unknown as T };
+  }
+
+  if (action === 'shift-requests/review-day') {
+    const reqId = String(body?.id || '');
+    const date = String(body?.date || '');
+    const status = String(body?.status || '') as 'approved' | 'rejected';
+    const rejectionReason = body?.rejectionReason ? String(body.rejectionReason) : undefined;
+    const reviewedBy = body?.reviewedBy ? String(body.reviewedBy) : undefined;
+    const req = mockShiftRequests.find(r => r.id === reqId);
+    if (!req) return { success: false, error: '希望シフト申請が見つかりません' };
+    const day = req.offDays.find(d => d.date === date);
+    if (!day) return { success: false, error: '対象日が見つかりません' };
+    day.status = status;
+    day.reviewedAt = new Date().toISOString();
+    day.reviewedBy = reviewedBy;
+    day.rejectionReason = status === 'rejected' ? rejectionReason : undefined;
+    return { success: true, data: undefined as unknown as T };
   }
 
   return { success: false, error: 'Unknown endpoint: ' + action };
@@ -1151,13 +1190,13 @@ export const passwordApi = {
     apiRequest('password/reset', { email, newPassword }),
 };
 
-// Shift request API (希望シフト・希望休 申請)
+// Shift request API (希望休 申請)
 export const shiftRequestApi = {
-  // スタッフが提出。target_year_month は 'YYYY-MM'。
+  // スタッフが提出。target_year_month は 'YYYY-MM'。offDays は希望休として申請する日のリスト。
   submit: (params: {
     staffId: string;
     targetYearMonth: string;
-    days: import('../types').ShiftRequestDay[];
+    offDays: import('../types').ShiftRequestOffDay[];
     remarks?: string;
   }): Promise<ApiResponse<{ id: string }>> =>
     apiRequest('shift-requests/submit', params as unknown as Record<string, unknown>),
@@ -1171,6 +1210,16 @@ export const shiftRequestApi = {
       ...(params?.staffId ? { staffId: params.staffId } : {}),
       ...(params?.targetYearMonth ? { targetYearMonth: params.targetYearMonth } : {}),
     }),
+
+  // 管理者が日単位で承認/却下。
+  reviewDay: (params: {
+    id: string;
+    date: string;
+    status: 'approved' | 'rejected';
+    rejectionReason?: string;
+    reviewedBy?: string;
+  }): Promise<ApiResponse<void>> =>
+    apiRequest('shift-requests/review-day', params as unknown as Record<string, unknown>),
 };
 
 // Admin management API (for super admin / setup)

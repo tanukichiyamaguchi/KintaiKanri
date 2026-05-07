@@ -165,25 +165,27 @@ export interface Application {
 }
 
 // ============================================================
-// Shift request (希望シフト・希望休 申請)
+// Shift request (希望休 申請)
 // 対象月の2ヶ月前の7日が提出期限（例: 7月分は5/7まで）
+// 仕様: スタッフは「希望休」のみを日単位で申請。管理者が日単位で承認/却下可能。
 // ============================================================
 
-export type ShiftRequestKind = 'none' | 'off' | 'time';
+export type ShiftRequestDayStatus = 'pending' | 'approved' | 'rejected';
 
-export interface ShiftRequestDay {
-  date: string;         // YYYY-MM-DD
-  kind: ShiftRequestKind;
-  startTime?: string;   // HH:MM (kind='time' 時のみ)
-  endTime?: string;     // HH:MM (kind='time' 時のみ)
+export interface ShiftRequestOffDay {
+  date: string;             // YYYY-MM-DD
+  status: ShiftRequestDayStatus;
+  reviewedAt?: string;
+  reviewedBy?: string;      // 承認/却下した管理者ID
+  rejectionReason?: string;
 }
 
 export interface ShiftRequest {
   id: string;
   staffId: string;
   staffName: string;
-  targetYearMonth: string; // 'YYYY-MM'（提出対象月）
-  days: ShiftRequestDay[];
+  targetYearMonth: string;        // 'YYYY-MM'
+  offDays: ShiftRequestOffDay[];  // 希望休として申請された日（status付き）
   remarks?: string;
   submittedAt: string;
 }
