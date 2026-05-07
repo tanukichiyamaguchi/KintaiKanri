@@ -217,7 +217,10 @@ function calculateMockSalary(staff: Staff, year: number, month: number): SalaryR
   };
 }
 
-// GAS API - All requests use GET to avoid CORS issues
+// GAS API
+//   - Read系 (body なし): GET でクエリ送信
+//   - Write系 (body あり): POST + text/plain で body 送信
+//     （URL 長制限を回避。Content-Type を text/plain にすることで CORS プリフライトを発生させない）
 async function apiRequest<T>(
   action: string,
   body?: Record<string, unknown>,
@@ -237,14 +240,23 @@ async function apiRequest<T>(
       });
     }
 
+    let response: Response;
     if (body) {
-      url.searchParams.set('data', JSON.stringify(body));
+      // POST body: no URL length limit, no CORS preflight with text/plain
+      response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body),
+        redirect: 'follow',
+      });
+    } else {
+      // GET for read-only operations
+      response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        redirect: 'follow',
+      });
     }
-
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-    });
 
     const data = await response.json();
 
