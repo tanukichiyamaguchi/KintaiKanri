@@ -714,7 +714,7 @@ function handleRequest(e, method) {
         break;
 
       default:
-        result = { success: false, error: 'Unknown action: ' + path };
+        result = { success: false, error: '未対応のアクションです: ' + path };
     }
 
     output.setContent(JSON.stringify(result));
@@ -746,7 +746,7 @@ function handleAuth(body) {
   const { email, password } = body;
 
   if (!email || !password) {
-    return { success: false, error: 'Missing email or password' };
+    return { success: false, error: 'メールアドレスとパスワードを入力してください' };
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -890,12 +890,12 @@ function handleClock(body) {
   const { staffId, type, timestamp } = body;
 
   if (!staffId || !type) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
 
   const allowedTypes = ['clock_in', 'clock_out'];
   if (allowedTypes.indexOf(type) === -1) {
-    return { success: false, error: 'Invalid clock type' };
+    return { success: false, error: '不正な打刻種別です' };
   }
 
   // 不正な timestamp が渡された場合は現在時刻にフォールバックして処理続行。
@@ -922,7 +922,7 @@ function handleClock(body) {
   const staff = staffData.find(s => s.staff_id === staffId);
 
   if (!staff) {
-    return { success: false, error: 'Staff not found' };
+    return { success: false, error: 'スタッフが見つかりません' };
   }
 
   // Find or create today's record。
@@ -1022,7 +1022,7 @@ function handleGetTodayAttendance(params) {
   const staffId = params.staffId;
 
   if (!staffId) {
-    return { success: false, error: 'Missing staffId' };
+    return { success: false, error: 'スタッフIDが指定されていません' };
   }
 
   const now = new Date();
@@ -1075,13 +1075,13 @@ function handleGetAttendance(params) {
   const { staffId, year, month } = params;
 
   if (!staffId || !year || !month) {
-    return { success: false, error: 'Missing required parameters' };
+    return { success: false, error: '必須パラメータが指定されていません' };
   }
 
   const yNum = parseInt(year, 10);
   const mNum = parseInt(month, 10);
   if (!yNum || !mNum || mNum < 1 || mNum > 12) {
-    return { success: false, error: 'Invalid year/month' };
+    return { success: false, error: '年月が不正です' };
   }
   const sheet = getAttendanceSheet(yNum, mNum);
   const data = sheetToObjects(sheet);
@@ -1149,7 +1149,7 @@ function handleGetStaffDetail(params) {
   const staffId = params.staffId;
 
   if (!staffId) {
-    return { success: false, error: 'Missing staffId' };
+    return { success: false, error: 'スタッフIDが指定されていません' };
   }
 
   const sheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -1157,7 +1157,7 @@ function handleGetStaffDetail(params) {
   const staff = data.find(s => s.staff_id === staffId);
 
   if (!staff) {
-    return { success: false, error: 'Staff not found' };
+    return { success: false, error: 'スタッフが見つかりません' };
   }
 
   return {
@@ -1180,7 +1180,7 @@ function handleCreateStaff(body) {
   const { name, email, password, monthlySalary, transportation, hireDate, birthDate, paidLeaveBalance } = body;
 
   if (!name || !email || !password) {
-    return { success: false, error: 'Missing required fields (name, email, password are required)' };
+    return { success: false, error: '氏名・メール・パスワードは必須です' };
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -1209,14 +1209,14 @@ function handleUpdateStaff(body) {
   Object.keys(body).forEach(k => { if (k !== 'staffId') updates[k] = body[k]; });
 
   if (!staffId) {
-    return { success: false, error: 'Missing staffId' };
+    return { success: false, error: 'スタッフIDが指定されていません' };
   }
 
   const sheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const rowIndex = findRowIndex(sheet, 'staff_id', staffId);
 
   if (rowIndex === -1) {
-    return { success: false, error: 'Staff not found' };
+    return { success: false, error: 'スタッフが見つかりません' };
   }
 
   const headers = getHeaderRow_(sheet);
@@ -1252,14 +1252,14 @@ function handleDeleteStaff(body) {
   const { staffId } = body;
 
   if (!staffId) {
-    return { success: false, error: 'Missing staffId' };
+    return { success: false, error: 'スタッフIDが指定されていません' };
   }
 
   const sheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const rowIndex = findRowIndex(sheet, 'staff_id', staffId);
 
   if (rowIndex === -1) {
-    return { success: false, error: 'Staff not found' };
+    return { success: false, error: 'スタッフが見つかりません' };
   }
 
   // Soft delete - set status to inactive
@@ -1273,7 +1273,7 @@ function handleGetPaidLeaveBalance(params) {
   const staffId = params.staffId;
 
   if (!staffId) {
-    return { success: false, error: 'Missing staffId' };
+    return { success: false, error: 'スタッフIDが指定されていません' };
   }
 
   // Get balance from staff master
@@ -1282,7 +1282,7 @@ function handleGetPaidLeaveBalance(params) {
   const staff = staffData.find(s => s.staff_id === staffId);
 
   if (!staff) {
-    return { success: false, error: 'Staff not found' };
+    return { success: false, error: 'スタッフが見つかりません' };
   }
 
   // Get history
@@ -1312,7 +1312,7 @@ function handlePaidLeaveRequest(body) {
   const { staffId, leaveDate } = body;
 
   if (!staffId || !leaveDate) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -1320,7 +1320,7 @@ function handlePaidLeaveRequest(body) {
   const staff = staffData.find(s => s.staff_id === staffId);
 
   if (!staff) {
-    return { success: false, error: 'Staff not found' };
+    return { success: false, error: 'スタッフが見つかりません' };
   }
 
   const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
@@ -1357,14 +1357,14 @@ function handleUpdatePaidLeaveStatus(body) {
   const { requestId, status } = body;
 
   if (!requestId || !status) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
 
   const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
   const rowIndex = findRowIndex(sheet, 'id', requestId);
 
   if (rowIndex === -1) {
-    return { success: false, error: 'Request not found' };
+    return { success: false, error: '申請が見つかりません' };
   }
 
   const headers = getHeaderRow_(sheet);
@@ -1427,7 +1427,7 @@ function handleUpdateInsuranceRates(body) {
   const { effectiveDate, healthInsuranceRate, nursingInsuranceRate, pensionRate, employmentInsuranceRate } = body;
 
   if (!effectiveDate) {
-    return { success: false, error: 'Missing effectiveDate' };
+    return { success: false, error: '適用開始日が指定されていません' };
   }
 
   const sheet = getOrCreateSheet(SHEETS.INSURANCE_RATES);
@@ -1458,13 +1458,13 @@ function handleGetTax(params) {
   const { year, month } = params;
 
   if (!year || !month) {
-    return { success: false, error: 'Missing required parameters' };
+    return { success: false, error: '必須パラメータが指定されていません' };
   }
 
   const yNum = parseInt(year, 10);
   const mNum = parseInt(month, 10);
   if (!yNum || !mNum || mNum < 1 || mNum > 12) {
-    return { success: false, error: 'Invalid year/month' };
+    return { success: false, error: '年月が不正です' };
   }
   const sheet = getTaxSheet(yNum, mNum);
   const data = sheetToObjects(sheet);
@@ -1485,13 +1485,13 @@ function handleUpdateTax(body) {
   const { staffId, year, month, incomeTax, residentTax } = body;
 
   if (!staffId || !year || !month) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
 
   const yNum = parseInt(year, 10);
   const mNum = parseInt(month, 10);
   if (!yNum || !mNum || mNum < 1 || mNum > 12) {
-    return { success: false, error: 'Invalid year/month' };
+    return { success: false, error: '年月が不正です' };
   }
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -1499,7 +1499,7 @@ function handleUpdateTax(body) {
   const staff = staffData.find(s => s.staff_id === staffId);
 
   if (!staff) {
-    return { success: false, error: 'Staff not found' };
+    return { success: false, error: 'スタッフが見つかりません' };
   }
 
   const sheet = getTaxSheet(yNum, mNum);
@@ -1522,13 +1522,13 @@ function handleGetIncentive(params) {
   const { year, month } = params;
 
   if (!year || !month) {
-    return { success: false, error: 'Missing required parameters' };
+    return { success: false, error: '必須パラメータが指定されていません' };
   }
 
   const yNum = parseInt(year, 10);
   const mNum = parseInt(month, 10);
   if (!yNum || !mNum || mNum < 1 || mNum > 12) {
-    return { success: false, error: 'Invalid year/month' };
+    return { success: false, error: '年月が不正です' };
   }
   const sheet = getIncentiveSheet(yNum, mNum);
   const data = sheetToObjects(sheet);
@@ -1549,13 +1549,13 @@ function handleCreateIncentive(body) {
   const { staffId, year, month, itemName, amount, remarks } = body;
 
   if (!staffId || !year || !month || !itemName) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
 
   const yNum = parseInt(year, 10);
   const mNum = parseInt(month, 10);
   if (!yNum || !mNum || mNum < 1 || mNum > 12) {
-    return { success: false, error: 'Invalid year/month' };
+    return { success: false, error: '年月が不正です' };
   }
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -1563,7 +1563,7 @@ function handleCreateIncentive(body) {
   const staff = staffData.find(s => s.staff_id === staffId);
 
   if (!staff) {
-    return { success: false, error: 'Staff not found' };
+    return { success: false, error: 'スタッフが見つかりません' };
   }
 
   const sheet = getIncentiveSheet(yNum, mNum);
@@ -1576,13 +1576,13 @@ function handleCalculateSalary(body) {
   const { year, month } = body;
 
   if (!year || !month) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
 
   const yNum = parseInt(year, 10);
   const mNum = parseInt(month, 10);
   if (!yNum || !mNum || mNum < 1 || mNum > 12) {
-    return { success: false, error: 'Invalid year/month' };
+    return { success: false, error: '年月が不正です' };
   }
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -1742,20 +1742,20 @@ function handleGetSalary(params) {
   const { staffId, year, month } = params;
 
   if (!staffId || !year || !month) {
-    return { success: false, error: 'Missing required parameters' };
+    return { success: false, error: '必須パラメータが指定されていません' };
   }
 
   const yNum = parseInt(year, 10);
   const mNum = parseInt(month, 10);
   if (!yNum || !mNum || mNum < 1 || mNum > 12) {
-    return { success: false, error: 'Invalid year/month' };
+    return { success: false, error: '年月が不正です' };
   }
   const sheet = getSalarySheet(yNum, mNum);
   const data = sheetToObjects(sheet);
   const record = data.find(r => r.staff_id === staffId);
 
   if (!record) {
-    return { success: false, error: 'Salary record not found' };
+    return { success: false, error: '給与レコードが見つかりません' };
   }
 
   return {
@@ -1792,14 +1792,14 @@ function handleUpdateAttendance(body) {
   const { date, staffId, field, value, reason, editorId, editorRole } = body;
 
   if (!date || !staffId || !field) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
 
   const dateParts = String(date).split('-');
   const year = parseInt(dateParts[0], 10);
   const month = parseInt(dateParts[1], 10);
   if (!year || !month || month < 1 || month > 12) {
-    return { success: false, error: 'Invalid date format (YYYY-MM-DD expected)' };
+    return { success: false, error: '日付形式が不正です（YYYY-MM-DD 形式で指定してください）' };
   }
   const yearMonth = year + '-' + String(month).padStart(2, '0');
 
@@ -1829,7 +1829,7 @@ function handleUpdateAttendance(body) {
     const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
     const staffData = sheetToObjects(staffSheet);
     const staff = staffData.find(s => s.staff_id === staffId);
-    if (!staff) return { success: false, error: 'Staff not found' };
+    if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
     sheet.appendRow([
       date, staffId, staff.name,
@@ -1857,7 +1857,7 @@ function handleUpdateAttendance(body) {
   const colIndex = headers.indexOf(columnName);
 
   if (colIndex === -1) {
-    return { success: false, error: 'Invalid field: ' + field };
+    return { success: false, error: '不正なフィールド名です: ' + field };
   }
 
   // Capture old value for history
@@ -1931,7 +1931,7 @@ function handleBulkSaveAttendance(body) {
   const editorRole = body && body.editorRole === 'admin' ? 'admin' : 'staff';
 
   if (!staffId || !year || !month || month < 1 || month > 12 || !rows) {
-    return { success: false, error: 'Missing or invalid parameters' };
+    return { success: false, error: 'パラメータが不正または不足しています' };
   }
 
   const yearMonth = year + '-' + String(month).padStart(2, '0');
@@ -1944,7 +1944,7 @@ function handleBulkSaveAttendance(body) {
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const staff = sheetToObjects(staffSheet).find(s => s.staff_id === staffId);
-  if (!staff) return { success: false, error: 'Staff not found' };
+  if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
   const sheet = getAttendanceSheet(year, month);
   const data = sheet.getDataRange().getValues();
@@ -2185,7 +2185,7 @@ function formatDateValue_(value, defaultYear, defaultMonth) {
 function handleGetMonthlyShifts(params) {
   const year = parseInt(params.year, 10);
   const month = parseInt(params.month, 10);
-  if (!year || !month || month < 1 || month > 12) return { success: false, error: 'Missing or invalid year/month' };
+  if (!year || !month || month < 1 || month > 12) return { success: false, error: '年月が不正または不足しています' };
   const result = readShiftSheet_(year, month);
   return { success: true, data: { exists: result.exists, shifts: result.shifts } };
 }
@@ -2195,7 +2195,7 @@ function handleGetStaffMonthShifts(params) {
   const { staffId } = params;
   const year = parseInt(params.year, 10);
   const month = parseInt(params.month, 10);
-  if (!staffId || !year || !month || month < 1 || month > 12) return { success: false, error: 'Missing or invalid required params' };
+  if (!staffId || !year || !month || month < 1 || month > 12) return { success: false, error: '必須パラメータが不正または不足しています' };
   const result = readShiftSheet_(year, month);
   return {
     success: true,
@@ -2251,12 +2251,12 @@ function generateShiftTemplate(year, month) {
 function handleCreateApplication(body) {
   const { staffId, date, type, reason, details } = body;
   if (!staffId || !date || !type || !reason) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const staff = sheetToObjects(staffSheet).find(s => s.staff_id === staffId);
-  if (!staff) return { success: false, error: 'Staff not found' };
+  if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
   const sheet = getOrCreateSheet(SHEETS.APPLICATIONS);
   const id = 'AP' + Date.now() + Math.random().toString(36).slice(2, 6);
@@ -2304,10 +2304,10 @@ function handleListApplications(params) {
 
 function handleApproveApplication(body) {
   const { id, reviewedBy } = body;
-  if (!id) return { success: false, error: 'Missing id' };
+  if (!id) return { success: false, error: 'IDが指定されていません' };
   const sheet = getOrCreateSheet(SHEETS.APPLICATIONS);
   const rowIndex = findRowIndex(sheet, 'id', id);
-  if (rowIndex === -1) return { success: false, error: 'Application not found' };
+  if (rowIndex === -1) return { success: false, error: '申請が見つかりません' };
 
   const headers = getHeaderRow_(sheet);
   setCellByColumnName_(sheet, rowIndex, headers, 'status', 'approved');
@@ -2327,11 +2327,11 @@ function handleApproveApplication(body) {
 function handleRejectApplication(body) {
   const { id, reviewedBy, rejectionReason } = body;
   if (!id || !rejectionReason) {
-    return { success: false, error: 'Missing id or rejectionReason' };
+    return { success: false, error: 'IDまたは却下理由が指定されていません' };
   }
   const sheet = getOrCreateSheet(SHEETS.APPLICATIONS);
   const rowIndex = findRowIndex(sheet, 'id', id);
-  if (rowIndex === -1) return { success: false, error: 'Application not found' };
+  if (rowIndex === -1) return { success: false, error: '申請が見つかりません' };
 
   const headers = getHeaderRow_(sheet);
   setCellByColumnName_(sheet, rowIndex, headers, 'status', 'rejected');
@@ -2361,7 +2361,7 @@ function getSubmissionStatus_(staffId, yearMonth) {
 
 function handleGetSubmissionStatus(params) {
   const { staffId, yearMonth } = params;
-  if (!staffId || !yearMonth) return { success: false, error: 'Missing params' };
+  if (!staffId || !yearMonth) return { success: false, error: '必須パラメータが指定されていません' };
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
   const rec = sheetToObjects(sheet).find(r => r.staff_id === staffId && r.year_month === yearMonth);
   if (!rec) {
@@ -2389,11 +2389,11 @@ function handleGetSubmissionStatus(params) {
  */
 function handleSubmitMonthly(body) {
   const { staffId, yearMonth, remarks } = body;
-  if (!staffId || !yearMonth) return { success: false, error: 'Missing params' };
+  if (!staffId || !yearMonth) return { success: false, error: '必須パラメータが指定されていません' };
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const staff = sheetToObjects(staffSheet).find(s => s.staff_id === staffId);
-  if (!staff) return { success: false, error: 'Staff not found' };
+  if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
   // ゲート: 当月の全申請が approved か
   const apps = sheetToObjects(getOrCreateSheet(SHEETS.APPLICATIONS))
@@ -2467,10 +2467,10 @@ function handleListSubmissions(params) {
 
 function handleApproveSubmission(body) {
   const { staffId, yearMonth, reviewedBy } = body;
-  if (!staffId || !yearMonth) return { success: false, error: 'Missing params' };
+  if (!staffId || !yearMonth) return { success: false, error: '必須パラメータが指定されていません' };
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
   const rowIndex = findSubmissionRowIndex_(sheet, staffId, yearMonth);
-  if (rowIndex === -1) return { success: false, error: 'Submission not found' };
+  if (rowIndex === -1) return { success: false, error: '月次提出が見つかりません' };
 
   const headers = getHeaderRow_(sheet);
   setCellByColumnName_(sheet, rowIndex, headers, 'status', 'approved');
@@ -2489,11 +2489,11 @@ function handleApproveSubmission(body) {
 function handleRejectSubmission(body) {
   const { staffId, yearMonth, reviewedBy, rejectionReason } = body;
   if (!staffId || !yearMonth || !rejectionReason) {
-    return { success: false, error: 'Missing required fields' };
+    return { success: false, error: '必須項目が入力されていません' };
   }
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
   const rowIndex = findSubmissionRowIndex_(sheet, staffId, yearMonth);
-  if (rowIndex === -1) return { success: false, error: 'Submission not found' };
+  if (rowIndex === -1) return { success: false, error: '月次提出が見つかりません' };
 
   const headers = getHeaderRow_(sheet);
   setCellByColumnName_(sheet, rowIndex, headers, 'status', 'rejected');
@@ -2516,11 +2516,11 @@ function handleRejectSubmission(body) {
 
 function handleChangePassword(body) {
   const { email, oldPassword, newPassword } = body;
-  if (!email || !oldPassword || !newPassword) return { success: false, error: 'Missing fields' };
+  if (!email || !oldPassword || !newPassword) return { success: false, error: '必須項目が入力されていません' };
 
   const normalized = String(email).trim().toLowerCase();
   const ctx = findUserByEmail_(normalized);
-  if (!ctx) return { success: false, error: 'User not found' };
+  if (!ctx) return { success: false, error: 'ユーザーが見つかりません' };
 
   const expected = hashPassword(oldPassword, ctx.user.password_salt);
   if (expected !== ctx.user.password_hash) {
@@ -2540,10 +2540,10 @@ function handleChangePassword(body) {
 /** 管理者によるパスワードリセット（管理者の認可は呼び出し側で確認する想定） */
 function handleResetPassword(body) {
   const { email, newPassword } = body;
-  if (!email || !newPassword) return { success: false, error: 'Missing fields' };
+  if (!email || !newPassword) return { success: false, error: '必須項目が入力されていません' };
   const normalized = String(email).trim().toLowerCase();
   const ctx = findUserByEmail_(normalized);
-  if (!ctx) return { success: false, error: 'User not found' };
+  if (!ctx) return { success: false, error: 'ユーザーが見つかりません' };
 
   const newSalt = generateSalt();
   const newHash = hashPassword(newPassword, newSalt);
@@ -2583,7 +2583,7 @@ function handleListAdmins() {
 
 function handleCreateAdmin(body) {
   const { name, email, password } = body;
-  if (!name || !email || !password) return { success: false, error: 'Missing required fields' };
+  if (!name || !email || !password) return { success: false, error: '必須項目が入力されていません' };
 
   const normalized = String(email).trim().toLowerCase();
   const sheet = getOrCreateSheet(SHEETS.ADMINS);
@@ -2600,10 +2600,10 @@ function handleCreateAdmin(body) {
 
 function handleUpdateAdmin(body) {
   const { adminId, name, email, password } = body;
-  if (!adminId) return { success: false, error: 'Missing adminId' };
+  if (!adminId) return { success: false, error: '管理者IDが指定されていません' };
   const sheet = getOrCreateSheet(SHEETS.ADMINS);
   const rowIndex = findRowIndex(sheet, 'admin_id', adminId);
-  if (rowIndex === -1) return { success: false, error: 'Admin not found' };
+  if (rowIndex === -1) return { success: false, error: '管理者が見つかりません' };
 
   const headers = getHeaderRow_(sheet);
   if (name) setCellByColumnName_(sheet, rowIndex, headers, 'name', name);
@@ -2619,10 +2619,10 @@ function handleUpdateAdmin(body) {
 
 function handleDeleteAdmin(body) {
   const { adminId } = body;
-  if (!adminId) return { success: false, error: 'Missing adminId' };
+  if (!adminId) return { success: false, error: '管理者IDが指定されていません' };
   const sheet = getOrCreateSheet(SHEETS.ADMINS);
   const rowIndex = findRowIndex(sheet, 'admin_id', adminId);
-  if (rowIndex === -1) return { success: false, error: 'Admin not found' };
+  if (rowIndex === -1) return { success: false, error: '管理者が見つかりません' };
   sheet.deleteRow(rowIndex);
   return { success: true };
 }

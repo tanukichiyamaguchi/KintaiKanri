@@ -39,7 +39,7 @@ import {
   calcElapsedMinutes,
   getLegalBreakMinutes,
 } from '../../utils/breakCalculator';
-import { detectShiftDiff, estimatedPlannedBreak } from '../../utils/shiftDiff';
+import { detectShiftDiff, estimatedPlannedBreak, APPLICATION_TYPE_LABEL } from '../../utils/shiftDiff';
 
 export function AttendancePage() {
   const navigate = useNavigate();
@@ -229,6 +229,35 @@ export function AttendancePage() {
     setHasUnsavedChanges(true);
   }, []);
 
+  /**
+   * 「定時」ボタン: 当日のシフト予定時刻 (startTime/endTime) を出勤・退勤に流し込む。
+   * 休憩は法定基準で再計算（手動修正フラグもリセット）し、実労働・残業も同時に算出。
+   * シフト未登録 / 休 / 仮シフト / 行ロック中は何もしない。
+   */
+  const applyScheduledTime = useCallback((index: number) => {
+    setRows(prev => {
+      const newRows = [...prev];
+      const row = { ...newRows[index] };
+      const shift = row.shift;
+      if (!shift || shift.isOff || !shift.startTime || !shift.endTime) {
+        return prev;
+      }
+      row.clockIn = shift.startTime;
+      row.clockOut = shift.endTime;
+      row.breakMinutesIsManual = false;
+      const elapsed = calcElapsedMinutes(row.clockIn, row.clockOut);
+      row.breakMinutes = getLegalBreakMinutes(elapsed);
+      const { workMinutes, overtimeMinutes } = computeWorkAndOvertime(
+        row.clockIn, row.clockOut, row.breakMinutes
+      );
+      row.workMinutes = workMinutes;
+      row.overtimeMinutes = overtimeMinutes;
+      newRows[index] = row;
+      return newRows;
+    });
+    setHasUnsavedChanges(true);
+  }, []);
+
   // Compute diff for each row
   const rowDiffs = useMemo(() => {
     return rows.map(row => {
@@ -282,12 +311,13 @@ export function AttendancePage() {
       if (diff && diff.hasIssue) {
         diff.kinds.forEach(kind => {
           const matched = findRelevantApp(apps, kind);
+          const label = APPLICATION_TYPE_LABEL[kind] || kind;
           if (!matched) {
-            blockingReasons.push(`${row.date}: ${kind} の申請が必要です`);
+            blockingReasons.push(`${row.date}: ${label}の申請が必要です`);
           } else if (matched.status === 'pending') {
-            blockingReasons.push(`${row.date}: ${kind} の申請が承認待ちです`);
+            blockingReasons.push(`${row.date}: ${label}の申請が承認待ちです`);
           } else if (matched.status === 'rejected') {
-            blockingReasons.push(`${row.date}: ${kind} の申請が却下されています（再申請が必要）`);
+            blockingReasons.push(`${row.date}: ${label}の申請が却下されています（再申請が必要）`);
           }
         });
       }
@@ -355,7 +385,7 @@ export function AttendancePage() {
     reason: string;
     details: ShiftDiff['details'];
   }) => {
-    if (!currentStaffId || !appModalDate) throw new Error('Invalid state');
+    if (!currentStaffId || !appModalDate) throw new Error('内部エラー: 状態が不正です');
     const res = await applicationApi.create({
       staffId: currentStaffId,
       date: appModalDate,
@@ -608,9 +638,21 @@ export function AttendancePage() {
                         </td>
                         <td className="px-3 py-2 text-xs whitespace-nowrap">
                           {row.shift ? (
-                            <span className={row.shift.isTentative ? 'text-secondary-400' : 'text-secondary-700'}>
-                              {shiftLabel}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className={row.shift.isTentative ? 'text-secondary-400' : 'text-secondary-700'}>
+                                {shiftLabel}
+                              </span>
+                              {!row.shift.isOff && !row.shift.isTentative && row.shift.startTime && row.shift.endTime && !cellDisabled && (
+                                <button
+                                  type="button"
+                                  onClick={() => applyScheduledTime(index)}
+                                  className="px-1.5 py-0.5 text-[10px] font-semibold border border-primary-300 text-primary-700 bg-primary-50 rounded hover:bg-primary-100 transition-colors"
+                                  title="出勤・退勤を定時で埋める"
+                                >
+                                  定時
+                                </button>
+                              )}
+                            </div>
                           ) : <span className="text-secondary-300">未登録</span>}
                         </td>
                         <td className="px-2 py-1.5">
