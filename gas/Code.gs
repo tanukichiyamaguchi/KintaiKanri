@@ -2428,6 +2428,22 @@ function handleSubmitMonthly(body) {
   const staff = sheetToObjects(staffSheet).find(s => s.staff_id === staffId);
   if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
+  // 既存提出の重複チェック: 既に提出済み/承認済みの場合は再提出不可。
+  // 差戻し / draft の場合のみ再提出を許可する。
+  const existingStatus = getSubmissionStatus_(staffId, yearMonth);
+  if (existingStatus === 'submitted') {
+    return {
+      success: false,
+      error: 'すでに提出済みです。管理者が承認または差戻しするまで再提出はできません。'
+    };
+  }
+  if (existingStatus === 'approved') {
+    return {
+      success: false,
+      error: 'この月は既に確定済みのため再提出できません。'
+    };
+  }
+
   // ゲート: 当月の全申請が approved か
   const apps = sheetToObjects(getOrCreateSheet(SHEETS.APPLICATIONS))
     .filter(a => a.staff_id === staffId && formatDateOnly_(a.date).startsWith(yearMonth));
@@ -2476,11 +2492,71 @@ function findSubmissionRowIndex_(sheet, staffId, yearMonth) {
   return -1;
 }
 
+// 同一 staffId × yearMonth に複数行が存在するケース（過去の Date 比較バグで生まれた重複）
+// に対応するため、一致する全行のインデックスを返す。
+// approve / reject 系処理ではこれを使い、見つかった全行に同じステータス更新を適用することで
+// 既存重複を実質的にデデュープする。
+function findAllSubmissionRows_(sheet, staffId, yearMonth) {
+  const result = [];
+  if (!sheet) return result;
+  const data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return result;
+  const headers = data[0] || [];
+  const sIdx = headers.indexOf('staff_id');
+  const ymIdx = headers.indexOf('year_month');
+  if (sIdx === -1 || ymIdx === -1) return result;
+  const targetYm = formatYearMonthValue_(yearMonth);
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][sIdx] === staffId && formatYearMonthValue_(data[i][ymIdx]) === targetYm) {
+      result.push(i + 1);
+    }
+  }
+  return result;
+}
+
 function handleListSubmissions(params) {
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
   const data = sheetToObjects(sheet);
   const { yearMonth, status } = params;
-  let filtered = data;
+
+  // 過去のバグ等で同一 (staffId, yearMonth) に複数行が存在する可能性があるため、
+  // ここで dedupe する。判定優先度:
+  //   1) reviewed_at が新しい方を優先（つまり既に承認/差戻し済みの記録）
+  //   2) submitted_at が新しい方
+  //   3) status の優先順位 approved > rejected > submitted > draft
+  //      （approve/reject 系で全行に同じ更新を入れるためどれを残しても結果は同等だが、
+  //       UI 上の見え方が安定するように決定論的に選ぶ）
+  const STATUS_ORDER = { approved: 4, rejected: 3, submitted: 2, draft: 1 };
+  const dedupedMap = {};
+  for (let i = 0; i < data.length; i++) {
+    const r = data[i];
+    if (!r.staff_id) continue;
+    const ym = formatYearMonthValue_(r.year_month);
+    if (!ym) continue;
+    const key = r.staff_id + '|' + ym;
+    const existing = dedupedMap[key];
+    if (!existing) {
+      dedupedMap[key] = r;
+      continue;
+    }
+    const newReviewed = toIsoString_(r.reviewed_at) || '';
+    const oldReviewed = toIsoString_(existing.reviewed_at) || '';
+    if (newReviewed !== oldReviewed) {
+      if (newReviewed > oldReviewed) dedupedMap[key] = r;
+      continue;
+    }
+    const newSubmitted = toIsoString_(r.submitted_at) || '';
+    const oldSubmitted = toIsoString_(existing.submitted_at) || '';
+    if (newSubmitted !== oldSubmitted) {
+      if (newSubmitted > oldSubmitted) dedupedMap[key] = r;
+      continue;
+    }
+    const newRank = STATUS_ORDER[r.status] || 0;
+    const oldRank = STATUS_ORDER[existing.status] || 0;
+    if (newRank > oldRank) dedupedMap[key] = r;
+  }
+  let filtered = Object.keys(dedupedMap).map(k => dedupedMap[k]);
+
   if (yearMonth) {
     const targetYm = formatYearMonthValue_(yearMonth);
     filtered = filtered.filter(r => formatYearMonthValue_(r.year_month) === targetYm);
@@ -2506,21 +2582,29 @@ function handleApproveSubmission(body) {
   const { staffId, yearMonth, reviewedBy } = body;
   if (!staffId || !yearMonth) return { success: false, error: '必須パラメータが指定されていません' };
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
-  const rowIndex = findSubmissionRowIndex_(sheet, staffId, yearMonth);
-  if (rowIndex === -1) return { success: false, error: '月次提出が見つかりません' };
+  // 重複行が存在する可能性を考慮し、一致する全行に対して同じ更新を適用する
+  const rowIndices = findAllSubmissionRows_(sheet, staffId, yearMonth);
+  if (rowIndices.length === 0) return { success: false, error: '月次提出が見つかりません' };
 
   const headers = getHeaderRow_(sheet);
-  setCellByColumnName_(sheet, rowIndex, headers, 'status', 'approved');
-  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', new Date().toISOString());
-  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', reviewedBy || '');
+  const now = new Date().toISOString();
+  for (let k = 0; k < rowIndices.length; k++) {
+    const ri = rowIndices[k];
+    setCellByColumnName_(sheet, ri, headers, 'status', 'approved');
+    setCellByColumnName_(sheet, ri, headers, 'reviewed_at', now);
+    setCellByColumnName_(sheet, ri, headers, 'reviewed_by', reviewedBy || '');
+  }
 
-  const sub = sheetToObjects(sheet).find(r => r.staff_id === staffId && r.year_month === yearMonth);
+  const targetYm = formatYearMonthValue_(yearMonth);
+  const sub = sheetToObjects(sheet).find(
+    r => r.staff_id === staffId && formatYearMonthValue_(r.year_month) === targetYm
+  );
   if (sub) {
     try { notifyStaffMonthlyReviewed_(sub, 'approved'); }
     catch (e) { Logger.log('notifyStaffMonthlyReviewed_ failed: ' + (e && e.message)); }
   }
 
-  return { success: true };
+  return { success: true, data: { updated: rowIndices.length } };
 }
 
 function handleRejectSubmission(body) {
@@ -2529,22 +2613,30 @@ function handleRejectSubmission(body) {
     return { success: false, error: '必須項目が入力されていません' };
   }
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
-  const rowIndex = findSubmissionRowIndex_(sheet, staffId, yearMonth);
-  if (rowIndex === -1) return { success: false, error: '月次提出が見つかりません' };
+  // 重複行も含めて一括差戻し
+  const rowIndices = findAllSubmissionRows_(sheet, staffId, yearMonth);
+  if (rowIndices.length === 0) return { success: false, error: '月次提出が見つかりません' };
 
   const headers = getHeaderRow_(sheet);
-  setCellByColumnName_(sheet, rowIndex, headers, 'status', 'rejected');
-  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', new Date().toISOString());
-  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', reviewedBy || '');
-  setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', rejectionReason);
+  const now = new Date().toISOString();
+  for (let k = 0; k < rowIndices.length; k++) {
+    const ri = rowIndices[k];
+    setCellByColumnName_(sheet, ri, headers, 'status', 'rejected');
+    setCellByColumnName_(sheet, ri, headers, 'reviewed_at', now);
+    setCellByColumnName_(sheet, ri, headers, 'reviewed_by', reviewedBy || '');
+    setCellByColumnName_(sheet, ri, headers, 'rejection_reason', rejectionReason);
+  }
 
-  const sub = sheetToObjects(sheet).find(r => r.staff_id === staffId && r.year_month === yearMonth);
+  const targetYm = formatYearMonthValue_(yearMonth);
+  const sub = sheetToObjects(sheet).find(
+    r => r.staff_id === staffId && formatYearMonthValue_(r.year_month) === targetYm
+  );
   if (sub) {
     try { notifyStaffMonthlyReviewed_(sub, 'rejected', rejectionReason); }
     catch (e) { Logger.log('notifyStaffMonthlyReviewed_ failed: ' + (e && e.message)); }
   }
 
-  return { success: true };
+  return { success: true, data: { updated: rowIndices.length } };
 }
 
 // ============================================================
