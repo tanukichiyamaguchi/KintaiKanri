@@ -1007,14 +1007,22 @@ function handleClock(body) {
 }
 
 /**
- * 法定休憩時間（分）を拘束時間から算出。
- * - 拘束 9h超 → 60分
- * - 拘束 6h45m超 → 45分
- * - それ以外 → 0
+ * 法定休憩時間（分）を拘束時間から算出（労働基準法 第34条）。
+ *
+ * 法的要件（実労働時間ベース）:
+ *   実労働 6h超 → 45分以上 / 実労働 8h超 → 60分以上
+ *
+ * 拘束時間ベースの閾値:
+ *   - 拘束 8h45m超 → 60分（実労働 7h45m超〜になり、8h超ケースで60分必要を担保）
+ *   - 拘束 6時間超 → 45分（実労働 5h15m〜7h台、6h超ケースで45分必要を担保）
+ *   - それ以外      → 0分
+ *
+ * 例: 拘束 9h00m → 60分（45分だと実労働 8h15m で60分必要だが付与不足）
+ *     拘束 7h00m → 45分（実労働 6h15m）
  */
 function computeLegalBreakMinutes_(elapsedMinutes) {
-  if (elapsedMinutes > 9 * 60) return 60;
-  if (elapsedMinutes > 6 * 60 + 45) return 45;
+  if (elapsedMinutes > 8 * 60 + 45) return 60;
+  if (elapsedMinutes > 6 * 60) return 45;
   return 0;
 }
 
