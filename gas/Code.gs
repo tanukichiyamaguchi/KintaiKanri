@@ -567,6 +567,12 @@ function handleRequest(e, method) {
       case 'attendance/update':
         result = handleUpdateAttendance(body);
         break;
+      case 'attendance/bulk-get':
+        result = handleBulkGetAttendance(params);
+        break;
+      case 'attendance/bulk-save':
+        result = handleBulkSaveAttendance(body);
+        break;
 
       // Staff
       case 'staff':
@@ -1897,6 +1903,120 @@ function handleUpdateAttendance(body) {
   appendAttendanceHistory_(date, staffId, field, oldValue, value, editorId, editorRole, reason);
 
   return { success: true };
+}
+
+/**
+ * 出勤簿（/attendance）画面の月次データ取得。
+ * 既存 handleGetAttendance と同じデータを返すが、エンドポイント名を分離して
+ * フロントの「読み取り専用」「編集可能」呼び出し側を区別できるようにしている。
+ */
+function handleBulkGetAttendance(params) {
+  return handleGetAttendance(params);
+}
+
+/**
+ * 出勤簿（/attendance）からの月次一括保存。
+ *  - 各 row: {date, clockIn ('HH:MM'), clockOut ('HH:MM'), breakMinutes,
+ *            workMinutes, isHoliday, breakMinutesIsManual, remarks}
+ *  - 提出済み (submitted/approved) の月はスタッフ編集不可（管理者は editorRole='admin' で許可）。
+ *  - 既存行があれば更新、無ければ append。
+ *  - clockIn/clockOut は受信時 'HH:MM' 形式なので、ISO 文字列 (YYYY-MM-DDTHH:MM:00) に正規化して保存。
+ *  - 空の行（出勤・退勤・休憩・備考すべて空）はスキップして書き込まない。
+ */
+function handleBulkSaveAttendance(body) {
+  const staffId = body && body.staffId ? String(body.staffId) : '';
+  const year = body ? parseInt(body.year, 10) : NaN;
+  const month = body ? parseInt(body.month, 10) : NaN;
+  const rows = body && Array.isArray(body.rows) ? body.rows : null;
+  const editorRole = body && body.editorRole === 'admin' ? 'admin' : 'staff';
+
+  if (!staffId || !year || !month || month < 1 || month > 12 || !rows) {
+    return { success: false, error: 'Missing or invalid parameters' };
+  }
+
+  const yearMonth = year + '-' + String(month).padStart(2, '0');
+
+  // 提出済みチェック（スタッフのみ）
+  const submissionStatus = getSubmissionStatus_(staffId, yearMonth);
+  if ((submissionStatus === 'submitted' || submissionStatus === 'approved') && editorRole !== 'admin') {
+    return { success: false, error: 'この月は提出済みのため編集できません' };
+  }
+
+  const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+  const staff = sheetToObjects(staffSheet).find(s => s.staff_id === staffId);
+  if (!staff) return { success: false, error: 'Staff not found' };
+
+  const sheet = getAttendanceSheet(year, month);
+  const data = sheet.getDataRange().getValues();
+  const headers = (data && data[0]) ? data[0] : [];
+
+  // 既存行を date でインデックス化（このスタッフの行のみ）
+  const dateToRowIndex = {};
+  if (data && data.length > 1) {
+    for (let i = 1; i < data.length; i++) {
+      const rowDate = formatDateOnly_(data[i][0]);
+      const rowStaffId = data[i][1];
+      if (rowStaffId === staffId && rowDate) {
+        dateToRowIndex[rowDate] = i + 1; // 1-indexed
+      }
+    }
+  }
+
+  let savedCount = 0;
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    if (!row || !row.date) continue;
+
+    const date = String(row.date);
+    const clockIn = row.clockIn ? String(row.clockIn).trim() : '';
+    const clockOut = row.clockOut ? String(row.clockOut).trim() : '';
+    const breakMinutes = safeNumber_(row.breakMinutes, 0);
+    const workMinutes = safeNumber_(row.workMinutes, 0);
+    const isHoliday = row.isHoliday === true || row.isHoliday === 'TRUE';
+    const breakMinutesIsManual = row.breakMinutesIsManual === true || row.breakMinutesIsManual === 'TRUE';
+    const remarks = row.remarks ? String(row.remarks) : '';
+
+    // 全フィールドが空ならスキップ
+    if (!clockIn && !clockOut && breakMinutes === 0 && !remarks && !isHoliday) {
+      continue;
+    }
+
+    // HH:MM → ISO 文字列に正規化（保存形式統一）
+    const clockInIso = clockIn && /^\d{1,2}:\d{2}$/.test(clockIn) ? (date + 'T' + clockIn.padStart(5, '0') + ':00') : '';
+    const clockOutIso = clockOut && /^\d{1,2}:\d{2}$/.test(clockOut) ? (date + 'T' + clockOut.padStart(5, '0') + ':00') : '';
+
+    let rowIndex = dateToRowIndex[date];
+    if (!rowIndex) {
+      // 新規行
+      // ヘッダー: date, staff_id, name, clock_in, clock_out, clock_out_type,
+      //          break_minutes, break_minutes_is_manual, work_minutes,
+      //          late_minutes, early_leave_minutes, is_holiday, remarks, source
+      sheet.appendRow([
+        date, staffId, staff.name,
+        clockInIso, clockOutIso, clockOutIso ? 'normal' : '',
+        breakMinutes, breakMinutesIsManual,
+        workMinutes, 0, 0,
+        isHoliday, remarks,
+        'manual'
+      ]);
+      rowIndex = sheet.getLastRow();
+      dateToRowIndex[date] = rowIndex;
+    } else {
+      // 既存行を更新（カラム名指定で安全に書き込み）
+      setCellByColumnName_(sheet, rowIndex, headers, 'clock_in', clockInIso);
+      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out', clockOutIso);
+      if (clockOutIso) setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', 'normal');
+      setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes', breakMinutes);
+      setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes_is_manual', breakMinutesIsManual);
+      setCellByColumnName_(sheet, rowIndex, headers, 'work_minutes', workMinutes);
+      setCellByColumnName_(sheet, rowIndex, headers, 'is_holiday', isHoliday);
+      setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks);
+      setCellByColumnName_(sheet, rowIndex, headers, 'source', 'manual');
+    }
+    savedCount++;
+  }
+
+  return { success: true, data: { saved: savedCount } };
 }
 
 function appendAttendanceHistory_(date, staffId, field, oldValue, newValue, editorId, editorRole, reason) {
