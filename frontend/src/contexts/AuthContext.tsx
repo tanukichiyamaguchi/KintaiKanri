@@ -1,14 +1,14 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import type { StaffInfo } from '../types';
+import type { StaffInfo, AdminInfo } from '../types';
 import { authApi } from '../api';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   staff: StaffInfo | null;
+  admin: AdminInfo | null;
   token: string | null;
-  login: (staffId: string, pinCode: string) => Promise<{ success: boolean; error?: string }>;
-  loginAsAdmin: (pinCode: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; isAdmin?: boolean }>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -16,142 +16,89 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'kintai_auth';
-const ADMIN_STORAGE_KEY = 'kintai_admin_auth';
 
 interface StoredAuth {
-  staff: StaffInfo;
+  isAdmin: boolean;
+  staff: StaffInfo | null;
+  admin: AdminInfo | null;
   token: string;
   expiry: number;
 }
 
-interface StoredAdminAuth {
-  token: string;
-  expiry: number;
-}
-
-// Synchronously restore session from localStorage
-function restoreSession(): { staff: StaffInfo | null; token: string | null; isAdmin: boolean } {
-  const adminStored = localStorage.getItem(ADMIN_STORAGE_KEY);
-  if (adminStored) {
-    try {
-      const adminAuth: StoredAdminAuth = JSON.parse(adminStored);
-      if (adminAuth.expiry > Date.now()) {
-        return { staff: null, token: adminAuth.token, isAdmin: true };
-      }
-      localStorage.removeItem(ADMIN_STORAGE_KEY);
-    } catch {
-      localStorage.removeItem(ADMIN_STORAGE_KEY);
-    }
-  }
-
+function restoreSession(): StoredAuth | null {
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) {
-    try {
-      const auth: StoredAuth = JSON.parse(stored);
-      if (auth.expiry > Date.now()) {
-        return { staff: auth.staff, token: auth.token, isAdmin: false };
-      }
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
+  if (!stored) return null;
+  try {
+    const auth: StoredAuth = JSON.parse(stored);
+    if (auth.expiry > Date.now()) {
+      return auth;
     }
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
   }
-
-  return { staff: null, token: null, isAdmin: false };
+  return null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Lazy initialization from localStorage (avoids setState in useEffect)
   const [session] = useState(restoreSession);
-  const [staff, setStaff] = useState<StaffInfo | null>(session.staff);
-  const [token, setToken] = useState<string | null>(session.token);
-  const [isAdmin, setIsAdmin] = useState(session.isAdmin);
+  const [staff, setStaff] = useState<StaffInfo | null>(session?.staff ?? null);
+  const [admin, setAdmin] = useState<AdminInfo | null>(session?.admin ?? null);
+  const [token, setToken] = useState<string | null>(session?.token ?? null);
+  const [isAdmin, setIsAdmin] = useState(session?.isAdmin ?? false);
 
-  const login = useCallback(async (staffId: string, pinCode: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     try {
-      const response = await authApi.login(staffId, pinCode);
+      const normalizedEmail = email.trim().toLowerCase();
+      const response = await authApi.login(normalizedEmail, password);
+      if (response.success && response.data?.success) {
+        const data = response.data;
+        const tokenStr = data.token || '';
+        const isAdminLogin = !!data.isAdmin;
+        const staffInfo = data.staffInfo ?? null;
+        const adminInfo = data.adminInfo ?? null;
 
-      if (response.success && response.data?.success && response.data.staffInfo) {
-        const staffInfo = response.data.staffInfo;
-        const authToken = response.data.token || '';
-
+        setIsAdmin(isAdminLogin);
         setStaff(staffInfo);
-        setToken(authToken);
-        setIsAdmin(false);
+        setAdmin(adminInfo);
+        setToken(tokenStr);
 
-        // Store session with 24-hour expiry
         const stored: StoredAuth = {
+          isAdmin: isAdminLogin,
           staff: staffInfo,
-          token: authToken,
-          expiry: Date.now() + 24 * 60 * 60 * 1000,
+          admin: adminInfo,
+          token: tokenStr,
+          // 管理者は8h、スタッフは24h
+          expiry: Date.now() + (isAdminLogin ? 8 : 24) * 60 * 60 * 1000,
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-        localStorage.removeItem(ADMIN_STORAGE_KEY);
 
-        return { success: true };
+        return { success: true, isAdmin: isAdminLogin };
       }
-
       return {
         success: false,
-        error: response.error || 'ログインに失敗しました',
+        error: response.error || response.data?.error || 'ログインに失敗しました',
       };
     } catch {
-      return {
-        success: false,
-        error: 'ネットワークエラーが発生しました',
-      };
-    }
-  }, []);
-
-  const loginAsAdmin = useCallback(async (pinCode: string) => {
-    try {
-      const response = await authApi.adminLogin(pinCode);
-
-      if (response.success && response.data?.success) {
-        const authToken = response.data.token || 'admin-token';
-
-        setIsAdmin(true);
-        setStaff(null);
-        setToken(authToken);
-
-        // Store admin session with 8-hour expiry
-        const stored: StoredAdminAuth = {
-          token: authToken,
-          expiry: Date.now() + 8 * 60 * 60 * 1000,
-        };
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(stored));
-
-        return { success: true };
-      }
-
-      return {
-        success: false,
-        error: response.error || '管理者PINが正しくありません',
-      };
-    } catch {
-      return {
-        success: false,
-        error: 'ネットワークエラーが発生しました',
-      };
+      return { success: false, error: 'ネットワークエラーが発生しました' };
     }
   }, []);
 
   const logout = useCallback(() => {
     setStaff(null);
+    setAdmin(null);
     setToken(null);
     setIsAdmin(false);
     localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(ADMIN_STORAGE_KEY);
   }, []);
 
   const value: AuthContextType = {
-    isAuthenticated: !!staff || isAdmin,
+    isAuthenticated: !!staff || !!admin,
     isAdmin,
     staff,
+    admin,
     token,
     login,
-    loginAsAdmin,
     logout,
     isLoading: false,
   };

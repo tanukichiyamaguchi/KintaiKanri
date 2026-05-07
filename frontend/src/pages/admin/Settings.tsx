@@ -116,17 +116,17 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="システム設定" />
 
-      <main className="max-w-2xl mx-auto p-4">
+      <main className="max-w-2xl mx-auto p-4 sm:p-6">
         {/* Back Link */}
         <Link
           to="/admin"
-          className="inline-flex items-center gap-1 text-gray-600 hover:text-primary-600 mb-4"
+          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
         >
           <ArrowLeft className="w-4 h-4" />
-          ダッシュボードへ戻る
+          <span className="text-sm font-medium">ダッシュボードへ戻る</span>
         </Link>
 
         {isLoading ? (
@@ -138,8 +138,8 @@ export function SettingsPage() {
             {/* Insurance Rates Form */}
             <div className="card mb-6">
               <div className="flex items-center gap-2 mb-6">
-                <SettingsIcon className="w-5 h-5 text-gray-700" />
-                <h2 className="text-lg font-semibold text-gray-800">
+                <SettingsIcon className="w-5 h-5 text-secondary-700" />
+                <h2 className="text-lg font-semibold text-secondary-800">
                   社会保険料率設定
                 </h2>
               </div>
@@ -178,9 +178,9 @@ export function SettingsPage() {
                         max="100"
                         className="input"
                       />
-                      <span className="text-gray-600">％</span>
+                      <span className="text-secondary-600">％</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-secondary-500 mt-1">
                       ※全国健康保険協会（協会けんぽ）の料率の半分を入力
                     </p>
                   </div>
@@ -199,9 +199,9 @@ export function SettingsPage() {
                         max="100"
                         className="input"
                       />
-                      <span className="text-gray-600">％</span>
+                      <span className="text-secondary-600">％</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-secondary-500 mt-1">
                       ※40歳以上65歳未満の方が対象
                     </p>
                   </div>
@@ -220,9 +220,9 @@ export function SettingsPage() {
                         max="100"
                         className="input"
                       />
-                      <span className="text-gray-600">％</span>
+                      <span className="text-secondary-600">％</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-secondary-500 mt-1">
                       ※18.3%の半分（9.15%）が一般的
                     </p>
                   </div>
@@ -241,9 +241,9 @@ export function SettingsPage() {
                         max="100"
                         className="input"
                       />
-                      <span className="text-gray-600">％</span>
+                      <span className="text-secondary-600">％</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-secondary-500 mt-1">
                       ※2024年度は0.6%（一般の事業）
                     </p>
                   </div>
@@ -251,10 +251,10 @@ export function SettingsPage() {
                   {/* Message */}
                   {message && (
                     <div
-                      className={`flex items-center gap-2 px-4 py-3 rounded-lg ${
+                      className={`flex items-center gap-2 px-4 py-3 rounded-xl border ${
                         message.type === 'success'
-                          ? 'bg-green-50 text-green-700'
-                          : 'bg-red-50 text-red-700'
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : 'bg-red-50 text-red-700 border-red-200'
                       }`}
                     >
                       {message.type === 'success' ? (
@@ -262,7 +262,7 @@ export function SettingsPage() {
                       ) : (
                         <AlertCircle className="w-5 h-5 flex-shrink-0" />
                       )}
-                      <p className="text-sm">{message.text}</p>
+                      <p className="text-sm font-medium">{message.text}</p>
                     </div>
                   )}
 
@@ -282,32 +282,34 @@ export function SettingsPage() {
             {/* Rate History */}
             <div className="card">
               <div className="flex items-center gap-2 mb-4">
-                <History className="w-5 h-5 text-gray-700" />
-                <h3 className="font-semibold text-gray-800">料率履歴</h3>
+                <History className="w-5 h-5 text-secondary-700" />
+                <h3 className="font-semibold text-secondary-800">料率履歴</h3>
               </div>
 
               {history.length === 0 ? (
-                <p className="text-center text-gray-500 py-4">履歴がありません</p>
+                <p className="text-center text-secondary-500 py-4">履歴がありません</p>
               ) : (
                 <div className="space-y-3">
                   {history.map((rate, index) => (
                     <div
                       key={rate.effectiveDate}
-                      className={`p-3 rounded-lg ${
-                        index === 0 ? 'bg-primary-50 border border-primary-200' : 'bg-gray-50'
+                      className={`p-3.5 rounded-xl border ${
+                        index === 0
+                          ? 'bg-primary-50 border-primary-200'
+                          : 'bg-secondary-50 border-secondary-100'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium text-gray-800">
+                        <span className="font-medium text-secondary-800">
                           {rate.effectiveDate.replace('-', '年')}月〜
                         </span>
                         {index === 0 && (
-                          <span className="text-xs bg-primary-600 text-white px-2 py-0.5 rounded">
+                          <span className="text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full font-medium">
                             適用中
                           </span>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                      <div className="grid grid-cols-2 gap-2 text-sm text-secondary-600">
                         <span>健康保険: {rate.healthInsuranceRate}%</span>
                         <span>介護保険: {rate.nursingInsuranceRate}%</span>
                         <span>厚生年金: {rate.pensionRate}%</span>
@@ -320,9 +322,9 @@ export function SettingsPage() {
             </div>
 
             {/* Note */}
-            <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
-              <h4 className="font-medium text-yellow-800 mb-2">注意事項</h4>
-              <ul className="text-sm text-yellow-700 list-disc list-inside space-y-1">
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <h4 className="font-medium text-amber-800 mb-2">注意事項</h4>
+              <ul className="text-sm text-amber-700 list-disc list-inside space-y-1">
                 <li>毎年3月に協会けんぽの料率が改定されます</li>
                 <li>都道府県によって健康保険料率が異なります</li>
                 <li>料率変更は翌月分の給与計算から適用されます</li>

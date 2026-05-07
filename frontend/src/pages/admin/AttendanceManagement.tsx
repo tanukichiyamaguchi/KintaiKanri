@@ -9,16 +9,22 @@ import {
   X,
   AlertCircle,
   ClipboardList,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { staffApi, attendanceApi } from '../../api';
-import type { StaffInfo, AttendanceRecord } from '../../types';
+import { staffApi, attendanceApi, submissionApi } from '../../api';
+import type {
+  StaffInfo,
+  AttendanceRecord,
+  MonthlySubmission,
+  SubmissionStatus,
+} from '../../types';
 import { Header, Loading } from '../../components/common';
 import { formatMinutesAsTime, formatLocalDate } from '../../utils/calculations';
 
 export function AttendanceManagement() {
   const navigate = useNavigate();
-  const { isAdmin, isAuthenticated } = useAuth();
+  const { isAdmin, isAuthenticated, admin } = useAuth();
 
   const [staffList, setStaffList] = useState<StaffInfo[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string>('');
@@ -29,6 +35,7 @@ export function AttendanceManagement() {
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<AttendanceRecord>>({});
   const [error, setError] = useState<string | null>(null);
+  const [submission, setSubmission] = useState<MonthlySubmission | null>(null);
 
   // Redirect if not admin
   useEffect(() => {
@@ -87,6 +94,30 @@ export function AttendanceManagement() {
     fetchAttendance();
   }, [selectedStaff, selectedYear, selectedMonth]);
 
+  // Fetch monthly submission status
+  useEffect(() => {
+    if (!selectedStaff) {
+      setSubmission(null);
+      return;
+    }
+
+    async function fetchSubmission() {
+      try {
+        const yearMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+        const response = await submissionApi.getStatus(selectedStaff, yearMonth);
+        if (response.success && response.data) {
+          setSubmission(response.data);
+        } else {
+          setSubmission(null);
+        }
+      } catch {
+        setSubmission(null);
+      }
+    }
+
+    fetchSubmission();
+  }, [selectedStaff, selectedYear, selectedMonth]);
+
   const handlePreviousMonth = () => {
     if (selectedMonth === 1) {
       setSelectedYear(selectedYear - 1);
@@ -110,8 +141,7 @@ export function AttendanceManagement() {
     setEditData({
       clockIn: record.clockIn,
       clockOut: record.clockOut,
-      breakStart: record.breakStart,
-      breakEnd: record.breakEnd,
+      breakMinutes: record.breakMinutes,
       remarks: record.remarks,
     });
   };
@@ -122,15 +152,68 @@ export function AttendanceManagement() {
   };
 
   const handleSaveEdit = async (date: string) => {
-    // In a real implementation, this would call the API
-    // For now, just update the local state
-    setAttendance(prev =>
-      prev.map(record =>
-        record.date === date ? { ...record, ...editData } : record
-      )
-    );
-    setEditingRow(null);
-    setEditData({});
+    const original = attendance.find(r => r.date === date);
+    const fields: Array<{ field: string; value: string | number | undefined }> = [
+      { field: 'clockIn', value: editData.clockIn },
+      { field: 'clockOut', value: editData.clockOut },
+      { field: 'breakMinutes', value: editData.breakMinutes },
+      { field: 'remarks', value: editData.remarks },
+    ];
+
+    try {
+      for (const { field, value } of fields) {
+        const originalValue = original ? (original as unknown as Record<string, unknown>)[field] : undefined;
+        if (value === undefined || value === originalValue) continue;
+        await attendanceApi.update(date, selectedStaff, field, value as string | number, {
+          editorRole: 'admin',
+          editorId: admin?.adminId,
+        });
+      }
+
+      setAttendance(prev => {
+        const idx = prev.findIndex(r => r.date === date);
+        if (idx === -1) {
+          return [
+            ...prev,
+            {
+              date,
+              staffId: selectedStaff,
+              name: '',
+              breakMinutes: 0,
+              workMinutes: 0,
+              lateMinutes: 0,
+              earlyLeaveMinutes: 0,
+              isHoliday: false,
+              ...editData,
+            } as AttendanceRecord,
+          ];
+        }
+        return prev.map(record =>
+          record.date === date ? { ...record, ...editData } : record
+        );
+      });
+      setEditingRow(null);
+      setEditData({});
+    } catch {
+      setError('保存に失敗しました');
+    }
+  };
+
+  const submissionStatusInfo = (
+    status?: SubmissionStatus
+  ): { label: string; cls: string } | null => {
+    switch (status) {
+      case 'submitted':
+        return { label: '提出済み（承認待ち）', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+      case 'approved':
+        return { label: '承認済み', cls: 'bg-green-50 text-green-700 border-green-200' };
+      case 'rejected':
+        return { label: '差戻し', cls: 'bg-red-50 text-red-700 border-red-200' };
+      case 'draft':
+        return { label: '未提出', cls: 'bg-secondary-50 text-secondary-600 border-secondary-200' };
+      default:
+        return null;
+    }
   };
 
   const formatDate = (dateStr: string): string => {
@@ -175,7 +258,7 @@ export function AttendanceManagement() {
     <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
       <Header title="勤怠管理" />
 
-      <main className="max-w-6xl mx-auto p-4 sm:p-6">
+      <main className="max-w-7xl mx-auto p-4 sm:p-6">
         {/* Back Link + Bulk Entry */}
         <div className="flex items-center justify-between mb-5">
           <Link
@@ -186,11 +269,11 @@ export function AttendanceManagement() {
             <span className="text-sm font-medium">ダッシュボードへ戻る</span>
           </Link>
           <Link
-            to="/admin/bulk-entry"
+            to="/admin/attendance/edit"
             className="btn btn-primary !py-2 !px-4 !text-sm !rounded-xl"
           >
             <ClipboardList className="w-4 h-4" />
-            一括入力モード
+            出勤簿編集
           </Link>
         </div>
 
@@ -222,23 +305,38 @@ export function AttendanceManagement() {
             </div>
 
             {/* Month Selector */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="前月"
               >
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
+                <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <span className="text-lg font-semibold min-w-[120px] text-center">
+              <span className="text-lg font-semibold min-w-[140px] text-center text-secondary-800">
                 {selectedYear}年{selectedMonth}月
               </span>
               <button
                 onClick={handleNextMonth}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                aria-label="次月"
               >
-                <ChevronRight className="w-5 h-5 text-gray-600" />
+                <ChevronRight className="w-5 h-5 text-secondary-600" />
               </button>
             </div>
+
+            {/* Submission Status */}
+            {(() => {
+              const info = submissionStatusInfo(submission?.status);
+              if (!info) return null;
+              return (
+                <span
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${info.cls}`}
+                >
+                  {info.label}
+                </span>
+              );
+            })()}
           </div>
         </div>
 
@@ -253,15 +351,13 @@ export function AttendanceManagement() {
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">日付</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">出勤</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">退勤</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩開始</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩終了</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩(分)</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">実働</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">備考</th>
                   <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-secondary-100">
                 {allDays.map(date => {
                   const record = attendance.find(r => r.date === date);
                   const isEditing = editingRow === date;
@@ -273,16 +369,16 @@ export function AttendanceManagement() {
                     <tr
                       key={date}
                       className={`${
-                        isWeekend ? 'bg-gray-50' : ''
-                      } hover:bg-gray-100`}
+                        isWeekend ? 'bg-secondary-50/60' : ''
+                      } hover:bg-primary-50/30 transition-colors`}
                     >
                       <td
                         className={`px-3 py-2 text-sm font-medium ${
                           dateObj.getDay() === 0
-                            ? 'text-red-600'
+                            ? 'text-red-500'
                             : dateObj.getDay() === 6
-                            ? 'text-blue-600'
-                            : 'text-gray-800'
+                            ? 'text-blue-500'
+                            : 'text-secondary-800'
                         }`}
                       >
                         {formatDate(date)}
@@ -302,7 +398,7 @@ export function AttendanceManagement() {
                                     : undefined,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-24"
+                              className="w-24 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -317,41 +413,24 @@ export function AttendanceManagement() {
                                     : undefined,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-24"
+                              className="w-24 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
                             />
                           </td>
                           <td className="px-3 py-2">
                             <input
-                              type="time"
-                              value={extractTime(editData.breakStart)}
+                              type="number"
+                              min={0}
+                              value={editData.breakMinutes ?? 0}
                               onChange={e =>
                                 setEditData(prev => ({
                                   ...prev,
-                                  breakStart: e.target.value
-                                    ? `${date}T${e.target.value}:00`
-                                    : undefined,
+                                  breakMinutes: Number(e.target.value) || 0,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-24"
+                              className="w-20 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
                             />
                           </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="time"
-                              value={extractTime(editData.breakEnd)}
-                              onChange={e =>
-                                setEditData(prev => ({
-                                  ...prev,
-                                  breakEnd: e.target.value
-                                    ? `${date}T${e.target.value}:00`
-                                    : undefined,
-                                }))
-                              }
-                              className="input py-1 px-2 text-sm w-24"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">-</td>
-                          <td className="px-3 py-2 text-sm text-gray-700">-</td>
+                          <td className="px-3 py-2 text-sm text-secondary-400">-</td>
                           <td className="px-3 py-2">
                             <input
                               type="text"
@@ -362,7 +441,7 @@ export function AttendanceManagement() {
                                   remarks: e.target.value,
                                 }))
                               }
-                              className="input py-1 px-2 text-sm w-full"
+                              className="w-full py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
                               placeholder="備考"
                             />
                           </td>
@@ -370,13 +449,17 @@ export function AttendanceManagement() {
                             <div className="flex items-center justify-end gap-1">
                               <button
                                 onClick={() => handleSaveEdit(date)}
-                                className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                aria-label="保存"
+                                title="保存"
                               >
                                 <Save className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={handleCancelEdit}
-                                className="p-1 text-gray-600 hover:bg-gray-100 rounded"
+                                className="p-1.5 text-secondary-500 hover:bg-secondary-100 rounded-lg transition-colors"
+                                aria-label="キャンセル"
+                                title="キャンセル"
                               >
                                 <X className="w-4 h-4" />
                               </button>
@@ -385,10 +468,10 @@ export function AttendanceManagement() {
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-2 text-sm text-gray-700">
+                          <td className="px-3 py-2 text-sm text-secondary-700">
                             {formatTime(record?.clockIn)}
                           </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">
+                          <td className="px-3 py-2 text-sm text-secondary-700">
                             {formatTime(record?.clockOut)}
                             {record?.clockOutType === 'early_company' && (
                               <span className="ml-1 text-xs text-blue-600">
@@ -401,23 +484,17 @@ export function AttendanceManagement() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">
-                            {formatTime(record?.breakStart)}
-                          </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">
-                            {formatTime(record?.breakEnd)}
-                          </td>
-                          <td className="px-3 py-2 text-sm text-gray-700">
+                          <td className="px-3 py-2 text-sm text-secondary-700">
                             {record?.breakMinutes
                               ? `${record.breakMinutes}分`
                               : '-'}
                           </td>
-                          <td className="px-3 py-2 text-sm font-medium text-gray-900">
+                          <td className="px-3 py-2 text-sm font-medium text-secondary-900">
                             {record?.workMinutes
                               ? formatMinutesAsTime(record.workMinutes)
                               : '-'}
                           </td>
-                          <td className="px-3 py-2 text-sm text-gray-500">
+                          <td className="px-3 py-2 text-sm text-secondary-500">
                             {record?.remarks || '-'}
                           </td>
                           <td className="px-3 py-2">
@@ -436,7 +513,9 @@ export function AttendanceManagement() {
                                       isHoliday: isWeekend,
                                     })
                               }
-                              className="p-1 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded"
+                              className="p-1.5 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                              aria-label="編集"
+                              title="編集"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
@@ -454,9 +533,9 @@ export function AttendanceManagement() {
         {/* Summary */}
         {!isLoading && attendance.length > 0 && (
           <div className="card card-gold mt-5">
-            <h3 className="font-semibold text-secondary-800 mb-4 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
-                <span className="text-white text-xs font-bold">{String.fromCharCode(931)}</span>
+            <h3 className="font-semibold text-secondary-800 mb-4 flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center">
+                <BarChart3 className="w-4 h-4 text-primary-600" />
               </div>
               月間サマリー
             </h3>

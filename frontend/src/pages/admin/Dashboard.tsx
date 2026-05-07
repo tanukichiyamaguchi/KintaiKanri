@@ -11,9 +11,11 @@ import {
   TrendingUp,
   AlertCircle,
   ClipboardList,
+  ClipboardCheck,
+  Bell,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { staffApi, attendanceApi } from '../../api';
+import { staffApi, attendanceApi, applicationApi, submissionApi } from '../../api';
 import type { StaffInfo, TodayAttendance, WorkStatus } from '../../types';
 import { Header, Loading, Clock } from '../../components/common';
 
@@ -28,6 +30,8 @@ export function AdminDashboard() {
   const [staffList, setStaffList] = useState<StaffWithStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingApplications, setPendingApplications] = useState(0);
+  const [pendingSubmissions, setPendingSubmissions] = useState(0);
 
   // Redirect if not admin
   useEffect(() => {
@@ -65,12 +69,32 @@ export function AdminDashboard() {
     fetchData();
   }, []);
 
+  // Fetch pending approvals counts
+  useEffect(() => {
+    async function fetchApprovals() {
+      try {
+        const [appsRes, subsRes] = await Promise.all([
+          applicationApi.list({ status: 'pending' }),
+          submissionApi.list({ status: 'submitted' }),
+        ]);
+        if (appsRes.success && appsRes.data) {
+          setPendingApplications(appsRes.data.length);
+        }
+        if (subsRes.success && subsRes.data) {
+          setPendingSubmissions(subsRes.data.length);
+        }
+      } catch {
+        // Silently ignore — approvals widget is non-critical
+      }
+    }
+
+    fetchApprovals();
+  }, []);
+
   const getStatusInfo = (status?: WorkStatus): { bg: string; text: string; label: string; dot: string } => {
     switch (status) {
       case 'working':
         return { bg: 'bg-green-50', text: 'text-green-700', label: '勤務中', dot: 'bg-green-500' };
-      case 'on_break':
-        return { bg: 'bg-amber-50', text: 'text-amber-700', label: '休憩中', dot: 'bg-amber-500' };
       case 'finished':
         return { bg: 'bg-blue-50', text: 'text-blue-700', label: '退勤済み', dot: 'bg-blue-500' };
       default:
@@ -108,12 +132,20 @@ export function AdminDashboard() {
       shadowColor: 'shadow-blue-500/20',
     },
     {
-      to: '/admin/bulk-entry',
+      to: '/admin/attendance/edit',
       icon: <ClipboardList className="w-6 h-6" />,
-      label: '勤怠一括入力',
-      description: '月次勤怠のまとめて入力',
+      label: '出勤簿編集',
+      description: 'スタッフ別の月次勤怠を編集',
       color: 'from-cyan-500 to-blue-600',
       shadowColor: 'shadow-cyan-500/20',
+    },
+    {
+      to: '/admin/approvals',
+      icon: <ClipboardCheck className="w-6 h-6" />,
+      label: '承認管理',
+      description: '申請・月次提出の承認',
+      color: 'from-rose-500 to-pink-600',
+      shadowColor: 'shadow-rose-500/20',
     },
     {
       to: '/admin/paid-leave',
@@ -147,7 +179,6 @@ export function AdminDashboard() {
 
   // Count staff by status
   const workingCount = staffList.filter(s => s.attendance?.status === 'working').length;
-  const breakCount = staffList.filter(s => s.attendance?.status === 'on_break').length;
   const finishedCount = staffList.filter(s => s.attendance?.status === 'finished').length;
 
   return (
@@ -185,16 +216,45 @@ export function AdminDashboard() {
                 <div className="text-xs text-secondary-500 font-medium">勤務中</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-amber-600">{breakCount}</div>
-                <div className="text-xs text-secondary-500 font-medium">休憩中</div>
-              </div>
-              <div className="text-center">
                 <div className="text-3xl font-bold text-blue-600">{finishedCount}</div>
                 <div className="text-xs text-secondary-500 font-medium">退勤済</div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Pending Approvals */}
+        {(pendingApplications > 0 || pendingSubmissions > 0) && (
+          <Link
+            to="/admin/approvals"
+            className="card mb-6 group hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5 border border-rose-100 hover:border-rose-200 block"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-secondary-800 group-hover:text-rose-600 transition-colors">
+                    承認待ち
+                  </h3>
+                  <p className="text-sm text-secondary-500 mt-0.5">対応が必要な項目があります</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-5">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-rose-600">{pendingApplications}</div>
+                  <div className="text-xs text-secondary-500 font-medium">申請</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-rose-600">{pendingSubmissions}</div>
+                  <div className="text-xs text-secondary-500 font-medium">月次提出</div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-secondary-300 group-hover:text-rose-500 group-hover:translate-x-1 transition-all" />
+              </div>
+            </div>
+          </Link>
+        )}
 
         {/* Today's Status */}
         <div className="card mb-6">

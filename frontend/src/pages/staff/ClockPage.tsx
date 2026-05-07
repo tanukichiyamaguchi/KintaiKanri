@@ -2,28 +2,20 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Play,
-  Pause,
-  Coffee,
   LogOut,
   Clock as ClockIcon,
-  MapPin,
   AlertCircle,
   CheckCircle,
-  User,
   Building,
+  User,
   ChevronRight,
   Loader2,
+  ListChecks,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi } from '../../api';
 import type { ClockType, WorkStatus, ClockRecord } from '../../types';
 import { Header, Clock, Loading, Modal } from '../../components/common';
-
-interface GpsPosition {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-}
 
 export function ClockPage() {
   const navigate = useNavigate();
@@ -33,8 +25,6 @@ export function ClockPage() {
   const [records, setRecords] = useState<ClockRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isClocking, setIsClocking] = useState(false);
-  const [gpsPosition, setGpsPosition] = useState<GpsPosition | null>(null);
-  const [gpsError, setGpsError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingClockType, setPendingClockType] = useState<ClockType | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -46,13 +36,10 @@ export function ClockPage() {
     }
   }, [isAuthenticated, staff, navigate]);
 
-  // Fetch today's attendance
   const fetchTodayAttendance = useCallback(async () => {
     if (!staff) return;
-
     try {
       const response = await attendanceApi.getToday(staff.staffId);
-
       if (response.success && response.data) {
         setStatus(response.data.status || 'not_started');
         setRecords(response.data.records || []);
@@ -68,111 +55,36 @@ export function ClockPage() {
     fetchTodayAttendance();
   }, [fetchTodayAttendance]);
 
-  // Get GPS position
-  const getGpsPosition = useCallback((): Promise<GpsPosition | null> => {
-    return new Promise(resolve => {
-      if (!navigator.geolocation) {
-        setGpsError('位置情報がサポートされていません');
-        resolve(null);
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        position => {
-          const pos = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-          };
-          setGpsPosition(pos);
-          setGpsError(null);
-          resolve(pos);
-        },
-        error => {
-          let errorMsg = '位置情報の取得に失敗しました';
-          switch (error.code) {
-            case error.PERMISSION_DENIED:
-              errorMsg = '位置情報の許可が必要です';
-              break;
-            case error.POSITION_UNAVAILABLE:
-              errorMsg = '位置情報を取得できません';
-              break;
-            case error.TIMEOUT:
-              errorMsg = '位置情報の取得がタイムアウトしました';
-              break;
-          }
-          setGpsError(errorMsg);
-          resolve(null);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 60000,
-        }
-      );
-    });
-  }, []);
-
-  // Request GPS permission on mount
-  useEffect(() => {
-    getGpsPosition();
-  }, [getGpsPosition]);
-
-  // Handle clock action
   const handleClock = async (type: ClockType) => {
     if (!staff) return;
-
-    // For leave types, show confirmation modal
     if (type === 'clock_out' || type === 'early_leave_company' || type === 'early_leave_self') {
       setPendingClockType(type);
       setShowConfirmModal(true);
       return;
     }
-
     await performClock(type);
   };
 
   const performClock = async (type: ClockType) => {
     if (!staff) return;
-
     setIsClocking(true);
     setMessage(null);
     setShowConfirmModal(false);
     setPendingClockType(null);
 
-    // Use cached GPS position (non-blocking) - GPS is fetched on mount
-    const position = gpsPosition;
-
     try {
-      const response = await attendanceApi.clock(
-        staff.staffId,
-        type,
-        position?.latitude,
-        position?.longitude
-      );
-
+      const response = await attendanceApi.clock(staff.staffId, type);
       if (response.success) {
         const typeLabels: Record<ClockType, string> = {
           clock_in: '出勤',
-          break_start: '休憩開始',
-          break_end: '休憩終了',
           clock_out: '退勤',
           early_leave_company: '早上がり',
           early_leave_self: '早退',
         };
-
-        setMessage({
-          type: 'success',
-          text: `${typeLabels[type]}を記録しました`,
-        });
-
-        // Refresh attendance data
+        setMessage({ type: 'success', text: `${typeLabels[type]}を記録しました` });
         await fetchTodayAttendance();
       } else {
-        setMessage({
-          type: 'error',
-          text: response.error || '打刻に失敗しました',
-        });
+        setMessage({ type: 'error', text: response.error || '打刻に失敗しました' });
       }
     } catch {
       setMessage({ type: 'error', text: '打刻に失敗しました' });
@@ -181,76 +93,47 @@ export function ClockPage() {
     }
   };
 
-  // Get button state based on current status
-  // Use status as the primary indicator (more reliable than records)
   const getButtonState = (type: ClockType): { disabled: boolean; active: boolean } => {
-    // Status-based logic (primary)
     const isWorking = status === 'working';
-    const isOnBreak = status === 'on_break';
     const isFinished = status === 'finished';
-
-    // Also check records as backup
     const hasClockIn = records.some(r => r.type === 'clock_in');
     const hasClockOut = records.some(r =>
       ['clock_out', 'early_leave_company', 'early_leave_self'].includes(r.type)
     );
-
-    // Determine if clocked in (either by status or records)
-    const clockedIn = isWorking || isOnBreak || isFinished || hasClockIn;
+    const clockedIn = isWorking || isFinished || hasClockIn;
     const clockedOut = isFinished || hasClockOut;
 
     switch (type) {
       case 'clock_in':
-        // Can only clock in if not started
         return { disabled: clockedIn, active: clockedIn };
-      case 'break_start':
-        // Can start break if working (not on break, not finished)
-        return { disabled: !isWorking, active: isOnBreak };
-      case 'break_end':
-        // Can end break only if on break
-        return { disabled: !isOnBreak, active: false };
       case 'clock_out':
       case 'early_leave_company':
       case 'early_leave_self':
-        // Can clock out if working (not on break, not already finished)
         return { disabled: !isWorking || clockedOut, active: clockedOut };
       default:
         return { disabled: false, active: false };
     }
   };
 
-  // Format time from ISO string
   const formatTime = (isoString: string): string => {
     const date = new Date(isoString);
     return date.toLocaleTimeString('ja-JP', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
+      hour: '2-digit', minute: '2-digit', hour12: false,
     });
   };
 
-  // Get status label
   const getStatusLabel = (s: WorkStatus): { text: string; class: string } => {
     switch (s) {
-      case 'not_started':
-        return { text: '未出勤', class: 'status-badge status-off' };
-      case 'working':
-        return { text: '勤務中', class: 'status-badge status-working pulse-gold' };
-      case 'on_break':
-        return { text: '休憩中', class: 'status-badge status-break' };
-      case 'finished':
-        return { text: '退勤済み', class: 'status-badge status-finished' };
-      default:
-        return { text: '', class: '' };
+      case 'not_started': return { text: '未出勤', class: 'status-badge status-off' };
+      case 'working': return { text: '勤務中', class: 'status-badge status-working pulse-gold' };
+      case 'finished': return { text: '退勤済み', class: 'status-badge status-finished' };
+      default: return { text: '', class: '' };
     }
   };
 
-  // Get type label for record
   const getTypeLabel = (type: ClockType): string => {
     const labels: Record<ClockType, string> = {
       clock_in: '出勤',
-      break_start: '休憩開始',
-      break_end: '休憩終了',
       clock_out: '退勤',
       early_leave_company: '早上がり',
       early_leave_self: '早退',
@@ -276,34 +159,16 @@ export function ClockPage() {
       <Header title="打刻" />
 
       <main className="max-w-lg mx-auto p-4">
-        {/* Clock Display Card */}
+        {/* Clock Display */}
         <div className="card card-gold text-center mb-6 relative overflow-hidden">
-          {/* Background decoration */}
           <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-primary-200/20 to-transparent rounded-full" />
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-primary-200/20 to-transparent rounded-full" />
-
           <div className="relative">
             <Clock size="lg" showDate={true} />
-
-            {/* Status Badge */}
             <div className="mt-6 flex justify-center">
               <span className={statusInfo.class}>{statusInfo.text}</span>
             </div>
           </div>
-        </div>
-
-        {/* GPS Status */}
-        <div className={`flex items-center justify-center gap-2.5 mb-5 px-5 py-3 rounded-full text-sm font-medium border ${
-          gpsError
-            ? 'bg-red-50 border-red-200 text-red-600'
-            : gpsPosition
-            ? 'bg-green-50 border-green-200 text-green-600'
-            : 'bg-secondary-50 border-secondary-200 text-secondary-500'
-        }`}>
-          <MapPin className={`w-4 h-4 ${gpsError ? 'text-red-500' : gpsPosition ? 'text-green-500' : 'text-secondary-400'}`} />
-          <span>
-            {gpsError || (gpsPosition ? '位置情報取得済み' : '位置情報取得中...')}
-          </span>
         </div>
 
         {/* Message */}
@@ -325,89 +190,68 @@ export function ClockPage() {
         )}
 
         {/* Clock Buttons */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          {/* Clock In */}
+        <div className="grid grid-cols-1 gap-4 mb-6">
+          {/* 出勤 - full width */}
           <button
             onClick={() => handleClock('clock_in')}
             disabled={getButtonState('clock_in').disabled || isClocking}
-            className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
+            className={`relative group flex items-center justify-center gap-3 h-24 rounded-2xl font-semibold transition-all duration-300 ${
               getButtonState('clock_in').active
                 ? 'bg-green-50 text-green-700 border-2 border-green-300'
                 : 'bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg shadow-green-500/25 hover:shadow-xl hover:shadow-green-500/35 hover:-translate-y-0.5'
             } ${getButtonState('clock_in').disabled && !getButtonState('clock_in').active ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Play className="w-7 h-7" />
-            <span className="text-lg">出勤</span>
+            <span className="text-xl">出勤</span>
             {getButtonState('clock_in').active && (
               <span className="absolute top-2 right-2 text-xs bg-green-200 text-green-700 px-2.5 py-0.5 rounded-full font-bold">済</span>
             )}
           </button>
 
-          {/* Break Start */}
-          <button
-            onClick={() => handleClock('break_start')}
-            disabled={getButtonState('break_start').disabled || isClocking}
-            className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
-              getButtonState('break_start').active
-                ? 'bg-amber-50 text-amber-700 border-2 border-amber-300'
-                : 'bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 hover:shadow-xl hover:shadow-amber-500/35 hover:-translate-y-0.5'
-            } ${getButtonState('break_start').disabled && !getButtonState('break_start').active ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <Coffee className="w-7 h-7" />
-            <span className="text-lg">休憩開始</span>
-          </button>
+          {/* 退勤系 3種 */}
+          <div className="grid grid-cols-3 gap-3">
+            <button
+              onClick={() => handleClock('clock_out')}
+              disabled={getButtonState('clock_out').disabled || isClocking}
+              className={`relative flex flex-col items-center justify-center gap-1 h-24 rounded-2xl font-semibold transition-all duration-300 ${
+                getButtonState('clock_out').active
+                  ? 'bg-primary-50 text-primary-700 border-2 border-primary-300'
+                  : 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/35 hover:-translate-y-0.5'
+              } ${getButtonState('clock_out').disabled && !getButtonState('clock_out').active ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <LogOut className="w-6 h-6" />
+              <span className="text-base">退勤</span>
+            </button>
 
-          {/* Break End */}
-          <button
-            onClick={() => handleClock('break_end')}
-            disabled={getButtonState('break_end').disabled || isClocking}
-            className={`group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 bg-white text-secondary-600 border-2 border-secondary-200 hover:border-primary-300 hover:text-primary-600 ${
-              getButtonState('break_end').disabled ? 'opacity-50 cursor-not-allowed' : 'hover:-translate-y-0.5 hover:shadow-lg'
-            }`}
-          >
-            <Pause className="w-7 h-7" />
-            <span className="text-lg">休憩終了</span>
-          </button>
+            <button
+              onClick={() => handleClock('early_leave_company')}
+              disabled={getButtonState('early_leave_company').disabled || isClocking}
+              className={`flex flex-col items-center justify-center gap-1 h-24 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 hover:-translate-y-0.5 ${
+                getButtonState('early_leave_company').disabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              <Building className="w-5 h-5" />
+              <span className="text-sm">早上がり</span>
+              <span className="text-[10px] opacity-80">(会社都合)</span>
+            </button>
 
-          {/* Clock Out */}
-          <button
-            onClick={() => handleClock('clock_out')}
-            disabled={getButtonState('clock_out').disabled || isClocking}
-            className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
-              getButtonState('clock_out').active
-                ? 'bg-primary-50 text-primary-700 border-2 border-primary-300'
-                : 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/35 hover:-translate-y-0.5'
-            } ${getButtonState('clock_out').disabled && !getButtonState('clock_out').active ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <LogOut className="w-7 h-7" />
-            <span className="text-lg">退勤</span>
-          </button>
+            <button
+              onClick={() => handleClock('early_leave_self')}
+              disabled={getButtonState('early_leave_self').disabled || isClocking}
+              className={`flex flex-col items-center justify-center gap-1 h-24 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 hover:shadow-xl hover:shadow-red-500/35 hover:-translate-y-0.5 ${
+                getButtonState('early_leave_self').disabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              <User className="w-5 h-5" />
+              <span className="text-sm">早退</span>
+              <span className="text-[10px] opacity-80">(自己都合)</span>
+            </button>
+          </div>
+        </div>
 
-          {/* Early Leave - Company */}
-          <button
-            onClick={() => handleClock('early_leave_company')}
-            disabled={getButtonState('early_leave_company').disabled || isClocking}
-            className={`group flex flex-col items-center justify-center gap-1 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 hover:-translate-y-0.5 ${
-              getButtonState('early_leave_company').disabled ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            <Building className="w-6 h-6" />
-            <span className="text-base">早上がり</span>
-            <span className="text-xs opacity-80">(会社都合)</span>
-          </button>
-
-          {/* Early Leave - Self */}
-          <button
-            onClick={() => handleClock('early_leave_self')}
-            disabled={getButtonState('early_leave_self').disabled || isClocking}
-            className={`group flex flex-col items-center justify-center gap-1 h-28 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 hover:shadow-xl hover:shadow-red-500/35 hover:-translate-y-0.5 ${
-              getButtonState('early_leave_self').disabled ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            <User className="w-6 h-6" />
-            <span className="text-base">早退</span>
-            <span className="text-xs opacity-80">(自己都合)</span>
-          </button>
+        {/* 補足: 休憩は法定通り自動付与 */}
+        <div className="bg-primary-50/50 border border-primary-200/50 rounded-2xl px-5 py-3 mb-5 text-sm text-secondary-600">
+          休憩時間は退勤時に法定通り（拘束9h超→60分 / 6h45m超→45分）自動付与されます。実態と異なる場合は出勤簿で修正してください。
         </div>
 
         {/* Loading overlay */}
@@ -421,7 +265,7 @@ export function ClockPage() {
         )}
 
         {/* Today's Records */}
-        <div className="card">
+        <div className="card mb-4">
           <h3 className="font-semibold text-secondary-800 mb-5 flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center">
               <ClockIcon className="w-4 h-4 text-primary-600" />
@@ -451,8 +295,18 @@ export function ClockPage() {
           )}
         </div>
 
-        {/* My Page Link */}
-        <div className="mt-6">
+        {/* Navigation Links */}
+        <div className="space-y-2">
+          <Link
+            to="/attendance"
+            className="flex items-center justify-between w-full p-4 bg-white rounded-xl border border-secondary-200 hover:border-primary-300 hover:shadow-md transition-all group"
+          >
+            <span className="text-secondary-700 font-medium group-hover:text-primary-600 flex items-center gap-2.5">
+              <ListChecks className="w-5 h-5 text-primary-500" />
+              出勤簿（修正・申請・提出）
+            </span>
+            <ChevronRight className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 group-hover:translate-x-1 transition-all" />
+          </Link>
           <Link
             to="/mypage"
             className="flex items-center justify-between w-full p-4 bg-white rounded-xl border border-secondary-200 hover:border-primary-300 hover:shadow-md transition-all group"
