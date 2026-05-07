@@ -260,17 +260,20 @@ export function AttendanceManagement() {
 
       <main className="max-w-7xl mx-auto p-4 sm:p-6">
         {/* Back Link + Bulk Entry */}
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between gap-3 mb-5">
           <Link
             to="/admin"
-            className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors"
+            className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors min-w-0"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span className="text-sm font-medium">ダッシュボードへ戻る</span>
+            <ArrowLeft className="w-4 h-4 flex-shrink-0" />
+            <span className="text-sm font-medium truncate">
+              <span className="hidden sm:inline">ダッシュボードへ戻る</span>
+              <span className="sm:hidden">戻る</span>
+            </span>
           </Link>
           <Link
             to="/admin/attendance/edit"
-            className="btn btn-primary !py-2 !px-4 !text-sm !rounded-xl"
+            className="btn btn-primary !py-2 !px-3 sm:!px-4 !text-sm !rounded-xl flex-shrink-0"
           >
             <ClipboardList className="w-4 h-4" />
             出勤簿編集
@@ -287,9 +290,9 @@ export function AttendanceManagement() {
 
         {/* Filters */}
         <div className="card card-gold gold-border mb-5">
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4">
             {/* Staff Selector */}
-            <div className="flex-1 min-w-[200px]">
+            <div className="sm:flex-1 sm:min-w-[200px]">
               <label className="label">スタッフ</label>
               <select
                 value={selectedStaff}
@@ -305,20 +308,20 @@ export function AttendanceManagement() {
             </div>
 
             {/* Month Selector */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center justify-center gap-1">
               <button
                 onClick={handlePreviousMonth}
-                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors"
                 aria-label="前月"
               >
                 <ChevronLeft className="w-5 h-5 text-secondary-600" />
               </button>
-              <span className="text-lg font-semibold min-w-[140px] text-center text-secondary-800">
+              <span className="text-base sm:text-lg font-semibold min-w-[120px] sm:min-w-[140px] text-center text-secondary-800">
                 {selectedYear}年{selectedMonth}月
               </span>
               <button
                 onClick={handleNextMonth}
-                className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors"
+                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors"
                 aria-label="次月"
               >
                 <ChevronRight className="w-5 h-5 text-secondary-600" />
@@ -331,7 +334,7 @@ export function AttendanceManagement() {
               if (!info) return null;
               return (
                 <span
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${info.cls}`}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border self-start sm:self-auto ${info.cls}`}
                 >
                   {info.label}
                 </span>

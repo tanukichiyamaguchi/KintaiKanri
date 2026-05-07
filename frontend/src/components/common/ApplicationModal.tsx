@@ -71,18 +71,18 @@ export function ApplicationModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="勤怠申請" size="md">
-      <div className="space-y-5 py-2">
+      <div className="space-y-4 sm:space-y-5 py-1 sm:py-2">
         {/* 対象日 */}
         <div className="flex items-center gap-2.5 text-secondary-700">
-          <Calendar className="w-5 h-5 text-primary-500" />
-          <span className="font-semibold">{date}</span>
+          <Calendar className="w-5 h-5 text-primary-500 flex-shrink-0" />
+          <span className="font-semibold text-sm sm:text-base">{date}</span>
         </div>
 
         {/* 差異サマリ */}
         {diff && diff.hasIssue && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4 space-y-2">
             <div className="flex items-center gap-2 text-amber-700 font-semibold text-sm">
-              <AlertTriangle className="w-4 h-4" />
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
               シフトとの差異
             </div>
             <ul className="text-sm text-amber-800 space-y-1 pl-1">
@@ -90,7 +90,7 @@ export function ApplicationModal({
                 <li key={kind}>・{APPLICATION_TYPE_LABEL[kind]}</li>
               ))}
             </ul>
-            <div className="text-xs text-amber-700 pt-1 border-t border-amber-200/60 grid grid-cols-2 gap-2">
+            <div className="text-xs text-amber-700 pt-1 border-t border-amber-200/60 grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2">
               {diff.details.plannedStart && diff.details.plannedEnd && (
                 <div>
                   予定: {diff.details.plannedStart} - {diff.details.plannedEnd}
@@ -118,7 +118,7 @@ export function ApplicationModal({
                   key={kind}
                   type="button"
                   onClick={() => setSelectedType(kind)}
-                  className={`px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                  className={`px-3 min-h-11 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
                     selectedType === kind
                       ? 'border-primary-400 bg-primary-50 text-primary-700'
                       : 'border-secondary-200 bg-white text-secondary-600 hover:border-primary-200'
@@ -158,13 +158,13 @@ export function ApplicationModal({
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
+          <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-3 sm:px-4 py-3 rounded-xl">
             <X className="w-4 h-4 flex-shrink-0" />
-            <p className="text-sm font-medium">{error}</p>
+            <p className="text-sm font-medium break-words">{error}</p>
           </div>
         )}
 
-        <div className="flex gap-3 pt-2">
+        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-2">
           <button
             type="button"
             onClick={onClose}

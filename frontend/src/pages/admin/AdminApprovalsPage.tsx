@@ -652,12 +652,12 @@ export function AdminApprovalsPage() {
         </div>
 
         {/* Filters */}
-        <div className="card mb-4">
-          <div className="flex items-center gap-2 mb-4 text-secondary-700">
+        <div className="card mb-3 sm:mb-4">
+          <div className="flex items-center gap-2 mb-3 sm:mb-4 text-secondary-700">
             <Filter className="w-4 h-4 text-primary-500" />
             <span className="text-sm font-semibold">絞り込み</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             {/* 期間モード */}
             <div>
               <label className="label">期間</label>
@@ -674,13 +674,13 @@ export function AdminApprovalsPage() {
 
             {/* 月指定モード: 月ピッカー */}
             {rangeMode === 'month' && (
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-1 md:col-span-2">
                 <label className="label">対象月</label>
-                <div className="flex items-center gap-1 max-w-xs">
+                <div className="flex items-center gap-1 sm:max-w-xs">
                   <button
                     type="button"
                     onClick={goPrevMonth}
-                    className="p-2 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600"
+                    className="h-11 w-11 flex items-center justify-center rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600 flex-shrink-0"
                     aria-label="前月へ"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -691,7 +691,7 @@ export function AdminApprovalsPage() {
                   <button
                     type="button"
                     onClick={goNextMonth}
-                    className="p-2 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600"
+                    className="h-11 w-11 flex items-center justify-center rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600 flex-shrink-0"
                     aria-label="翌月へ"
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -768,13 +768,13 @@ export function AdminApprovalsPage() {
         {/* Applications tab */}
         {activeTab === 'applications' && (
           <>
-            <section className="card mb-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  承認待ち
+            <section className="card mb-3 sm:mb-4">
+              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0">
+                  <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span className="truncate">承認待ち</span>
                 </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                   {pendingApps.length}件
                 </span>
               </div>
@@ -792,12 +792,12 @@ export function AdminApprovalsPage() {
             </section>
 
             <section className="card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-secondary-500" />
-                  処理済み
+              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0">
+                  <FileText className="w-4 h-4 text-secondary-500 flex-shrink-0" />
+                  <span className="truncate">処理済み</span>
                 </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                   {processedApps.length}件
                 </span>
               </div>
@@ -818,14 +818,14 @@ export function AdminApprovalsPage() {
         {/* Submissions tab */}
         {activeTab === 'submissions' && (
           <>
-            <section className="card mb-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-blue-600" />
-                  確認待ち
+            <section className="card mb-3 sm:mb-4">
+              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0 flex-wrap">
+                  <Clock className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span>確認待ち</span>
                   <span className="text-[11px] text-secondary-400 font-normal">（全期間）</span>
                 </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                   {submittedSubs.length}件
                 </span>
               </div>
@@ -843,15 +843,15 @@ export function AdminApprovalsPage() {
             </section>
 
             <section className="card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-secondary-500" />
-                  処理済み
+              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0 flex-wrap">
+                  <FileText className="w-4 h-4 text-secondary-500 flex-shrink-0" />
+                  <span>処理済み</span>
                   <span className="text-[11px] text-secondary-400 font-normal">
                     （{rangeMode === 'all' ? '全期間' : rangeMode === 'month' ? formatYearMonth(yearMonthStr) : `${rangeFrom} 〜 ${rangeTo}`}）
                   </span>
                 </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                   {processedSubs.length}件
                 </span>
               </div>
@@ -939,12 +939,12 @@ export function AdminApprovalsPage() {
               </div>
             )}
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
               <button
                 type="button"
                 onClick={closeModal}
                 disabled={isProcessing}
-                className="btn btn-secondary flex-1"
+                className="btn btn-secondary flex-1 min-h-[44px]"
               >
                 キャンセル
               </button>
@@ -955,7 +955,7 @@ export function AdminApprovalsPage() {
                   isProcessing ||
                   (!modalIsApprove && !rejectionReason.trim())
                 }
-                className={`btn flex-1 inline-flex items-center justify-center gap-2 ${
+                className={`btn flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 ${
                   modalIsApprove ? 'btn-success' : 'btn-danger'
                 }`}
               >

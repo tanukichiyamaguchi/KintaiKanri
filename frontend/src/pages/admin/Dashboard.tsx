@@ -207,16 +207,16 @@ export function AdminDashboard() {
                 </div>
                 <span className="text-primary-600 text-sm font-semibold tracking-wider uppercase">Dashboard</span>
               </div>
-              <h1 className="text-2xl font-bold text-secondary-900 mb-1">おかえりなさい</h1>
-              <p className="text-secondary-500">{todayStr}</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-secondary-900 mb-1">おかえりなさい</h1>
+              <p className="text-sm sm:text-base text-secondary-500">{todayStr}</p>
             </div>
-            <div className="flex items-center gap-6 sm:gap-8">
+            <div className="flex items-center justify-around sm:justify-end gap-6 sm:gap-8">
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">{workingCount}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-green-600">{workingCount}</div>
                 <div className="text-xs text-secondary-500 font-medium">勤務中</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600">{finishedCount}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-blue-600">{finishedCount}</div>
                 <div className="text-xs text-secondary-500 font-medium">退勤済</div>
               </div>
             </div>
@@ -229,28 +229,28 @@ export function AdminDashboard() {
             to="/admin/approvals"
             className="card mb-6 group hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5 border border-rose-100 hover:border-rose-200 block"
           >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform">
+            <div className="flex items-center justify-between gap-3 sm:gap-4">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform flex-shrink-0">
                   <Bell className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h3 className="font-semibold text-secondary-800 group-hover:text-rose-600 transition-colors">
                     承認待ち
                   </h3>
-                  <p className="text-sm text-secondary-500 mt-0.5">対応が必要な項目があります</p>
+                  <p className="text-xs sm:text-sm text-secondary-500 mt-0.5">対応が必要な項目があります</p>
                 </div>
               </div>
-              <div className="flex items-center gap-5">
+              <div className="flex items-center gap-3 sm:gap-5 flex-shrink-0">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-rose-600">{pendingApplications}</div>
+                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{pendingApplications}</div>
                   <div className="text-xs text-secondary-500 font-medium">申請</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-rose-600">{pendingSubmissions}</div>
+                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{pendingSubmissions}</div>
                   <div className="text-xs text-secondary-500 font-medium">月次提出</div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-secondary-300 group-hover:text-rose-500 group-hover:translate-x-1 transition-all" />
+                <ChevronRight className="hidden sm:block w-5 h-5 text-secondary-300 group-hover:text-rose-500 group-hover:translate-x-1 transition-all" />
               </div>
             </div>
           </Link>
@@ -297,18 +297,18 @@ export function AdminDashboard() {
                 return (
                   <div
                     key={staff.staffId}
-                    className={`flex items-center justify-between p-4 rounded-xl transition-all border border-transparent hover:border-secondary-200 ${statusInfo.bg}`}
+                    className={`flex items-center justify-between gap-2 p-3 sm:p-4 rounded-xl transition-all border border-transparent hover:border-secondary-200 ${statusInfo.bg}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${statusInfo.dot}`} />
-                      <span className="font-medium text-secondary-800">{staff.name}</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${statusInfo.dot}`} />
+                      <span className="font-medium text-secondary-800 truncate">{staff.name}</span>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`text-sm font-semibold px-3 py-1.5 rounded-full ${statusInfo.bg} ${statusInfo.text} border border-current/10`}>
+                    <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+                      <span className={`text-xs sm:text-sm font-semibold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full ${statusInfo.bg} ${statusInfo.text} border border-current/10`}>
                         {statusInfo.label}
                       </span>
                       {clockInTime && (
-                        <span className="text-sm text-secondary-500 font-mono">{clockInTime}〜</span>
+                        <span className="hidden sm:inline text-sm text-secondary-500 font-mono">{clockInTime}〜</span>
                       )}
                     </div>
                   </div>

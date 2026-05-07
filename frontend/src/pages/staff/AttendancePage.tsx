@@ -608,94 +608,107 @@ export function AttendancePage() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="card overflow-hidden p-0">
-          {isLoading ? (
+        {/* Loading state */}
+        {isLoading ? (
+          <div className="card overflow-hidden p-0">
             <div className="p-10"><Loading message="読み込み中..." /></div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px]">
-                <thead>
-                  <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
-                    <th className="px-3 py-3 text-left text-xs font-semibold w-20">日付</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold w-28">予定（シフト）</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold w-[108px]">出勤</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold w-[108px]">退勤</th>
-                    <th className="px-3 py-3 text-center text-xs font-semibold w-20">休憩<span className="font-normal opacity-70">（分）</span></th>
-                    <th className="px-3 py-3 text-center text-xs font-semibold w-20">実働</th>
-                    <th className="px-3 py-3 text-center text-xs font-semibold w-20">残業</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold">差異 / 申請</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold w-[120px]">備考</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, index) => {
-                    const diff = rowDiffs[index];
-                    const dateApps = applicationsByDate[row.date] || [];
-                    const dateObj = new Date(row.date);
-                    const dow = dateObj.getDay();
-                    const isSunday = dow === 0;
-                    const isSaturday = dow === 6;
-                    const hasOvertime = row.overtimeMinutes > 0;
-                    const shiftLabel = row.shift
-                      ? row.shift.isOff
-                        ? `休${row.shift.isTentative ? '(仮)' : ''}`
-                        : `${row.shift.startTime || '?'} - ${row.shift.endTime || '?'}${row.shift.isTentative ? '(仮)' : ''}`
-                      : '';
-                    const cellDisabled = isLocked;
-                    return (
-                      <tr key={row.date} className={`border-b border-secondary-100 last:border-0 transition-colors ${
-                        diff && diff.hasIssue && dateApps.length === 0 ? 'bg-amber-50/40' :
-                        isSunday || isSaturday ? 'bg-secondary-50/60' : 'bg-white'
-                      } hover:bg-primary-50/30`}>
-                        <td className={`px-3 py-2 text-sm whitespace-nowrap ${
-                          isSunday ? 'text-red-500 font-semibold' : isSaturday ? 'text-blue-500 font-semibold' : 'text-secondary-800'
+          </div>
+        ) : (
+          <>
+            {/* Mobile: Card stack (< sm) */}
+            <div className="sm:hidden space-y-3">
+              {rows.map((row, index) => {
+                const diff = rowDiffs[index];
+                const dateApps = applicationsByDate[row.date] || [];
+                const dateObj = new Date(row.date);
+                const dow = dateObj.getDay();
+                const isSunday = dow === 0;
+                const isSaturday = dow === 6;
+                const hasOvertime = row.overtimeMinutes > 0;
+                const shiftLabel = row.shift
+                  ? row.shift.isOff
+                    ? `休${row.shift.isTentative ? '(仮)' : ''}`
+                    : `${row.shift.startTime || '?'} - ${row.shift.endTime || '?'}${row.shift.isTentative ? '(仮)' : ''}`
+                  : '';
+                const cellDisabled = isLocked;
+                const cardBg =
+                  diff && diff.hasIssue && dateApps.length === 0 ? 'bg-amber-50/60 border-amber-200' :
+                  isSunday || isSaturday ? 'bg-secondary-50/60 border-secondary-200' :
+                  'bg-white border-secondary-200';
+                return (
+                  <div
+                    key={row.date}
+                    className={`rounded-2xl border overflow-hidden shadow-sm ${cardBg}`}
+                  >
+                    {/* Header: date + shift */}
+                    <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-secondary-100">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-base font-bold ${
+                          isSunday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-secondary-800'
                         }`}>
-                          {formatDateLabel(row.date)}
-                        </td>
-                        <td className="px-3 py-2 text-xs whitespace-nowrap">
-                          {row.shift ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className={row.shift.isTentative ? 'text-secondary-400' : 'text-secondary-700'}>
-                                {shiftLabel}
-                              </span>
-                              {!row.shift.isOff && !row.shift.isTentative && row.shift.startTime && row.shift.endTime && !cellDisabled && (
-                                <button
-                                  type="button"
-                                  onClick={() => applyScheduledTime(index)}
-                                  className="px-1.5 py-0.5 text-[10px] font-semibold border border-primary-300 text-primary-700 bg-primary-50 rounded hover:bg-primary-100 transition-colors"
-                                  title="出勤・退勤を定時で埋める"
-                                >
-                                  定時
-                                </button>
-                              )}
-                            </div>
-                          ) : <span className="text-secondary-300">未登録</span>}
-                        </td>
-                        <td className="px-2 py-1.5">
+                          {selectedMonth}/{formatDateLabel(row.date)}
+                        </span>
+                        {row.shift ? (
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                            row.shift.isTentative
+                              ? 'text-secondary-400 border-secondary-200 bg-secondary-50'
+                              : row.shift.isOff
+                                ? 'text-secondary-600 border-secondary-200 bg-secondary-100'
+                                : 'text-secondary-700 border-primary-200 bg-primary-50'
+                          }`}>
+                            {shiftLabel}
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-secondary-200 bg-secondary-50 text-secondary-300">
+                            シフト未登録
+                          </span>
+                        )}
+                      </div>
+                      {row.shift && !row.shift.isOff && !row.shift.isTentative && row.shift.startTime && row.shift.endTime && !cellDisabled && (
+                        <button
+                          type="button"
+                          onClick={() => applyScheduledTime(index)}
+                          className="shrink-0 px-3 h-9 text-xs font-semibold border border-primary-300 text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors"
+                          title="出勤・退勤を定時で埋める"
+                        >
+                          定時
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Body: clock-in/out, break, work/overtime */}
+                    <div className="px-4 py-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className="block text-xs font-medium text-secondary-500 mb-1">出勤</span>
                           <input
                             type="time"
                             value={row.clockIn}
                             onChange={e => updateRow(index, 'clockIn', e.target.value)}
                             disabled={cellDisabled}
-                            className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
+                            className="w-full h-11 px-3 text-base border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
                           />
-                        </td>
-                        <td className="px-2 py-1.5">
+                        </label>
+                        <label className="block">
+                          <span className="block text-xs font-medium text-secondary-500 mb-1">退勤</span>
                           <input
                             type="time"
                             value={row.clockOut}
                             onChange={e => updateRow(index, 'clockOut', e.target.value)}
                             disabled={cellDisabled}
-                            className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
+                            className="w-full h-11 px-3 text-base border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
                           />
-                        </td>
-                        <td className="px-2 py-1.5">
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className="block text-xs font-medium text-secondary-500 mb-1">休憩（分）</span>
                           <input
                             type="number"
                             min={0}
                             max={480}
-                            // Show "0" as 0 when manually set to zero; only blank if no clock data yet
+                            inputMode="numeric"
                             value={
                               !row.clockIn || !row.clockOut
                                 ? ''
@@ -705,34 +718,40 @@ export function AttendancePage() {
                             }
                             onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
                             disabled={cellDisabled || (!row.clockIn || !row.clockOut)}
-                            className={`w-full py-1.5 px-2 text-sm text-center border rounded-lg focus:outline-none ${
+                            className={`w-full h-11 px-3 text-base text-center border rounded-lg focus:outline-none ${
                               row.breakMinutesIsManual ? 'border-amber-300 bg-amber-50' : 'border-secondary-200 bg-white'
                             } focus:border-primary-400 focus:ring-2 focus:ring-primary-200 disabled:bg-secondary-50 disabled:text-secondary-300`}
                             placeholder="-"
                             title={row.breakMinutesIsManual ? '手動修正済み' : '法定休憩を自動付与'}
                           />
-                        </td>
-                        <td className="px-3 py-1.5 text-center">
-                          <span className={`text-sm font-mono ${row.workMinutes > 0 ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
-                            {formatMinutes(row.workMinutes)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-1.5 text-center">
-                          {hasOvertime ? (
-                            <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
-                              <AlertTriangle className="w-3 h-3" />{formatMinutes(row.overtimeMinutes)}
+                        </label>
+                        <div className="block">
+                          <span className="block text-xs font-medium text-secondary-500 mb-1">実働 / 残業</span>
+                          <div className="h-11 flex items-center justify-between px-3 rounded-lg bg-secondary-50 border border-secondary-100">
+                            <span className={`text-base font-mono ${row.workMinutes > 0 ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
+                              {formatMinutes(row.workMinutes)}
                             </span>
-                          ) : <span className="text-sm text-secondary-300">-</span>}
-                        </td>
-                        <td className="px-3 py-1.5">
+                            {hasOvertime ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                                <AlertTriangle className="w-3 h-3" />{formatMinutes(row.overtimeMinutes)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-secondary-300">残業 -</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Diff / Application */}
+                      {diff && diff.hasIssue && (
+                        <div>
+                          <span className="block text-xs font-medium text-secondary-500 mb-1.5">差異 / 申請</span>
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {diff && diff.hasIssue && diff.kinds.map(kind => {
+                            {diff.kinds.map(kind => {
                               const matched = findRelevantApp(dateApps, kind);
-                              // No application yet → show 申請 button
-                              // Rejected (latest) → also show re-apply button alongside the badge
                               if (!matched || matched.status === 'rejected') {
                                 return (
-                                  <div key={kind} className="flex items-center gap-1">
+                                  <div key={kind} className="flex items-center gap-1 flex-wrap">
                                     {matched && (
                                       <>
                                         <ShiftDiffKindBadge kind={kind} />
@@ -745,7 +764,7 @@ export function AttendancePage() {
                                         setAppModalDiff(diff);
                                       }}
                                       disabled={cellDisabled}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
+                                      className="inline-flex items-center gap-1 h-9 px-3 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
                                     >
                                       <Send className="w-3 h-3" />
                                       {matched ? '再申請' : '申請'}
@@ -761,24 +780,196 @@ export function AttendancePage() {
                               );
                             })}
                           </div>
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input
-                            type="text"
-                            value={row.remarks}
-                            onChange={e => updateRow(index, 'remarks', e.target.value)}
-                            disabled={cellDisabled}
-                            className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                      )}
+
+                      {/* Remarks */}
+                      <label className="block">
+                        <span className="block text-xs font-medium text-secondary-500 mb-1">備考</span>
+                        <input
+                          type="text"
+                          value={row.remarks}
+                          onChange={e => updateRow(index, 'remarks', e.target.value)}
+                          disabled={cellDisabled}
+                          className="w-full h-11 px-3 text-base border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
+                          placeholder="-"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
-        </div>
+
+            {/* Tablet+: Table (>= sm) */}
+            <div className="card overflow-hidden p-0 hidden sm:block">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1100px]">
+                  <thead>
+                    <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
+                      <th className="px-3 py-3 text-left text-xs font-semibold w-20">日付</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold w-28">予定（シフト）</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold w-[108px]">出勤</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold w-[108px]">退勤</th>
+                      <th className="px-3 py-3 text-center text-xs font-semibold w-20">休憩<span className="font-normal opacity-70">（分）</span></th>
+                      <th className="px-3 py-3 text-center text-xs font-semibold w-20">実働</th>
+                      <th className="px-3 py-3 text-center text-xs font-semibold w-20">残業</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold">差異 / 申請</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold w-[120px]">備考</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, index) => {
+                      const diff = rowDiffs[index];
+                      const dateApps = applicationsByDate[row.date] || [];
+                      const dateObj = new Date(row.date);
+                      const dow = dateObj.getDay();
+                      const isSunday = dow === 0;
+                      const isSaturday = dow === 6;
+                      const hasOvertime = row.overtimeMinutes > 0;
+                      const shiftLabel = row.shift
+                        ? row.shift.isOff
+                          ? `休${row.shift.isTentative ? '(仮)' : ''}`
+                          : `${row.shift.startTime || '?'} - ${row.shift.endTime || '?'}${row.shift.isTentative ? '(仮)' : ''}`
+                        : '';
+                      const cellDisabled = isLocked;
+                      return (
+                        <tr key={row.date} className={`border-b border-secondary-100 last:border-0 transition-colors ${
+                          diff && diff.hasIssue && dateApps.length === 0 ? 'bg-amber-50/40' :
+                          isSunday || isSaturday ? 'bg-secondary-50/60' : 'bg-white'
+                        } hover:bg-primary-50/30`}>
+                          <td className={`px-3 py-2 text-sm whitespace-nowrap ${
+                            isSunday ? 'text-red-500 font-semibold' : isSaturday ? 'text-blue-500 font-semibold' : 'text-secondary-800'
+                          }`}>
+                            {formatDateLabel(row.date)}
+                          </td>
+                          <td className="px-3 py-2 text-xs whitespace-nowrap">
+                            {row.shift ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className={row.shift.isTentative ? 'text-secondary-400' : 'text-secondary-700'}>
+                                  {shiftLabel}
+                                </span>
+                                {!row.shift.isOff && !row.shift.isTentative && row.shift.startTime && row.shift.endTime && !cellDisabled && (
+                                  <button
+                                    type="button"
+                                    onClick={() => applyScheduledTime(index)}
+                                    className="px-1.5 py-0.5 text-[10px] font-semibold border border-primary-300 text-primary-700 bg-primary-50 rounded hover:bg-primary-100 transition-colors"
+                                    title="出勤・退勤を定時で埋める"
+                                  >
+                                    定時
+                                  </button>
+                                )}
+                              </div>
+                            ) : <span className="text-secondary-300">未登録</span>}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="time"
+                              value={row.clockIn}
+                              onChange={e => updateRow(index, 'clockIn', e.target.value)}
+                              disabled={cellDisabled}
+                              className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="time"
+                              value={row.clockOut}
+                              onChange={e => updateRow(index, 'clockOut', e.target.value)}
+                              disabled={cellDisabled}
+                              className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="number"
+                              min={0}
+                              max={480}
+                              // Show "0" as 0 when manually set to zero; only blank if no clock data yet
+                              value={
+                                !row.clockIn || !row.clockOut
+                                  ? ''
+                                  : row.breakMinutesIsManual
+                                    ? row.breakMinutes
+                                    : (row.breakMinutes || '')
+                              }
+                              onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
+                              disabled={cellDisabled || (!row.clockIn || !row.clockOut)}
+                              className={`w-full py-1.5 px-2 text-sm text-center border rounded-lg focus:outline-none ${
+                                row.breakMinutesIsManual ? 'border-amber-300 bg-amber-50' : 'border-secondary-200 bg-white'
+                              } focus:border-primary-400 focus:ring-2 focus:ring-primary-200 disabled:bg-secondary-50 disabled:text-secondary-300`}
+                              placeholder="-"
+                              title={row.breakMinutesIsManual ? '手動修正済み' : '法定休憩を自動付与'}
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            <span className={`text-sm font-mono ${row.workMinutes > 0 ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
+                              {formatMinutes(row.workMinutes)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            {hasOvertime ? (
+                              <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                                <AlertTriangle className="w-3 h-3" />{formatMinutes(row.overtimeMinutes)}
+                              </span>
+                            ) : <span className="text-sm text-secondary-300">-</span>}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {diff && diff.hasIssue && diff.kinds.map(kind => {
+                                const matched = findRelevantApp(dateApps, kind);
+                                // No application yet → show 申請 button
+                                // Rejected (latest) → also show re-apply button alongside the badge
+                                if (!matched || matched.status === 'rejected') {
+                                  return (
+                                    <div key={kind} className="flex items-center gap-1">
+                                      {matched && (
+                                        <>
+                                          <ShiftDiffKindBadge kind={kind} />
+                                          <ApplicationStatusBadge status={matched.status} />
+                                        </>
+                                      )}
+                                      <button
+                                        onClick={() => {
+                                          setAppModalDate(row.date);
+                                          setAppModalDiff(diff);
+                                        }}
+                                        disabled={cellDisabled}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
+                                      >
+                                        <Send className="w-3 h-3" />
+                                        {matched ? '再申請' : '申請'}
+                                      </button>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div key={kind} className="flex items-center gap-1">
+                                    <ShiftDiffKindBadge kind={kind} />
+                                    <ApplicationStatusBadge status={matched.status} />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="text"
+                              value={row.remarks}
+                              onChange={e => updateRow(index, 'remarks', e.target.value)}
+                              disabled={cellDisabled}
+                              className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
       </main>
 
       {/* Application Modal */}
