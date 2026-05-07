@@ -429,6 +429,13 @@ export function AttendancePage() {
   const totalWorkMinutes = rows.reduce((s, r) => s + r.workMinutes, 0);
   const totalOvertimeMinutes = rows.reduce((s, r) => s + r.overtimeMinutes, 0);
   const filledRowCount = rows.filter(r => r.clockIn && r.clockOut).length;
+  // 期待勤務日数 = シフトで勤務予定の日 ∪ 実績で打刻があった日（休日出勤を含む）
+  // どちらか一方でも該当すれば母数に1日加算する。
+  const expectedWorkDays = rows.reduce((sum, r) => {
+    const isShiftWorkDay = !!(r.shift && !r.shift.isOff);
+    const hasActualWork = !!(r.clockIn && r.clockOut);
+    return sum + (isShiftWorkDay || hasActualWork ? 1 : 0);
+  }, 0);
 
   const backLink = isAdmin ? '/admin/attendance' : '/clock';
   const backLabel = isAdmin ? '勤怠管理へ戻る' : '打刻画面へ戻る';
@@ -551,7 +558,7 @@ export function AttendancePage() {
                 <CalendarDays className="w-4 h-4 text-primary-500" />
                 <span className="text-xs font-medium text-secondary-500">入力済み</span>
               </div>
-              <div className="text-2xl font-bold text-secondary-800">{filledRowCount}<span className="text-sm text-secondary-400 ml-1">/ {allDays.length}日</span></div>
+              <div className="text-2xl font-bold text-secondary-800">{filledRowCount}<span className="text-sm text-secondary-400 ml-1">/ {expectedWorkDays}日</span></div>
             </div>
             <div className="card p-4">
               <div className="flex items-center gap-2 mb-2">
