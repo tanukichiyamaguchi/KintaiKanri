@@ -1,4 +1,4 @@
-import type { ShiftRequestDay, ShiftRequest } from '../types';
+import type { ShiftRequestOffDay } from '../types';
 
 /**
  * 希望シフト申請の提出期限を返す。
@@ -13,7 +13,6 @@ export function shiftRequestDeadline(targetYearMonth: string): string {
   const y = parseInt(yStr, 10);
   const m = parseInt(mStr, 10);
   if (!y || !m) return '';
-  // m - 2 を 1〜12 に正規化
   let dY = y;
   let dM = m - 2;
   while (dM < 1) {
@@ -74,20 +73,44 @@ export function daysInTargetMonth(targetYearMonth: string): string[] {
 }
 
 /**
- * 空の希望日 (kind='none') の配列を生成。
+ * 既存の offDays をベースに、スタッフ選択中の date セットを反映した新配列を作る。
+ * - 既存に approved / rejected があれば必ず保持（スタッフは取り消せない）
+ * - 既存 pending で新セットに含まれない日 → 取消（スタッフが希望を取り下げた）
+ * - 新セットにあって既存にない日 → 新規 pending として追加
  */
-export function makeEmptyShiftRequestDays(targetYearMonth: string): ShiftRequestDay[] {
-  return daysInTargetMonth(targetYearMonth).map(date => ({ date, kind: 'none' as const }));
+export function mergeOffDays(
+  existing: ShiftRequestOffDay[] | undefined,
+  newDateSet: Set<string>
+): ShiftRequestOffDay[] {
+  const result: ShiftRequestOffDay[] = [];
+  const seen = new Set<string>();
+  for (const e of existing || []) {
+    if (e.status === 'approved' || e.status === 'rejected') {
+      result.push(e);
+      seen.add(e.date);
+    } else if (newDateSet.has(e.date)) {
+      result.push(e);
+      seen.add(e.date);
+    }
+    // 既存 pending かつ newDateSet に無い → 取り下げで含めない
+  }
+  for (const d of newDateSet) {
+    if (!seen.has(d)) {
+      result.push({ date: d, status: 'pending' });
+    }
+  }
+  result.sort((a, b) => (a.date < b.date ? -1 : 1));
+  return result;
 }
 
 /**
- * 過去の提出から day マップを構築（再編集用）。
+ * 既存の offDays から、編集可能な「希望休」日（pending）を抽出。
  */
-export function mergeShiftRequestDays(
-  base: ShiftRequestDay[],
-  existing?: ShiftRequest | null
-): ShiftRequestDay[] {
-  if (!existing) return base;
-  const map = new Map(existing.days.map(d => [d.date, d] as const));
-  return base.map(d => map.get(d.date) || d);
+export function pendingOffDateSet(offDays: ShiftRequestOffDay[] | undefined): Set<string> {
+  const set = new Set<string>();
+  if (!offDays) return set;
+  for (const d of offDays) {
+    if (d.status === 'pending') set.add(d.date);
+  }
+  return set;
 }
