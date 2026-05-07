@@ -250,6 +250,36 @@ export function formatLocalDate(date: Date): string {
 }
 
 /**
+ * Extract HH:MM (local timezone) from a clock-in/out value returned by the API.
+ *
+ * The backend may return either:
+ *   - UTC ISO string (e.g. "2026-05-07T05:30:25.000Z") — from realtime clock punches
+ *   - Local-time ISO-like string (e.g. "2026-05-07T14:30:00") — from bulk-save edits
+ *   - Already a "HH:MM" or "HH:MM:SS" plain time
+ *
+ * Naive .split('T')[1].slice(0,5) breaks for UTC strings (would show UTC time
+ * instead of the user's local time). This helper normalizes them all to the
+ * user's local timezone.
+ *
+ * Returns '' if the input cannot be parsed at all.
+ */
+export function extractLocalTimeHHMM(value: string | null | undefined): string {
+  if (!value) return '';
+  const s = String(value);
+  // Plain "HH:MM" or "HH:MM:SS" — return first 5 chars.
+  if (/^\d{1,2}:\d{2}/.test(s)) return s.slice(0, 5);
+  if (s.includes('T')) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+    // Fallback: positional parse (assumes local-time string without 'Z').
+    return s.split('T')[1]?.slice(0, 5) || '';
+  }
+  return '';
+}
+
+/**
  * Format date as Japanese string
  */
 export function formatDateJapanese(dateStr: string): string {
