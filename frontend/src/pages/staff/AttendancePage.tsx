@@ -39,7 +39,7 @@ import {
   calcElapsedMinutes,
   getLegalBreakMinutes,
 } from '../../utils/breakCalculator';
-import { detectShiftDiff, estimatedPlannedBreak } from '../../utils/shiftDiff';
+import { detectShiftDiff, estimatedPlannedBreak, APPLICATION_TYPE_LABEL } from '../../utils/shiftDiff';
 
 export function AttendancePage() {
   const navigate = useNavigate();
@@ -282,12 +282,13 @@ export function AttendancePage() {
       if (diff && diff.hasIssue) {
         diff.kinds.forEach(kind => {
           const matched = findRelevantApp(apps, kind);
+          const label = APPLICATION_TYPE_LABEL[kind] || kind;
           if (!matched) {
-            blockingReasons.push(`${row.date}: ${kind} の申請が必要です`);
+            blockingReasons.push(`${row.date}: ${label}の申請が必要です`);
           } else if (matched.status === 'pending') {
-            blockingReasons.push(`${row.date}: ${kind} の申請が承認待ちです`);
+            blockingReasons.push(`${row.date}: ${label}の申請が承認待ちです`);
           } else if (matched.status === 'rejected') {
-            blockingReasons.push(`${row.date}: ${kind} の申請が却下されています（再申請が必要）`);
+            blockingReasons.push(`${row.date}: ${label}の申請が却下されています（再申請が必要）`);
           }
         });
       }
@@ -355,7 +356,7 @@ export function AttendancePage() {
     reason: string;
     details: ShiftDiff['details'];
   }) => {
-    if (!currentStaffId || !appModalDate) throw new Error('Invalid state');
+    if (!currentStaffId || !appModalDate) throw new Error('内部エラー: 状態が不正です');
     const res = await applicationApi.create({
       staffId: currentStaffId,
       date: appModalDate,
