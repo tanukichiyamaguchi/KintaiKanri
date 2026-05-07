@@ -17,22 +17,47 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // PBKDF2 iteration count for password hashing
 const PBKDF2_ITERATIONS = 10000;
 
-// Sheet names
+// Sheet names (日本語に統一)
 const SHEETS = {
-  STAFF_MASTER: 'staff_master',
-  ADMINS: 'admins',
-  PAID_LEAVE: 'paid_leave',
-  INSURANCE_RATES: 'insurance_rates',
-  STANDARD_REMUNERATION: 'standard_remuneration',
-  APPLICATIONS: 'applications',
-  SUBMISSIONS: 'submissions',
-  ATTENDANCE_HISTORY: 'attendance_history',
-  SHIFT_REQUESTS: 'shift_requests',
+  STAFF_MASTER: 'スタッフマスター',
+  ADMINS: '管理者',
+  PAID_LEAVE: '有給休暇',
+  INSURANCE_RATES: '保険料率',
+  STANDARD_REMUNERATION: '標準報酬月額',
+  APPLICATIONS: '勤怠申請',
+  SUBMISSIONS: '月次提出',
+  ATTENDANCE_HISTORY: '編集履歴',
+  SHIFT_REQUESTS: '希望休申請',
 };
 
-// Shift sheet name pattern: shift_YYYYMM
+// 旧シート名 → 新シート名のマッピング（移行ヘルパで使用）
+const LEGACY_SHEET_NAME_MAP = {
+  'staff_master': SHEETS.STAFF_MASTER,
+  'admins': SHEETS.ADMINS,
+  'paid_leave': SHEETS.PAID_LEAVE,
+  'insurance_rates': SHEETS.INSURANCE_RATES,
+  'standard_remuneration': SHEETS.STANDARD_REMUNERATION,
+  'applications': SHEETS.APPLICATIONS,
+  'submissions': SHEETS.SUBMISSIONS,
+  'attendance_history': SHEETS.ATTENDANCE_HISTORY,
+  'shift_requests': SHEETS.SHIFT_REQUESTS,
+};
+
+// 月次シート名（年・月から組み立てる）
 function shiftSheetName(year, month) {
-  return 'shift_' + year + String(month).padStart(2, '0');
+  return 'シフト_' + year + String(month).padStart(2, '0');
+}
+function attendanceSheetName_(year, month) {
+  return '勤怠_' + year + String(month).padStart(2, '0');
+}
+function salarySheetName_(year, month) {
+  return '給与_' + year + String(month).padStart(2, '0');
+}
+function taxSheetName_(year, month) {
+  return '税額_' + year + String(month).padStart(2, '0');
+}
+function incentiveSheetName_(year, month) {
+  return '歩合_' + year + String(month).padStart(2, '0');
 }
 
 /**
@@ -313,76 +338,66 @@ function initializeSheet(sheet, sheetName) {
   }
 }
 
+// 後方互換: 既存の英名シートが残っているケース用に try-fallback で取得
+function getOrCreateMonthlySheet_(year, month, primaryName, legacyName, headers) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(primaryName);
+  if (!sheet && legacyName) {
+    sheet = ss.getSheetByName(legacyName);
+    if (sheet) {
+      try { sheet.setName(primaryName); } catch (e) { Logger.log('rename failed: ' + e.message); }
+    }
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(primaryName);
+    if (headers && headers.length) {
+      if (sheet.getMaxColumns() < headers.length) {
+        try { sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns()); } catch (e) {}
+      }
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+  }
+  return sheet;
+}
+
 // Get attendance sheet for a specific month
 function getAttendanceSheet(year, month) {
-  const sheetName = `attendance_${year}${String(month).padStart(2, '0')}`;
-  const ss = getSpreadsheet();
-  let sheet = ss.getSheetByName(sheetName);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    const headers = [
-      'date', 'staff_id', 'name', 'clock_in', 'clock_out', 'clock_out_type',
-      'break_minutes', 'break_minutes_is_manual', 'work_minutes',
-      'late_minutes', 'early_leave_minutes',
-      'is_holiday', 'remarks', 'source'
-    ];
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-
-  return sheet;
+  const mm = String(month).padStart(2, '0');
+  return getOrCreateMonthlySheet_(year, month, attendanceSheetName_(year, month), 'attendance_' + year + mm, [
+    'date', 'staff_id', 'name', 'clock_in', 'clock_out', 'clock_out_type',
+    'break_minutes', 'break_minutes_is_manual', 'work_minutes',
+    'late_minutes', 'early_leave_minutes',
+    'is_holiday', 'remarks', 'source'
+  ]);
 }
 
 // Get salary sheet for a specific month
 function getSalarySheet(year, month) {
-  const sheetName = `salary_${year}${String(month).padStart(2, '0')}`;
-  const ss = getSpreadsheet();
-  let sheet = ss.getSheetByName(sheetName);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    const headers = [
-      'staff_id', 'name', 'base_salary', 'total_work_hours', 'overtime_hours',
-      'night_hours', 'holiday_hours', 'overtime_pay', 'night_pay', 'holiday_pay',
-      'transportation', 'incentive', 'gross_pay', 'late_deduction',
-      'early_leave_deduction', 'health_insurance', 'nursing_insurance',
-      'pension', 'employment_insurance', 'income_tax', 'resident_tax',
-      'total_deduction', 'net_pay'
-    ];
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-
-  return sheet;
+  const mm = String(month).padStart(2, '0');
+  return getOrCreateMonthlySheet_(year, month, salarySheetName_(year, month), 'salary_' + year + mm, [
+    'staff_id', 'name', 'base_salary', 'total_work_hours', 'overtime_hours',
+    'night_hours', 'holiday_hours', 'overtime_pay', 'night_pay', 'holiday_pay',
+    'transportation', 'incentive', 'gross_pay', 'late_deduction',
+    'early_leave_deduction', 'health_insurance', 'nursing_insurance',
+    'pension', 'employment_insurance', 'income_tax', 'resident_tax',
+    'total_deduction', 'net_pay'
+  ]);
 }
 
 // Get tax manual sheet for a specific month
 function getTaxSheet(year, month) {
-  const sheetName = `tax_manual_${year}${String(month).padStart(2, '0')}`;
-  const ss = getSpreadsheet();
-  let sheet = ss.getSheetByName(sheetName);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    const headers = ['staff_id', 'name', 'income_tax', 'resident_tax', 'updated_at'];
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-
-  return sheet;
+  const mm = String(month).padStart(2, '0');
+  return getOrCreateMonthlySheet_(year, month, taxSheetName_(year, month), 'tax_manual_' + year + mm, [
+    'staff_id', 'name', 'income_tax', 'resident_tax', 'updated_at'
+  ]);
 }
 
 // Get incentive sheet for a specific month
 function getIncentiveSheet(year, month) {
-  const sheetName = `incentive_${year}${String(month).padStart(2, '0')}`;
-  const ss = getSpreadsheet();
-  let sheet = ss.getSheetByName(sheetName);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    const headers = ['staff_id', 'name', 'item_name', 'amount', 'remarks'];
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-
-  return sheet;
+  const mm = String(month).padStart(2, '0');
+  return getOrCreateMonthlySheet_(year, month, incentiveSheetName_(year, month), 'incentive_' + year + mm, [
+    'staff_id', 'name', 'item_name', 'amount', 'remarks'
+  ]);
 }
 
 // PBKDF2-HMAC-SHA256 風のパスワードハッシュ（GAS には bcrypt / scrypt が無いため自前実装）。
@@ -2149,8 +2164,13 @@ function parseShiftCell_(cellValue) {
  */
 function readShiftSheet_(year, month) {
   const ss = getSpreadsheet();
+  // 新名 (シフト_YYYYMM) を優先。無ければ旧名 (shift_YYYYMM) もフォールバックで参照する。
   const name = shiftSheetName(year, month);
-  const sheet = ss.getSheetByName(name);
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    const legacy = 'shift_' + year + String(month).padStart(2, '0');
+    sheet = ss.getSheetByName(legacy);
+  }
   if (!sheet) return { exists: false, shifts: [] };
 
   const data = sheet.getDataRange().getValues();
@@ -2909,10 +2929,92 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('勤怠管理')
     .addItem('翌月のシフト雛形を作成', 'menuGenerateNextMonthShift')
+    .addItem('シート名を日本語に移行', 'menuMigrateSheetNames')
+    .addSeparator()
     .addItem('テストスタッフ追加', 'addTestStaff')
     .addItem('テスト管理者追加', 'addTestAdmin')
     .addItem('システム初期化', 'setupSystem')
     .addToUi();
+}
+
+/**
+ * 旧英名シートを日本語名にリネームする移行ヘルパ。
+ *  - 固定シート: スタッフマスター / 管理者 / 有給休暇 / 保険料率 / 標準報酬月額 /
+ *               勤怠申請 / 月次提出 / 編集履歴 / 希望休申請
+ *  - 月次シート: 勤怠_YYYYMM / 給与_YYYYMM / 税額_YYYYMM / 歩合_YYYYMM / シフト_YYYYMM
+ *
+ * すでに日本語名のシートが存在する場合はリネームしない（重複を作らない）。
+ * Idempotent なので何度呼んでも安全。
+ */
+function migrateSheetNames() {
+  const ss = getSpreadsheet();
+  const renamed = [];
+
+  // 固定シート
+  Object.keys(LEGACY_SHEET_NAME_MAP).forEach(function (oldName) {
+    const newName = LEGACY_SHEET_NAME_MAP[oldName];
+    const oldSheet = ss.getSheetByName(oldName);
+    const newSheet = ss.getSheetByName(newName);
+    if (oldSheet && !newSheet) {
+      try {
+        oldSheet.setName(newName);
+        renamed.push(oldName + ' → ' + newName);
+      } catch (e) {
+        Logger.log('rename failed: ' + oldName + ' → ' + newName + ' / ' + e.message);
+      }
+    }
+  });
+
+  // 月次シート（プレフィックスのマッピング）
+  const monthlyPrefix = [
+    ['attendance_', '勤怠_'],
+    ['salary_', '給与_'],
+    ['tax_manual_', '税額_'],
+    ['incentive_', '歩合_'],
+    ['shift_', 'シフト_'],
+  ];
+  const allSheets = ss.getSheets();
+  for (let i = 0; i < allSheets.length; i++) {
+    const s = allSheets[i];
+    const name = s.getName();
+    for (let j = 0; j < monthlyPrefix.length; j++) {
+      const oldP = monthlyPrefix[j][0];
+      const newP = monthlyPrefix[j][1];
+      if (name.indexOf(oldP) === 0) {
+        const suffix = name.slice(oldP.length);
+        if (/^\d{6}$/.test(suffix)) {
+          const newName = newP + suffix;
+          if (!ss.getSheetByName(newName)) {
+            try {
+              s.setName(newName);
+              renamed.push(name + ' → ' + newName);
+            } catch (e) {
+              Logger.log('monthly rename failed: ' + name + ' / ' + e.message);
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  return { success: true, renamed: renamed };
+}
+
+function menuMigrateSheetNames() {
+  const ui = SpreadsheetApp.getUi();
+  const res = ui.alert(
+    'シート名を日本語に移行',
+    '英語名で作成された既存シート（staff_master, attendance_YYYYMM 等）を日本語名にリネームします。\n\n実行しますか？',
+    ui.ButtonSet.YES_NO
+  );
+  if (res !== ui.Button.YES) return;
+  const result = migrateSheetNames();
+  if (result.renamed && result.renamed.length > 0) {
+    ui.alert('移行完了', result.renamed.join('\n'), ui.ButtonSet.OK);
+  } else {
+    ui.alert('移行不要', '対象の旧名シートはありませんでした。', ui.ButtonSet.OK);
+  }
 }
 
 function menuGenerateNextMonthShift() {
@@ -3040,18 +3142,34 @@ function handleSubmitShiftRequest(body) {
   const newDateSet = {};
   for (let k = 0; k < incomingOff.length; k++) newDateSet[incomingOff[k].date] = true;
 
-  // マージ
+  // マージ:
+  //  - approved の日 → 常に保持（スタッフは取り消せない）
+  //  - rejected の日 →
+  //      新セットに含まれる場合: 再申請として pending に戻す（reviewedAt/By/理由をクリア）
+  //      含まれない場合: rejected 状態のまま保持
+  //  - pending の日 →
+  //      新セットに含まれる場合: そのまま保持
+  //      含まれない場合: 取り下げ（削除）
   const seen = {};
   const merged = [];
   for (let k = 0; k < existingOffDays.length; k++) {
     const e = existingOffDays[k];
-    if (e.status === 'approved' || e.status === 'rejected') {
+    if (e.status === 'approved') {
       merged.push(e);
+      seen[e.date] = true;
+    } else if (e.status === 'rejected') {
+      if (newDateSet[e.date]) {
+        // 再申請 → pending に戻す（理由・レビュアー情報はクリア）
+        merged.push({ date: e.date, status: 'pending' });
+      } else {
+        merged.push(e);
+      }
       seen[e.date] = true;
     } else if (newDateSet[e.date]) {
       merged.push(e);
       seen[e.date] = true;
     }
+    // pending かつ新セットに無い → 取り下げ
   }
   for (let k = 0; k < incomingOff.length; k++) {
     const d = incomingOff[k];
