@@ -145,11 +145,12 @@ export function AdminApprovalsPage() {
     reloadApplications();
   }, [reloadApplications]);
 
-  // Load submissions based on filters
+  // 月次提出はダッシュボードのカウントと整合させるため、未承認は全月を対象に取得する。
+  // 月フィルタは「処理済み」一覧の絞り込みにのみ効かせる。
   const reloadSubmissions = useCallback(async () => {
     setIsLoadingSubs(true);
     try {
-      const res = await submissionApi.list({ yearMonth: yearMonthStr });
+      const res = await submissionApi.list();
       if (res.success && res.data) {
         setSubmissions(res.data);
       } else {
@@ -160,7 +161,7 @@ export function AdminApprovalsPage() {
     } finally {
       setIsLoadingSubs(false);
     }
-  }, [yearMonthStr]);
+  }, []);
 
   useEffect(() => {
     reloadSubmissions();
@@ -195,15 +196,21 @@ export function AdminApprovalsPage() {
 
   const { submittedSubs, processedSubs } = useMemo(() => {
     const sorted = [...submissions].sort((a, b) => {
+      // 直近月優先 → スタッフ名昇順
+      if (a.yearMonth !== b.yearMonth) return a.yearMonth < b.yearMonth ? 1 : -1;
       const an = a.staffName || '';
       const bn = b.staffName || '';
       return an.localeCompare(bn, 'ja');
     });
     return {
+      // 未承認は月フィルタを無視し、ダッシュボードのカウントと一致させる
       submittedSubs: sorted.filter(s => s.status === 'submitted'),
-      processedSubs: sorted.filter(s => s.status === 'approved' || s.status === 'rejected'),
+      // 処理済みのみ月フィルタを効かせる（履歴ノイズを抑える）
+      processedSubs: sorted.filter(
+        s => (s.status === 'approved' || s.status === 'rejected') && s.yearMonth === yearMonthStr
+      ),
     };
-  }, [submissions]);
+  }, [submissions, yearMonthStr]);
 
   // Action handlers
   const openApprove = (action: PendingAction) => {
@@ -737,6 +744,7 @@ export function AdminApprovalsPage() {
                 <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-blue-600" />
                   確認待ち
+                  <span className="text-[11px] text-secondary-400 font-normal">（全期間）</span>
                 </h2>
                 <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
                   {submittedSubs.length}件
@@ -760,6 +768,7 @@ export function AdminApprovalsPage() {
                 <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-secondary-500" />
                   処理済み
+                  <span className="text-[11px] text-secondary-400 font-normal">（{formatYearMonth(yearMonthStr)}）</span>
                 </h2>
                 <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
                   {processedSubs.length}件
