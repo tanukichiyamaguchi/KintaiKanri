@@ -31,6 +31,25 @@ import {
 
 type Tab = 'applications' | 'submissions';
 type AppStatusFilter = 'all' | ApplicationStatus;
+type RangeMode = 'all' | 'month' | 'range';
+
+// 期間モードのデフォルトの from/to を初期化（過去6ヶ月分）
+function defaultRangeFrom(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 6);
+  d.setDate(1);
+  return formatLocalDateOnly(d);
+}
+function defaultRangeTo(): string {
+  const d = new Date();
+  return formatLocalDateOnly(d);
+}
+function formatLocalDateOnly(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
 
 interface PendingAction {
   kind: 'approve' | 'reject';
@@ -72,8 +91,12 @@ export function AdminApprovalsPage() {
 
   // Filters
   const today = new Date();
+  // デフォルトは「全期間」。ユーザー要望により、月単位・期間指定での絞り込みも選べる。
+  const [rangeMode, setRangeMode] = useState<RangeMode>('all');
   const [filterYear, setFilterYear] = useState(today.getFullYear());
   const [filterMonth, setFilterMonth] = useState(today.getMonth() + 1);
+  const [rangeFrom, setRangeFrom] = useState<string>(defaultRangeFrom());
+  const [rangeTo, setRangeTo] = useState<string>(defaultRangeTo());
   const [appStatusFilter, setAppStatusFilter] = useState<AppStatusFilter>('all');
   const [staffIdFilter, setStaffIdFilter] = useState<string>('');
 
@@ -116,12 +139,15 @@ export function AdminApprovalsPage() {
   }, []);
 
   // Load applications based on filters
+  // rangeMode='month' の場合のみ API レベルで yearMonth を絞る。
+  // 'all' / 'range' は全件取得して、必要なら client 側で from-to で絞る。
   const reloadApplications = useCallback(async () => {
     setIsLoadingApps(true);
     try {
-      const params: Parameters<typeof applicationApi.list>[0] = {
-        yearMonth: yearMonthStr,
-      };
+      const params: Parameters<typeof applicationApi.list>[0] = {};
+      if (rangeMode === 'month') {
+        params.yearMonth = yearMonthStr;
+      }
       if (appStatusFilter !== 'all') {
         params.status = appStatusFilter;
       }
@@ -129,17 +155,17 @@ export function AdminApprovalsPage() {
         params.staffId = staffIdFilter;
       }
       const res = await applicationApi.list(params);
-      if (res.success && res.data) {
-        setApplications(res.data);
-      } else {
-        setApplications([]);
+      let list = res.success && res.data ? res.data : [];
+      if (rangeMode === 'range') {
+        list = list.filter(a => a.date >= rangeFrom && a.date <= rangeTo);
       }
+      setApplications(list);
     } catch {
       setApplications([]);
     } finally {
       setIsLoadingApps(false);
     }
-  }, [yearMonthStr, appStatusFilter, staffIdFilter]);
+  }, [rangeMode, yearMonthStr, appStatusFilter, staffIdFilter, rangeFrom, rangeTo]);
 
   useEffect(() => {
     reloadApplications();
@@ -202,15 +228,26 @@ export function AdminApprovalsPage() {
       const bn = b.staffName || '';
       return an.localeCompare(bn, 'ja');
     });
-    return {
-      // 未承認は月フィルタを無視し、ダッシュボードのカウントと一致させる
-      submittedSubs: sorted.filter(s => s.status === 'submitted'),
-      // 処理済みのみ月フィルタを効かせる（履歴ノイズを抑える）
-      processedSubs: sorted.filter(
-        s => (s.status === 'approved' || s.status === 'rejected') && s.yearMonth === yearMonthStr
-      ),
+
+    // 期間モードに応じた処理済みフィルタ:
+    //   - all:   全件
+    //   - month: yearMonth が選択月と一致
+    //   - range: yearMonth 月の初日が from-to の範囲内
+    const passProcessed = (sub: MonthlySubmission): boolean => {
+      if (sub.status !== 'approved' && sub.status !== 'rejected') return false;
+      if (rangeMode === 'all') return true;
+      if (rangeMode === 'month') return sub.yearMonth === yearMonthStr;
+      // range
+      const monthStart = sub.yearMonth + '-01';
+      return monthStart >= rangeFrom && monthStart <= rangeTo;
     };
-  }, [submissions, yearMonthStr]);
+
+    return {
+      // 未承認は常に全期間表示（ダッシュボードのカウントと一致させる）
+      submittedSubs: sorted.filter(s => s.status === 'submitted'),
+      processedSubs: sorted.filter(passProcessed),
+    };
+  }, [submissions, rangeMode, yearMonthStr, rangeFrom, rangeTo]);
 
   // Action handlers
   const openApprove = (action: PendingAction) => {
@@ -621,33 +658,75 @@ export function AdminApprovalsPage() {
             <span className="text-sm font-semibold">絞り込み</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Month picker */}
+            {/* 期間モード */}
             <div>
-              <label className="label">対象月</label>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={goPrevMonth}
-                  className="p-2 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600"
-                  aria-label="前月へ"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <div className="flex-1 text-center font-semibold text-secondary-800">
-                  {filterYear}年{filterMonth}月
-                </div>
-                <button
-                  type="button"
-                  onClick={goNextMonth}
-                  className="p-2 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600"
-                  aria-label="翌月へ"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
+              <label className="label">期間</label>
+              <select
+                value={rangeMode}
+                onChange={e => setRangeMode(e.target.value as RangeMode)}
+                className="input"
+              >
+                <option value="all">全期間</option>
+                <option value="month">月で指定</option>
+                <option value="range">期間で指定</option>
+              </select>
             </div>
 
-            {/* Status (apps tab only) */}
+            {/* 月指定モード: 月ピッカー */}
+            {rangeMode === 'month' && (
+              <div className="sm:col-span-2">
+                <label className="label">対象月</label>
+                <div className="flex items-center gap-1 max-w-xs">
+                  <button
+                    type="button"
+                    onClick={goPrevMonth}
+                    className="p-2 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600"
+                    aria-label="前月へ"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <div className="flex-1 text-center font-semibold text-secondary-800">
+                    {filterYear}年{filterMonth}月
+                  </div>
+                  <button
+                    type="button"
+                    onClick={goNextMonth}
+                    className="p-2 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600"
+                    aria-label="翌月へ"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 期間指定モード: from / to */}
+            {rangeMode === 'range' && (
+              <>
+                <div>
+                  <label className="label">開始日</label>
+                  <input
+                    type="date"
+                    value={rangeFrom}
+                    max={rangeTo}
+                    onChange={e => setRangeFrom(e.target.value)}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">終了日</label>
+                  <input
+                    type="date"
+                    value={rangeTo}
+                    min={rangeFrom}
+                    onChange={e => setRangeTo(e.target.value)}
+                    className="input"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ステータス (申請一覧タブのみ) */}
             {activeTab === 'applications' && (
               <div>
                 <label className="label">ステータス</label>
@@ -664,7 +743,7 @@ export function AdminApprovalsPage() {
               </div>
             )}
 
-            {/* Staff (apps tab only) */}
+            {/* スタッフ (申請一覧タブのみ) */}
             {activeTab === 'applications' && (
               <div>
                 <label className="label">スタッフ</label>
@@ -768,7 +847,9 @@ export function AdminApprovalsPage() {
                 <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-secondary-500" />
                   処理済み
-                  <span className="text-[11px] text-secondary-400 font-normal">（{formatYearMonth(yearMonthStr)}）</span>
+                  <span className="text-[11px] text-secondary-400 font-normal">
+                    （{rangeMode === 'all' ? '全期間' : rangeMode === 'month' ? formatYearMonth(yearMonthStr) : `${rangeFrom} 〜 ${rangeTo}`}）
+                  </span>
                 </h2>
                 <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium">
                   {processedSubs.length}件
