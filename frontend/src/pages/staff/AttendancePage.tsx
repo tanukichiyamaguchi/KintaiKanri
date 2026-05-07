@@ -454,11 +454,11 @@ export function AttendancePage() {
         </Link>
 
         {/* Status Banner */}
-        <div className="card mb-5 flex flex-wrap items-center gap-4 justify-between">
+        <div className="card mb-5 flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <div>
-              <div className="text-xs text-secondary-500 mb-1">{currentStaffName} さんの {selectedYear}年{selectedMonth}月</div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="text-xs text-secondary-500 mb-1 truncate">{currentStaffName} さんの {selectedYear}年{selectedMonth}月</div>
+              <div className="flex flex-wrap items-center gap-2">
                 <SubmissionStatusBadge status={submissionStatus} />
                 {submission?.rejectionReason && (
                   <span className="text-xs text-red-600">差戻理由: {submission.rejectionReason}</span>
@@ -468,20 +468,28 @@ export function AttendancePage() {
           </div>
 
           {/* Month Selector */}
-          <div className="flex items-center gap-1">
-            <button onClick={handlePreviousMonth} className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors">
+          <div className="flex items-center justify-center gap-1">
+            <button
+              onClick={handlePreviousMonth}
+              className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors min-h-11 min-w-11 flex items-center justify-center"
+              aria-label="前の月"
+            >
               <ChevronLeft className="w-5 h-5 text-secondary-600" />
             </button>
             <span className="text-lg font-bold min-w-[140px] text-center text-secondary-800">
               {selectedYear}年{selectedMonth}月
             </span>
-            <button onClick={handleNextMonth} className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors">
+            <button
+              onClick={handleNextMonth}
+              className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors min-h-11 min-w-11 flex items-center justify-center"
+              aria-label="次の月"
+            >
               <ChevronRight className="w-5 h-5 text-secondary-600" />
             </button>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {hasUnsavedChanges && !isLocked && (
               <span className="text-sm text-amber-600 flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
                 <AlertTriangle className="w-3.5 h-3.5" />未保存
@@ -496,7 +504,7 @@ export function AttendancePage() {
                 <button
                   onClick={handleSave}
                   disabled={isSaving || !currentStaffId}
-                  className="btn btn-secondary flex items-center gap-2"
+                  className="btn btn-secondary flex flex-1 sm:flex-initial items-center gap-2 min-h-11"
                 >
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   下書き保存
@@ -505,7 +513,7 @@ export function AttendancePage() {
                   <button
                     onClick={() => setShowSubmitModal(true)}
                     disabled={!submissionGate.canSubmit || isSubmitting}
-                    className="btn btn-primary flex items-center gap-2"
+                    className="btn btn-primary flex flex-1 sm:flex-initial items-center gap-2 min-h-11"
                     title={submissionGate.canSubmit ? '月次提出' : submissionGate.blockingReasons[0]}
                   >
                     <Send className="w-4 h-4" />申請する（提出）

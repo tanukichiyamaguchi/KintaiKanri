@@ -28,16 +28,16 @@ export function Clock({ showDate = true, size = 'lg' }: ClockProps) {
 
   const sizeClasses = {
     sm: {
-      time: 'text-3xl',
-      date: 'text-sm',
+      time: 'text-2xl sm:text-3xl',
+      date: 'text-xs sm:text-sm',
     },
     md: {
-      time: 'text-5xl',
-      date: 'text-base',
+      time: 'text-4xl sm:text-5xl',
+      date: 'text-sm sm:text-base',
     },
     lg: {
-      time: 'text-7xl',
-      date: 'text-lg',
+      time: 'text-5xl sm:text-6xl md:text-7xl',
+      date: 'text-base sm:text-lg',
     },
   };
 
