@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Loader2,
   ListChecks,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi } from '../../api';
@@ -247,6 +248,16 @@ export function ClockPage() {
             <span className="text-secondary-700 font-medium group-hover:text-primary-600 flex items-center gap-2 sm:gap-2.5 text-sm sm:text-base min-w-0">
               <ListChecks className="w-5 h-5 text-primary-500 flex-shrink-0" />
               <span className="truncate">出勤簿（修正・申請・提出）</span>
+            </span>
+            <ChevronRight className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0" />
+          </Link>
+          <Link
+            to="/shift-request"
+            className="flex items-center justify-between w-full p-4 min-h-[56px] bg-white rounded-xl border border-secondary-200 hover:border-primary-300 hover:shadow-md transition-all group active:scale-[0.99]"
+          >
+            <span className="text-secondary-700 font-medium group-hover:text-primary-600 flex items-center gap-2 sm:gap-2.5 text-sm sm:text-base min-w-0">
+              <CalendarDays className="w-5 h-5 text-primary-500 flex-shrink-0" />
+              <span className="truncate">希望シフト申請</span>
             </span>
             <ChevronRight className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0" />
           </Link>

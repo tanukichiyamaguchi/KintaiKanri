@@ -27,6 +27,7 @@ const SHEETS = {
   APPLICATIONS: 'applications',
   SUBMISSIONS: 'submissions',
   ATTENDANCE_HISTORY: 'attendance_history',
+  SHIFT_REQUESTS: 'shift_requests',
 };
 
 // Shift sheet name pattern: shift_YYYYMM
@@ -74,6 +75,10 @@ function setupSystem() {
     {
       name: SHEETS.ATTENDANCE_HISTORY,
       headers: ['date', 'staff_id', 'field', 'old_value', 'new_value', 'edited_at', 'edited_by', 'editor_role', 'reason']
+    },
+    {
+      name: SHEETS.SHIFT_REQUESTS,
+      headers: ['id', 'staff_id', 'staff_name', 'target_year_month', 'days_json', 'remarks', 'submitted_at']
     }
   ];
 
@@ -293,6 +298,10 @@ function initializeSheet(sheet, sheetName) {
     [SHEETS.ATTENDANCE_HISTORY]: [
       'date', 'staff_id', 'field', 'old_value', 'new_value', 'edited_at',
       'edited_by', 'editor_role', 'reason'
+    ],
+    [SHEETS.SHIFT_REQUESTS]: [
+      'id', 'staff_id', 'staff_name', 'target_year_month', 'days_json',
+      'remarks', 'submitted_at'
     ],
   };
 
@@ -706,6 +715,14 @@ function handleRequest(e, method) {
       // Attendance edit history
       case 'attendance/history':
         result = handleGetAttendanceHistory(params);
+        break;
+
+      // Shift requests (希望シフト申請)
+      case 'shift-requests/submit':
+        result = handleSubmitShiftRequest(body);
+        break;
+      case 'shift-requests/list':
+        result = handleListShiftRequests(params);
         break;
 
       // Setup - initialize system
@@ -2898,4 +2915,144 @@ function onOpen() {
 function menuGenerateNextMonthShift() {
   const result = generateShiftTemplate();
   SpreadsheetApp.getUi().alert(result.success ? '作成: ' + result.sheetName : '失敗: ' + (result.message || ''));
+}
+
+// ============================================================
+// Shift request (希望シフト申請) handlers
+// ============================================================
+
+/**
+ * 対象月の提出期限 (YYYY-MM-DD) を返す。対象月の2ヶ月前の7日。
+ * 例: '2026-07' → '2026-05-07'
+ */
+function shiftRequestDeadline_(targetYearMonth) {
+  const m = String(targetYearMonth || '').match(/^(\d{4})-(\d{1,2})$/);
+  if (!m) return '';
+  const y = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  let dY = y;
+  let dM = month - 2;
+  while (dM < 1) {
+    dM += 12;
+    dY -= 1;
+  }
+  return dY + '-' + String(dM).padStart(2, '0') + '-07';
+}
+
+/**
+ * 今日（ローカルタイムゾーン）が `targetYearMonth` の期限以前か。
+ */
+function isShiftRequestOpen_(targetYearMonth) {
+  const deadline = shiftRequestDeadline_(targetYearMonth);
+  if (!deadline) return false;
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return today <= deadline;
+}
+
+/**
+ * スタッフが希望シフトを提出。同一 (staff_id × target_year_month) は上書き。
+ * body: { staffId, targetYearMonth, days: [{date, kind, startTime?, endTime?}], remarks? }
+ */
+function handleSubmitShiftRequest(body) {
+  const staffId = body && body.staffId ? String(body.staffId) : '';
+  const targetYearMonth = body && body.targetYearMonth ? String(body.targetYearMonth) : '';
+  const days = body && Array.isArray(body.days) ? body.days : null;
+  const remarks = body && body.remarks ? String(body.remarks) : '';
+
+  if (!staffId || !targetYearMonth || !days) {
+    return { success: false, error: '必須項目が入力されていません' };
+  }
+  if (!/^\d{4}-\d{1,2}$/.test(targetYearMonth)) {
+    return { success: false, error: '対象月の形式が不正です（YYYY-MM）' };
+  }
+
+  // 期限チェック
+  if (!isShiftRequestOpen_(targetYearMonth)) {
+    const deadline = shiftRequestDeadline_(targetYearMonth);
+    return {
+      success: false,
+      error: '提出期限を過ぎています（期限: ' + deadline + '）'
+    };
+  }
+
+  const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+  const staff = sheetToObjects(staffSheet).find(s => s.staff_id === staffId);
+  if (!staff) return { success: false, error: 'スタッフが見つかりません' };
+
+  const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
+  const data = sheet.getDataRange().getValues();
+  const headers = (data && data[0]) ? data[0] : [];
+  const sIdx = headers.indexOf('staff_id');
+  const ymIdx = headers.indexOf('target_year_month');
+
+  let rowIndex = -1;
+  if (sIdx !== -1 && ymIdx !== -1 && data.length > 1) {
+    for (let i = 1; i < data.length; i++) {
+      const rowYm = formatYearMonthValue_(data[i][ymIdx]);
+      if (data[i][sIdx] === staffId && rowYm === targetYearMonth) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+  }
+
+  const id = 'SR' + Date.now() + Math.random().toString(36).slice(2, 6);
+  const now = new Date().toISOString();
+  const daysJson = JSON.stringify(days);
+
+  if (rowIndex === -1) {
+    sheet.appendRow([id, staffId, staff.name, targetYearMonth, daysJson, remarks, now]);
+  } else {
+    setCellByColumnName_(sheet, rowIndex, headers, 'days_json', daysJson);
+    setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks);
+    setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
+  }
+
+  // 管理者へメール通知
+  try {
+    const admins = getAdminEmails_();
+    if (admins.length > 0) {
+      const subject = '【希望シフト申請】' + staff.name + ' から ' + targetYearMonth + ' 分の希望が届きました';
+      const offCount = days.filter(d => d && d.kind === 'off').length;
+      const timeCount = days.filter(d => d && d.kind === 'time').length;
+      const bodyText = staff.name + 'さんから ' + targetYearMonth + ' 分の希望シフトが提出されました。\n\n'
+        + '休み希望: ' + offCount + '日\n'
+        + '時刻指定: ' + timeCount + '日\n'
+        + (remarks ? '\n備考: ' + remarks + '\n' : '')
+        + '\n管理画面で確認してください。';
+      admins.forEach(email => safeSendEmail_(email, subject, bodyText));
+    }
+  } catch (e) {
+    Logger.log('notify shift request failed: ' + (e && e.message));
+  }
+
+  return { success: true, data: { id } };
+}
+
+/**
+ * 希望シフト申請の一覧を返す。
+ * params: { staffId?, targetYearMonth? }
+ */
+function handleListShiftRequests(params) {
+  const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
+  const data = sheetToObjects(sheet);
+  const { staffId, targetYearMonth } = params;
+  let filtered = data;
+  if (staffId) filtered = filtered.filter(r => r.staff_id === staffId);
+  if (targetYearMonth) {
+    const target = formatYearMonthValue_(targetYearMonth);
+    filtered = filtered.filter(r => formatYearMonthValue_(r.target_year_month) === target);
+  }
+  return {
+    success: true,
+    data: filtered.map(r => ({
+      id: r.id,
+      staffId: r.staff_id,
+      staffName: r.staff_name,
+      targetYearMonth: formatYearMonthValue_(r.target_year_month),
+      days: safeJsonParse_(r.days_json) || [],
+      remarks: r.remarks || '',
+      submittedAt: toIsoString_(r.submitted_at),
+    }))
+  };
 }

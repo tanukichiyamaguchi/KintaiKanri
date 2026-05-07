@@ -255,7 +255,7 @@ export function SalaryManagement() {
                     </div>
                     <button
                       onClick={() => handleOpenTaxModal(staff.staffId)}
-                      className="btn btn-secondary !py-1.5 !px-3 !text-xs !rounded-lg flex-shrink-0"
+                      className="btn btn-secondary !py-2 !px-4 !text-xs !rounded-lg flex-shrink-0"
                     >
                       編集
                     </button>
