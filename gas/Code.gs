@@ -94,6 +94,7 @@ const HEADER_LABELS = {
   'editor_role': '編集者種別',
   'target_year_month': '対象年月',
   'days_json': '希望日(JSON)',
+  'days_summary': '日付別状況',
   'clock_in': '出勤',
   'clock_out': '退勤',
   'clock_out_type': '退勤区分',
@@ -453,7 +454,7 @@ function initializeSheet(sheet, sheetName) {
     ],
     [SHEETS.SHIFT_REQUESTS]: [
       'id', 'staff_id', 'staff_name', 'target_year_month', 'days_json',
-      'remarks', 'submitted_at'
+      'days_summary', 'remarks', 'submitted_at'
     ],
   };
 
@@ -467,7 +468,8 @@ function initializeSheet(sheet, sheetName) {
 }
 
 // 後方互換: 既存の英名シートが残っているケース用に try-fallback で取得
-function getOrCreateMonthlySheet_(year, month, primaryName, legacyName, headers) {
+// columnFormats: { 英語キー: 'HH:mm' 等 } を渡すと、新規作成時のみ列全体に書式設定を適用する
+function getOrCreateMonthlySheet_(year, month, primaryName, legacyName, headers, columnFormats) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName(primaryName);
   if (!sheet && legacyName) {
@@ -485,8 +487,34 @@ function getOrCreateMonthlySheet_(year, month, primaryName, legacyName, headers)
       const labels = localizeHeaders_(headers);
       sheet.getRange(1, 1, 1, labels.length).setValues([labels]);
     }
+    if (columnFormats && headers && headers.length) {
+      applyMonthlyColumnFormats_(sheet, headers, columnFormats);
+    }
+  } else if (columnFormats) {
+    // 既存シートにも書式が無ければ適用（idempotent）
+    applyMonthlyColumnFormats_(sheet, null, columnFormats);
   }
   return sheet;
+}
+
+// 列ごとの数値フォーマットを適用するヘルパ。headers が null の場合はシートの1行目から解決する。
+function applyMonthlyColumnFormats_(sheet, headersOrNull, columnFormats) {
+  if (!sheet || !columnFormats) return;
+  const lastCol = sheet.getLastColumn();
+  if (!lastCol) return;
+  const headers = headersOrNull && headersOrNull.length
+    ? headersOrNull
+    : sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const maxRows = Math.max(sheet.getMaxRows(), 1);
+  Object.keys(columnFormats).forEach(function (key) {
+    const idx = findHeaderIndex_(headers, key);
+    if (idx === -1) return;
+    try {
+      sheet.getRange(2, idx + 1, Math.max(maxRows - 1, 1), 1).setNumberFormat(columnFormats[key]);
+    } catch (e) {
+      Logger.log('setNumberFormat failed for ' + key + ': ' + (e && e.message));
+    }
+  });
 }
 
 // Get attendance sheet for a specific month
@@ -497,7 +525,11 @@ function getAttendanceSheet(year, month) {
     'break_minutes', 'break_minutes_is_manual', 'work_minutes',
     'late_minutes', 'early_leave_minutes',
     'is_holiday', 'remarks', 'source'
-  ]);
+  ], {
+    'date': 'yyyy-mm-dd',
+    'clock_in': 'HH:mm',
+    'clock_out': 'HH:mm',
+  });
 }
 
 // Get salary sheet for a specific month
@@ -1105,7 +1137,9 @@ function handleClock(body) {
     }
   }
 
-  const timeStr = now.toISOString();
+  // Date オブジェクトとして書き込み、シート側で HH:mm 形式に表示させる。
+  // toISOString() の UTC-Z 文字列はスプレッドシート上で読みづらいため。
+  const timeValue = now;
 
   // Column index reference (1-based) for new schema (no GPS):
   // 1=date, 2=staff_id, 3=name, 4=clock_in, 5=clock_out, 6=clock_out_type,
@@ -1125,7 +1159,7 @@ function handleClock(body) {
     ];
 
     if (type === 'clock_in') {
-      newRow[3] = timeStr;
+      newRow[3] = timeValue;
     } else {
       // 出勤打刻が無いまま退勤等を打とうとした場合のガード
       return { success: false, error: '出勤打刻が記録されていません' };
@@ -1140,7 +1174,7 @@ function handleClock(body) {
       if (existingClockIn) {
         return { success: false, error: '本日は既に出勤打刻されています' };
       }
-      sheet.getRange(rowIndex, 4).setValue(timeStr);
+      sheet.getRange(rowIndex, 4).setValue(timeValue);
     } else if (type === 'clock_out') {
       const existingClockIn = sheet.getRange(rowIndex, 4).getValue();
       if (!existingClockIn) {
@@ -1150,7 +1184,7 @@ function handleClock(body) {
       if (existingClockOut) {
         return { success: false, error: '本日は既に退勤打刻されています' };
       }
-      sheet.getRange(rowIndex, 5).setValue(timeStr);
+      sheet.getRange(rowIndex, 5).setValue(timeValue);
       sheet.getRange(rowIndex, 6).setValue('normal');
 
       // Auto-calculate break (legal minimum) + work minutes
@@ -2177,9 +2211,10 @@ function handleBulkSaveAttendance(body) {
       continue;
     }
 
-    // HH:MM → ISO 文字列に正規化（保存形式統一）
-    const clockInIso = clockIn && /^\d{1,2}:\d{2}$/.test(clockIn) ? (date + 'T' + clockIn.padStart(5, '0') + ':00') : '';
-    const clockOutIso = clockOut && /^\d{1,2}:\d{2}$/.test(clockOut) ? (date + 'T' + clockOut.padStart(5, '0') + ':00') : '';
+    // HH:MM → Date オブジェクトに変換し、シートに保存（HH:mm 形式で表示される）
+    const clockInVal = clockIn && /^\d{1,2}:\d{2}$/.test(clockIn) ? new Date(date + 'T' + clockIn.padStart(5, '0') + ':00') : '';
+    const clockOutVal = clockOut && /^\d{1,2}:\d{2}$/.test(clockOut) ? new Date(date + 'T' + clockOut.padStart(5, '0') + ':00') : '';
+    const hasClockOut = clockOutVal instanceof Date && !isNaN(clockOutVal.getTime());
 
     let rowIndex = dateToRowIndex[date];
     if (!rowIndex) {
@@ -2189,7 +2224,7 @@ function handleBulkSaveAttendance(body) {
       //          late_minutes, early_leave_minutes, is_holiday, remarks, source
       sheet.appendRow([
         date, staffId, staff.name,
-        clockInIso, clockOutIso, clockOutIso ? 'normal' : '',
+        clockInVal, clockOutVal, hasClockOut ? 'normal' : '',
         breakMinutes, breakMinutesIsManual,
         workMinutes, 0, 0,
         isHoliday, remarks,
@@ -2199,9 +2234,9 @@ function handleBulkSaveAttendance(body) {
       dateToRowIndex[date] = rowIndex;
     } else {
       // 既存行を更新（カラム名指定で安全に書き込み）
-      setCellByColumnName_(sheet, rowIndex, headers, 'clock_in', clockInIso);
-      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out', clockOutIso);
-      if (clockOutIso) setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', 'normal');
+      setCellByColumnName_(sheet, rowIndex, headers, 'clock_in', clockInVal);
+      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out', clockOutVal);
+      if (hasClockOut) setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', 'normal');
       setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes', breakMinutes);
       setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes_is_manual', breakMinutesIsManual);
       setCellByColumnName_(sheet, rowIndex, headers, 'work_minutes', workMinutes);
@@ -3140,7 +3175,66 @@ function migrateSheetNames() {
     }
   }
 
-  return { success: true, renamed: renamed, headerMigrated: headerMigrated };
+  // 希望休申請シートに「日付別状況」列が無ければ追加し、既存行に対しても要約を埋める
+  const summaryUpdated = ensureShiftRequestSummaryColumn_();
+
+  return { success: true, renamed: renamed, headerMigrated: headerMigrated, summaryUpdated: summaryUpdated };
+}
+
+/**
+ * 希望休申請シートに「日付別状況」列が存在しなければ追加し、
+ * 既存の各行に対して days_json から要約を生成して書き込む。
+ * idempotent。戻り値: { added: bool, rowsFilled: number }
+ */
+function ensureShiftRequestSummaryColumn_() {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(SHEETS.SHIFT_REQUESTS);
+  if (!sheet) return { added: false, rowsFilled: 0 };
+  const lastCol = sheet.getLastColumn();
+  if (!lastCol) return { added: false, rowsFilled: 0 };
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const summaryIdx = findHeaderIndex_(headers, 'days_summary');
+  let summaryCol;
+  let added = false;
+  if (summaryIdx === -1) {
+    // days_json の隣に挿入する
+    const djIdx = findHeaderIndex_(headers, 'days_json');
+    if (djIdx === -1) return { added: false, rowsFilled: 0 };
+    try {
+      sheet.insertColumnAfter(djIdx + 1);
+    } catch (e) {
+      Logger.log('insertColumnAfter failed: ' + (e && e.message));
+      return { added: false, rowsFilled: 0 };
+    }
+    summaryCol = djIdx + 2; // 1-indexed の挿入後位置
+    sheet.getRange(1, summaryCol).setValue(HEADER_LABELS['days_summary'] || '日付別状況');
+    added = true;
+  } else {
+    summaryCol = summaryIdx + 1;
+  }
+
+  // 既存行の summary を再生成
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { added: added, rowsFilled: 0 };
+  const headersAfter = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const djIdx2 = findHeaderIndex_(headersAfter, 'days_json');
+  if (djIdx2 === -1) return { added: added, rowsFilled: 0 };
+  const djCol = djIdx2 + 1;
+  const jsonValues = sheet.getRange(2, djCol, lastRow - 1, 1).getValues();
+  const summaryValues = sheet.getRange(2, summaryCol, lastRow - 1, 1).getValues();
+  let rowsFilled = 0;
+  for (let i = 0; i < jsonValues.length; i++) {
+    const offDays = normalizeOffDays_(safeJsonParse_(jsonValues[i][0]));
+    const summary = formatOffDaysSummary_(offDays);
+    if (summaryValues[i][0] !== summary) {
+      summaryValues[i][0] = summary;
+      rowsFilled++;
+    }
+  }
+  if (rowsFilled > 0) {
+    sheet.getRange(2, summaryCol, summaryValues.length, 1).setValues(summaryValues);
+  }
+  return { added: added, rowsFilled: rowsFilled };
 }
 
 /**
@@ -3196,6 +3290,17 @@ function menuMigrateSheetNames() {
     if (lines.length > 0) lines.push('');
     lines.push('【ヘッダー行の日本語化】');
     lines.push.apply(lines, result.headerMigrated);
+  }
+  if (result.summaryUpdated) {
+    const su = result.summaryUpdated;
+    const parts = [];
+    if (su.added) parts.push('「日付別状況」列を追加');
+    if (su.rowsFilled > 0) parts.push(su.rowsFilled + '件の要約を更新');
+    if (parts.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push('【希望休申請シート】');
+      lines.push(parts.join(' / '));
+    }
   }
   if (lines.length > 0) {
     ui.alert('移行完了', lines.join('\n'), ui.ButtonSet.OK);
@@ -3268,6 +3373,28 @@ function normalizeOffDays_(parsed) {
     // kind='none'/'time' は破棄
   }
   return result;
+}
+
+/**
+ * offDays 配列を「日付別状況」列向けの人間可読な文字列に整形する。
+ * 例: "7/15(承認), 7/22(却下:他のスタッフと重複), 7/30(未承認)"
+ * 空配列・null は空文字を返す。
+ */
+function formatOffDaysSummary_(offDays) {
+  if (!Array.isArray(offDays) || offDays.length === 0) return '';
+  const STATUS_LABEL = { approved: '承認', rejected: '却下', pending: '未承認' };
+  const sorted = offDays.slice().sort(function (a, b) {
+    return (a.date || '') < (b.date || '') ? -1 : 1;
+  });
+  return sorted.map(function (d) {
+    const m = String(d.date).match(/^\d{4}-(\d{1,2})-(\d{1,2})/);
+    const label = m ? (Number(m[1]) + '/' + Number(m[2])) : String(d.date || '');
+    const st = STATUS_LABEL[d.status] || (d.status || '');
+    if (d.status === 'rejected' && d.rejectionReason) {
+      return label + '(' + st + ':' + d.rejectionReason + ')';
+    }
+    return label + '(' + st + ')';
+  }).join(', ');
 }
 
 /**
@@ -3369,11 +3496,29 @@ function handleSubmitShiftRequest(body) {
     : null;
   const now = new Date().toISOString();
   const daysJson = JSON.stringify(merged);
+  const daysSummary = formatOffDaysSummary_(merged);
 
   if (rowIndex === -1) {
-    sheet.appendRow([id, staffId, staff.name, targetYearMonth, daysJson, remarks, now]);
+    // appendRow は実シートのヘッダー順に従って値を並べる
+    const sheetHeaders = (data && data[0]) ? data[0] : headers;
+    const colCount = Math.max(sheetHeaders.length, 8);
+    const newRow = new Array(colCount).fill('');
+    const setByKey = function (key, v) {
+      const i = findHeaderIndex_(sheetHeaders, key);
+      if (i !== -1 && i < newRow.length) newRow[i] = v;
+    };
+    setByKey('id', id);
+    setByKey('staff_id', staffId);
+    setByKey('staff_name', staff.name);
+    setByKey('target_year_month', targetYearMonth);
+    setByKey('days_json', daysJson);
+    setByKey('days_summary', daysSummary);
+    setByKey('remarks', remarks);
+    setByKey('submitted_at', now);
+    sheet.appendRow(newRow);
   } else {
     setCellByColumnName_(sheet, rowIndex, headers, 'days_json', daysJson);
+    setCellByColumnName_(sheet, rowIndex, headers, 'days_summary', daysSummary);
     setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks);
     setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
   }
@@ -3468,6 +3613,7 @@ function handleReviewShiftRequestDay(body) {
   }
 
   setCellByColumnName_(sheet, rowIndex, headers, 'days_json', JSON.stringify(offDays));
+  setCellByColumnName_(sheet, rowIndex, headers, 'days_summary', formatOffDaysSummary_(offDays));
 
   // スタッフへメール通知
   try {
