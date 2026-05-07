@@ -33,7 +33,7 @@ import type {
   StaffInfo,
 } from '../../types';
 import { Header, Loading, Modal, ApplicationModal, SubmissionStatusBadge, ShiftDiffKindBadge, ApplicationStatusBadge } from '../../components/common';
-import { formatLocalDate } from '../../utils/calculations';
+import { formatLocalDate, extractLocalTimeHHMM } from '../../utils/calculations';
 import {
   computeWorkAndOvertime,
   calcElapsedMinutes,
@@ -133,8 +133,11 @@ export function AttendancePage() {
         const shift = shiftList.find(s => s.date === date);
 
         if (ex && ex.clockIn && ex.clockOut) {
-          const clockIn = ex.clockIn.includes('T') ? ex.clockIn.split('T')[1].slice(0, 5) : ex.clockIn;
-          const clockOut = ex.clockOut.includes('T') ? ex.clockOut.split('T')[1].slice(0, 5) : ex.clockOut;
+          // Parse via Date when ISO so UTC strings (from /clock punches) are
+          // shown as the user's local time. Naive .split('T') would surface
+          // raw UTC HH:MM and silently corrupt the displayed value.
+          const clockIn = extractLocalTimeHHMM(ex.clockIn);
+          const clockOut = extractLocalTimeHHMM(ex.clockOut);
           const elapsed = calcElapsedMinutes(clockIn, clockOut);
           const breakMin = ex.breakMinutesIsManual && typeof ex.breakMinutes === 'number'
             ? ex.breakMinutes
