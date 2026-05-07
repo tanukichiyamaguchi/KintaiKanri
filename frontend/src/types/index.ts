@@ -39,11 +39,9 @@ export interface AdminInfo {
 
 export type ClockType =
   | 'clock_in'
-  | 'clock_out'
-  | 'early_leave_company'
-  | 'early_leave_self';
+  | 'clock_out';
 
-export type ClockOutType = 'normal' | 'early_company' | 'early_self';
+export type ClockOutType = 'normal';
 
 export type WorkStatus = 'not_started' | 'working' | 'finished';
 
