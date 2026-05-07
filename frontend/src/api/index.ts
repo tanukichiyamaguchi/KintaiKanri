@@ -304,6 +304,47 @@ async function handleDemoRequest<T>(
     return { success: false, error: 'メールアドレスまたはパスワードが正しくありません' };
   }
 
+  // --- Self-registration (staff only) ---
+  if (action === 'auth/register') {
+    const name = String(body?.name || '').trim();
+    const email = String(body?.email || '').trim().toLowerCase();
+    const password = String(body?.password || '');
+
+    if (!name || !email || !password) {
+      return { success: false, error: '氏名・メールアドレス・パスワードをすべて入力してください' };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { success: false, error: 'メールアドレスの形式が正しくありません' };
+    }
+    if (password.length < 8) {
+      return { success: false, error: 'パスワードは8文字以上で設定してください' };
+    }
+    if (mockStaff.find(s => s.email === email) || email === mockAdmin.email) {
+      return { success: false, error: 'このメールアドレスは既に登録されています' };
+    }
+
+    const staffId = 'S' + String(Date.now()).slice(-6);
+    const today = new Date();
+    const newStaffInfo: StaffInfo = { staffId, email, name, status: 'active' };
+    mockStaff.push(newStaffInfo);
+    mockStaffDetails.push({
+      staffId, email, name,
+      monthlySalary: 0, transportation: 0,
+      hireDate: fmtDate(today),
+      paidLeaveBalance: 0, status: 'active', birthDate: '',
+    });
+
+    return {
+      success: true,
+      data: {
+        success: true,
+        isAdmin: false,
+        staffInfo: newStaffInfo,
+        token: 'staff-token-' + Date.now(),
+      } as unknown as T,
+    };
+  }
+
   // --- Staff ---
   if (action === 'staff' && !body) {
     return { success: true, data: mockStaff as unknown as T };
@@ -790,6 +831,15 @@ export const authApi = {
   // 後方互換: 統合ログインに収束しているため login を呼ぶだけ
   adminLogin: (email: string, password: string): Promise<ApiResponse<AuthResponse>> =>
     apiRequest('auth', { email, password }),
+
+  // スタッフのセルフ登録。成功時は staffInfo + token を含む AuthResponse を返す
+  // ので、呼び出し側で auto-login と同じフローに繋げる。
+  register: (params: {
+    name: string;
+    email: string;
+    password: string;
+  }): Promise<ApiResponse<AuthResponse>> =>
+    apiRequest('auth/register', params as unknown as Record<string, unknown>),
 };
 
 // Staff API
