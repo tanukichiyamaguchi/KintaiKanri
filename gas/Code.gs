@@ -98,11 +98,13 @@ function setupSystem() {
 
   // Add default insurance rates if none exist
   const insuranceSheet = ss.getSheetByName(SHEETS.INSURANCE_RATES);
-  const insuranceData = insuranceSheet.getDataRange().getValues();
-  if (insuranceData.length <= 1) {
-    const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    insuranceSheet.appendRow([today, 4.905, 0.80, 9.15, 0.60, new Date().toISOString(), 'System']);
-    Logger.log('Added default insurance rates');
+  if (insuranceSheet) {
+    const insuranceData = insuranceSheet.getDataRange().getValues();
+    if (insuranceData.length <= 1) {
+      const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      insuranceSheet.appendRow([today, 4.905, 0.80, 9.15, 0.60, new Date().toISOString(), 'System']);
+      Logger.log('Added default insurance rates');
+    }
   }
 
   Logger.log('System setup complete!');
@@ -180,6 +182,83 @@ function getOrCreateSheet(sheetName) {
     initializeSheet(sheet, sheetName);
   }
   return sheet;
+}
+
+// ヘッダー行を安全に取得する（空シートや getLastColumn=0 を許容）。
+// getRange(1,1,1,0) は GAS で例外になるため、必ず lastCol>=1 を担保してから呼ぶ。
+function getHeaderRow_(sheet) {
+  if (!sheet) return [];
+  const lastCol = sheet.getLastColumn();
+  if (!lastCol || lastCol < 1) return [];
+  try {
+    return sheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+  } catch (e) {
+    Logger.log('getHeaderRow_ failed: ' + (e && e.message));
+    return [];
+  }
+}
+
+// ヘッダー名から列番号(1-indexed)を取得。見つからなければ -1。
+function getColumnIndex_(headers, columnName) {
+  if (!headers || !headers.length) return -1;
+  for (let i = 0; i < headers.length; i++) {
+    if (headers[i] === columnName) return i + 1;
+  }
+  return -1;
+}
+
+// ヘッダー名で列に値を書き込む防御的ラッパ。列が存在しなければ no-op + ログ。
+// これにより headers.indexOf('xxx') + 1 が 0 になって getRange(row, 0) が
+// 例外を起こす事故を防ぐ。
+function setCellByColumnName_(sheet, rowIndex, headers, columnName, value) {
+  const col = getColumnIndex_(headers, columnName);
+  if (col < 1) {
+    Logger.log('setCellByColumnName_: column "' + columnName + '" not found in sheet ' + (sheet && sheet.getName ? sheet.getName() : '?'));
+    return false;
+  }
+  if (!rowIndex || rowIndex < 1) {
+    Logger.log('setCellByColumnName_: invalid rowIndex=' + rowIndex);
+    return false;
+  }
+  try {
+    sheet.getRange(rowIndex, col).setValue(value);
+    return true;
+  } catch (e) {
+    Logger.log('setCellByColumnName_ failed col=' + columnName + ': ' + (e && e.message));
+    return false;
+  }
+}
+
+// ヘッダー名でセルを読む防御的ラッパ。列が無ければ undefined。
+function getCellByColumnName_(sheet, rowIndex, headers, columnName) {
+  const col = getColumnIndex_(headers, columnName);
+  if (col < 1 || !rowIndex || rowIndex < 1) return undefined;
+  try {
+    return sheet.getRange(rowIndex, col).getValue();
+  } catch (e) {
+    Logger.log('getCellByColumnName_ failed col=' + columnName + ': ' + (e && e.message));
+    return undefined;
+  }
+}
+
+// 数値セルを安全に Number に変換。null/undefined/'' は 0、NaN も 0。
+function safeNumber_(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback || 0;
+  const n = Number(value);
+  return isNaN(n) ? (fallback || 0) : n;
+}
+
+// new Date() の結果が有効な Date かどうかを判定するヘルパ。
+function isValidDate_(d) {
+  return d instanceof Date && !isNaN(d.getTime());
+}
+
+// Date / 文字列を安全に Date オブジェクトに変換。失敗時 null。
+function toDateOrNull_(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) return isValidDate_(value) ? value : null;
+  const d = new Date(value);
+  return isValidDate_(d) ? d : null;
 }
 
 // Initialize sheet with headers (ヘッダーは setupSystem の定義と同期)
@@ -306,18 +385,43 @@ function getIncentiveSheet(year, month) {
 // 反復では salt を base64 デコードしたバイト列に切り替える。
 function hashPassword(password, salt) {
   if (!password || !salt) return '';
+  // password / salt は必ず String に正規化（Date/Number セルが渡された場合の保険）
+  const passwordStr = String(password);
+  const saltStr = String(salt);
+  if (!passwordStr || !saltStr) return '';
   const iterations = PBKDF2_ITERATIONS;
   // 初回: (String, String) 版で U_1
-  let buffer = Utilities.computeHmacSha256Signature(password, salt);
+  let buffer;
+  try {
+    buffer = Utilities.computeHmacSha256Signature(passwordStr, saltStr);
+  } catch (e) {
+    Logger.log('hashPassword first HMAC failed: ' + (e && e.message));
+    return '';
+  }
+  if (!buffer || !buffer.length) return '';
   // result は JS 配列にコピーして以降は通常配列として扱う
   const result = [];
   for (let j = 0; j < buffer.length; j++) {
     result[j] = buffer[j];
   }
-  // 2回目以降は (Byte[], Byte[]) 版を使うため salt をバイトに変換
-  const saltBytes = Utilities.base64Decode(salt);
+  // 2回目以降は (Byte[], Byte[]) 版を使うため salt をバイトに変換。
+  // 万一 saltStr が base64 として不正な場合は 1 回ハッシュで終了する（互換のためエラーにはしない）。
+  let saltBytes;
+  try {
+    saltBytes = Utilities.base64Decode(saltStr);
+  } catch (e) {
+    Logger.log('hashPassword base64Decode(salt) failed: ' + (e && e.message));
+    return Utilities.base64Encode(result);
+  }
+  if (!saltBytes || !saltBytes.length) return Utilities.base64Encode(result);
   for (let i = 1; i < iterations; i++) {
-    buffer = Utilities.computeHmacSha256Signature(buffer, saltBytes);
+    try {
+      buffer = Utilities.computeHmacSha256Signature(buffer, saltBytes);
+    } catch (e) {
+      Logger.log('hashPassword iter HMAC failed at i=' + i + ': ' + (e && e.message));
+      break;
+    }
+    if (!buffer || !buffer.length) break;
     for (let j = 0; j < buffer.length; j++) {
       // signed byte 同士の XOR は signed byte 範囲に収まる(-128..127)
       result[j] = (result[j] ^ buffer[j]) | 0;
@@ -349,14 +453,19 @@ function generateId() {
 
 // Convert sheet data to array of objects
 function sheetToObjects(sheet) {
+  if (!sheet) return [];
   const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return [];
+  if (!data || data.length <= 1) return [];
 
-  const headers = data[0];
+  const headers = data[0] || [];
+  // ヘッダー行が完全に空なら（=シート初期化失敗）空配列を返す
+  if (!headers.length || headers.every(h => h === '' || h == null)) return [];
   return data.slice(1).map(row => {
     const obj = {};
     headers.forEach((header, index) => {
-      obj[header] = row[index];
+      if (header !== '' && header != null) {
+        obj[header] = row[index];
+      }
     });
     return obj;
   });
@@ -364,8 +473,10 @@ function sheetToObjects(sheet) {
 
 // Find row index by column value
 function findRowIndex(sheet, column, value) {
+  if (!sheet) return -1;
   const data = sheet.getDataRange().getValues();
-  const headers = data[0];
+  if (!data || data.length === 0) return -1;
+  const headers = data[0] || [];
   const colIndex = headers.indexOf(column);
 
   if (colIndex === -1) return -1;
@@ -393,22 +504,33 @@ function handleRequest(e, method) {
   output.setMimeType(ContentService.MimeType.JSON);
 
   try {
-    const path = e.parameter.action || e.pathInfo || '';
+    // e は doGet / doPost から渡される EventObject。スクリプトエディタから直接実行された場合は undefined。
+    const safeEvent = e || {};
+    const safeParam = safeEvent.parameter || {};
+    const path = safeParam.action || safeEvent.pathInfo || '';
     let body = {};
 
     // Parse body from POST request or from 'data' query parameter (for GET requests to avoid CORS)
-    if (method === 'POST' && e.postData) {
-      body = JSON.parse(e.postData.contents);
-    } else if (e.parameter.data) {
+    if (method === 'POST' && safeEvent.postData && safeEvent.postData.contents) {
+      try {
+        body = JSON.parse(safeEvent.postData.contents) || {};
+        if (typeof body !== 'object' || body === null) body = {};
+      } catch (parseErr) {
+        Logger.log('Failed to parse postData contents: ' + parseErr.message);
+        body = {};
+      }
+    } else if (safeParam.data) {
       // Support GET requests with data parameter to avoid CORS preflight issues
       try {
-        body = JSON.parse(e.parameter.data);
+        body = JSON.parse(safeParam.data) || {};
+        if (typeof body !== 'object' || body === null) body = {};
       } catch (parseError) {
         Logger.log('Failed to parse data parameter: ' + parseError.message);
+        body = {};
       }
     }
 
-    const params = e.parameter;
+    const params = safeParam;
     const hasBody = Object.keys(body).length > 0;
 
     // Route the request
@@ -587,10 +709,17 @@ function handleRequest(e, method) {
     output.setContent(JSON.stringify(result));
 
   } catch (error) {
-    output.setContent(JSON.stringify({
-      success: false,
-      error: error.message
-    }));
+    // error は Error / 文字列 / その他 何でも投げられる可能性があるため安全に文字列化。
+    const errMsg = error && error.message ? error.message : String(error);
+    Logger.log('handleRequest caught: ' + errMsg + ' stack=' + (error && error.stack));
+    try {
+      output.setContent(JSON.stringify({
+        success: false,
+        error: errMsg
+      }));
+    } catch (jsonErr) {
+      output.setContent('{"success":false,"error":"internal error"}');
+    }
   }
 
   return output;
@@ -686,7 +815,13 @@ function handleClock(body) {
     return { success: false, error: 'Invalid clock type' };
   }
 
-  const now = timestamp ? new Date(timestamp) : new Date();
+  // 不正な timestamp が渡された場合は現在時刻にフォールバックして処理続行。
+  // Invalid Date のまま Utilities.formatDate を呼ぶと例外になるためここで弾く。
+  let now = timestamp ? new Date(timestamp) : new Date();
+  if (!isValidDate_(now)) {
+    Logger.log('handleClock: invalid timestamp received, falling back to server time. timestamp=' + timestamp);
+    now = new Date();
+  }
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
   const dateStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd');
@@ -773,11 +908,11 @@ function handleClock(body) {
 
       // Auto-calculate break (legal minimum) + work minutes
       // existingClockIn は Date / 文字列のどちらでもありうる（Sheets が自動変換するため）
-      const startTime = existingClockIn instanceof Date ? existingClockIn : new Date(existingClockIn);
-      if (!isNaN(startTime.getTime())) {
-        const elapsedMinutes = Math.floor((now - startTime) / 60000);
+      const startTime = toDateOrNull_(existingClockIn);
+      if (startTime) {
+        const elapsedMinutes = Math.floor((now.getTime() - startTime.getTime()) / 60000);
         const isManual = sheet.getRange(rowIndex, 8).getValue() === true;
-        let breakMinutes = Number(sheet.getRange(rowIndex, 7).getValue()) || 0;
+        let breakMinutes = safeNumber_(sheet.getRange(rowIndex, 7).getValue(), 0);
         if (!isManual) {
           breakMinutes = computeLegalBreakMinutes_(elapsedMinutes);
           sheet.getRange(rowIndex, 7).setValue(breakMinutes);
@@ -865,7 +1000,12 @@ function handleGetAttendance(params) {
     return { success: false, error: 'Missing required parameters' };
   }
 
-  const sheet = getAttendanceSheet(parseInt(year), parseInt(month));
+  const yNum = parseInt(year, 10);
+  const mNum = parseInt(month, 10);
+  if (!yNum || !mNum || mNum < 1 || mNum > 12) {
+    return { success: false, error: 'Invalid year/month' };
+  }
+  const sheet = getAttendanceSheet(yNum, mNum);
   const data = sheetToObjects(sheet);
   const staffRecords = data.filter(r => r.staff_id === staffId);
 
@@ -1001,28 +1141,29 @@ function handleUpdateStaff(body) {
     return { success: false, error: 'Staff not found' };
   }
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const columnMap = {
-    email: headers.indexOf('email') + 1,
-    name: headers.indexOf('name') + 1,
-    monthlySalary: headers.indexOf('monthly_salary') + 1,
-    transportation: headers.indexOf('transportation') + 1,
-    hireDate: headers.indexOf('hire_date') + 1,
-    paidLeaveBalance: headers.indexOf('paid_leave_balance') + 1,
-    status: headers.indexOf('status') + 1,
-    birthDate: headers.indexOf('birth_date') + 1
+  const headers = getHeaderRow_(sheet);
+  // body のキーから sheet のカラム名へのマッピング
+  const fieldToColumn = {
+    email: 'email',
+    name: 'name',
+    monthlySalary: 'monthly_salary',
+    transportation: 'transportation',
+    hireDate: 'hire_date',
+    paidLeaveBalance: 'paid_leave_balance',
+    status: 'status',
+    birthDate: 'birth_date'
   };
 
   Object.keys(updates).forEach(key => {
     if (key === 'password' && updates[key]) {
       const salt = generateSalt();
       const hash = hashPassword(updates[key], salt);
-      sheet.getRange(rowIndex, headers.indexOf('password_hash') + 1).setValue(hash);
-      sheet.getRange(rowIndex, headers.indexOf('password_salt') + 1).setValue(salt);
+      setCellByColumnName_(sheet, rowIndex, headers, 'password_hash', hash);
+      setCellByColumnName_(sheet, rowIndex, headers, 'password_salt', salt);
     } else if (key === 'email' && updates[key]) {
-      sheet.getRange(rowIndex, columnMap.email).setValue(String(updates[key]).trim().toLowerCase());
-    } else if (columnMap[key]) {
-      sheet.getRange(rowIndex, columnMap[key]).setValue(updates[key]);
+      setCellByColumnName_(sheet, rowIndex, headers, 'email', String(updates[key]).trim().toLowerCase());
+    } else if (fieldToColumn[key]) {
+      setCellByColumnName_(sheet, rowIndex, headers, fieldToColumn[key], updates[key]);
     }
   });
 
@@ -1044,9 +1185,8 @@ function handleDeleteStaff(body) {
   }
 
   // Soft delete - set status to inactive
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const statusCol = headers.indexOf('status') + 1;
-  sheet.getRange(rowIndex, statusCol).setValue('inactive');
+  const headers = getHeaderRow_(sheet);
+  setCellByColumnName_(sheet, rowIndex, headers, 'status', 'inactive');
 
   return { success: true };
 }
@@ -1149,27 +1289,24 @@ function handleUpdatePaidLeaveStatus(body) {
     return { success: false, error: 'Request not found' };
   }
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const statusCol = headers.indexOf('status') + 1;
-  const approvedCol = headers.indexOf('approved_date') + 1;
-
-  sheet.getRange(rowIndex, statusCol).setValue(status);
+  const headers = getHeaderRow_(sheet);
+  setCellByColumnName_(sheet, rowIndex, headers, 'status', status);
 
   if (status === 'approved') {
-    sheet.getRange(rowIndex, approvedCol).setValue(new Date().toISOString());
+    setCellByColumnName_(sheet, rowIndex, headers, 'approved_date', new Date().toISOString());
 
     // Decrease paid leave balance
-    const staffIdCol = headers.indexOf('staff_id') + 1;
-    const staffId = sheet.getRange(rowIndex, staffIdCol).getValue();
+    const staffId = getCellByColumnName_(sheet, rowIndex, headers, 'staff_id');
 
-    const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
-    const staffRowIndex = findRowIndex(staffSheet, 'staff_id', staffId);
+    if (staffId) {
+      const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+      const staffRowIndex = findRowIndex(staffSheet, 'staff_id', staffId);
 
-    if (staffRowIndex !== -1) {
-      const staffHeaders = staffSheet.getRange(1, 1, 1, staffSheet.getLastColumn()).getValues()[0];
-      const balanceCol = staffHeaders.indexOf('paid_leave_balance') + 1;
-      const currentBalance = staffSheet.getRange(staffRowIndex, balanceCol).getValue() || 0;
-      staffSheet.getRange(staffRowIndex, balanceCol).setValue(currentBalance - 1);
+      if (staffRowIndex !== -1) {
+        const staffHeaders = getHeaderRow_(staffSheet);
+        const currentBalance = safeNumber_(getCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance'), 0);
+        setCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance', currentBalance - 1);
+      }
     }
   }
 
@@ -1222,12 +1359,12 @@ function handleUpdateInsuranceRates(body) {
 
   if (rowIndex !== -1) {
     // Update existing
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    sheet.getRange(rowIndex, headers.indexOf('health_insurance_rate') + 1).setValue(healthInsuranceRate);
-    sheet.getRange(rowIndex, headers.indexOf('nursing_insurance_rate') + 1).setValue(nursingInsuranceRate);
-    sheet.getRange(rowIndex, headers.indexOf('pension_rate') + 1).setValue(pensionRate);
-    sheet.getRange(rowIndex, headers.indexOf('employment_insurance_rate') + 1).setValue(employmentInsuranceRate);
-    sheet.getRange(rowIndex, headers.indexOf('updated_at') + 1).setValue(now);
+    const headers = getHeaderRow_(sheet);
+    setCellByColumnName_(sheet, rowIndex, headers, 'health_insurance_rate', healthInsuranceRate);
+    setCellByColumnName_(sheet, rowIndex, headers, 'nursing_insurance_rate', nursingInsuranceRate);
+    setCellByColumnName_(sheet, rowIndex, headers, 'pension_rate', pensionRate);
+    setCellByColumnName_(sheet, rowIndex, headers, 'employment_insurance_rate', employmentInsuranceRate);
+    setCellByColumnName_(sheet, rowIndex, headers, 'updated_at', now);
   } else {
     // Insert new
     sheet.appendRow([
@@ -1246,7 +1383,12 @@ function handleGetTax(params) {
     return { success: false, error: 'Missing required parameters' };
   }
 
-  const sheet = getTaxSheet(parseInt(year), parseInt(month));
+  const yNum = parseInt(year, 10);
+  const mNum = parseInt(month, 10);
+  if (!yNum || !mNum || mNum < 1 || mNum > 12) {
+    return { success: false, error: 'Invalid year/month' };
+  }
+  const sheet = getTaxSheet(yNum, mNum);
   const data = sheetToObjects(sheet);
 
   return {
@@ -1268,6 +1410,12 @@ function handleUpdateTax(body) {
     return { success: false, error: 'Missing required fields' };
   }
 
+  const yNum = parseInt(year, 10);
+  const mNum = parseInt(month, 10);
+  if (!yNum || !mNum || mNum < 1 || mNum > 12) {
+    return { success: false, error: 'Invalid year/month' };
+  }
+
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const staffData = sheetToObjects(staffSheet);
   const staff = staffData.find(s => s.staff_id === staffId);
@@ -1276,17 +1424,17 @@ function handleUpdateTax(body) {
     return { success: false, error: 'Staff not found' };
   }
 
-  const sheet = getTaxSheet(parseInt(year), parseInt(month));
+  const sheet = getTaxSheet(yNum, mNum);
   const rowIndex = findRowIndex(sheet, 'staff_id', staffId);
   const now = new Date().toISOString();
 
   if (rowIndex !== -1) {
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    sheet.getRange(rowIndex, headers.indexOf('income_tax') + 1).setValue(incomeTax || 0);
-    sheet.getRange(rowIndex, headers.indexOf('resident_tax') + 1).setValue(residentTax || 0);
-    sheet.getRange(rowIndex, headers.indexOf('updated_at') + 1).setValue(now);
+    const headers = getHeaderRow_(sheet);
+    setCellByColumnName_(sheet, rowIndex, headers, 'income_tax', safeNumber_(incomeTax, 0));
+    setCellByColumnName_(sheet, rowIndex, headers, 'resident_tax', safeNumber_(residentTax, 0));
+    setCellByColumnName_(sheet, rowIndex, headers, 'updated_at', now);
   } else {
-    sheet.appendRow([staffId, staff.name, incomeTax || 0, residentTax || 0, now]);
+    sheet.appendRow([staffId, staff.name, safeNumber_(incomeTax, 0), safeNumber_(residentTax, 0), now]);
   }
 
   return { success: true };
@@ -1299,7 +1447,12 @@ function handleGetIncentive(params) {
     return { success: false, error: 'Missing required parameters' };
   }
 
-  const sheet = getIncentiveSheet(parseInt(year), parseInt(month));
+  const yNum = parseInt(year, 10);
+  const mNum = parseInt(month, 10);
+  if (!yNum || !mNum || mNum < 1 || mNum > 12) {
+    return { success: false, error: 'Invalid year/month' };
+  }
+  const sheet = getIncentiveSheet(yNum, mNum);
   const data = sheetToObjects(sheet);
 
   return {
@@ -1321,6 +1474,12 @@ function handleCreateIncentive(body) {
     return { success: false, error: 'Missing required fields' };
   }
 
+  const yNum = parseInt(year, 10);
+  const mNum = parseInt(month, 10);
+  if (!yNum || !mNum || mNum < 1 || mNum > 12) {
+    return { success: false, error: 'Invalid year/month' };
+  }
+
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const staffData = sheetToObjects(staffSheet);
   const staff = staffData.find(s => s.staff_id === staffId);
@@ -1329,8 +1488,8 @@ function handleCreateIncentive(body) {
     return { success: false, error: 'Staff not found' };
   }
 
-  const sheet = getIncentiveSheet(parseInt(year), parseInt(month));
-  sheet.appendRow([staffId, staff.name, itemName, amount || 0, remarks || '']);
+  const sheet = getIncentiveSheet(yNum, mNum);
+  sheet.appendRow([staffId, staff.name, itemName, safeNumber_(amount, 0), remarks || '']);
 
   return { success: true };
 }
@@ -1342,16 +1501,22 @@ function handleCalculateSalary(body) {
     return { success: false, error: 'Missing required fields' };
   }
 
+  const yNum = parseInt(year, 10);
+  const mNum = parseInt(month, 10);
+  if (!yNum || !mNum || mNum < 1 || mNum > 12) {
+    return { success: false, error: 'Invalid year/month' };
+  }
+
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const staffData = sheetToObjects(staffSheet).filter(s => s.status === 'active');
 
-  const attendanceSheet = getAttendanceSheet(year, month);
+  const attendanceSheet = getAttendanceSheet(yNum, mNum);
   const attendanceData = sheetToObjects(attendanceSheet);
 
-  const taxSheet = getTaxSheet(year, month);
+  const taxSheet = getTaxSheet(yNum, mNum);
   const taxData = sheetToObjects(taxSheet);
 
-  const incentiveSheet = getIncentiveSheet(year, month);
+  const incentiveSheet = getIncentiveSheet(yNum, mNum);
   const incentiveData = sheetToObjects(incentiveSheet);
 
   const ratesResponse = handleGetInsuranceRates();
@@ -1362,7 +1527,7 @@ function handleCalculateSalary(body) {
     employmentInsuranceRate: 0.60
   };
 
-  const salarySheet = getSalarySheet(year, month);
+  const salarySheet = getSalarySheet(yNum, mNum);
   const results = [];
 
   for (const staff of staffData) {
@@ -1370,8 +1535,12 @@ function handleCalculateSalary(body) {
     const staffTax = taxData.find(t => t.staff_id === staff.staff_id) || {};
     const staffIncentives = incentiveData.filter(i => i.staff_id === staff.staff_id);
 
+    // 数値カラムは String/null/undefined の混在で文字列連結を起こさないよう Number に正規化。
+    const monthlySalary = safeNumber_(staff.monthly_salary, 0);
+    const transportation = safeNumber_(staff.transportation, 0);
+
     // Calculate work hours
-    const totalWorkMinutes = staffAttendance.reduce((sum, a) => sum + (a.work_minutes || 0), 0);
+    const totalWorkMinutes = staffAttendance.reduce((sum, a) => sum + safeNumber_(a.work_minutes, 0), 0);
     const totalWorkHours = totalWorkMinutes / 60;
 
     // Calculate overtime (simplified - would need week-by-week calculation for accuracy)
@@ -1379,36 +1548,40 @@ function handleCalculateSalary(body) {
     const overtimeHours = Math.max(0, totalWorkHours - monthlyWorkingHours);
 
     // Late and early leave
-    const lateMinutes = staffAttendance.reduce((sum, a) => sum + (a.late_minutes || 0), 0);
-    const earlyLeaveMinutes = staffAttendance.reduce((sum, a) => sum + (a.early_leave_minutes || 0), 0);
+    const lateMinutes = staffAttendance.reduce((sum, a) => sum + safeNumber_(a.late_minutes, 0), 0);
+    const earlyLeaveMinutes = staffAttendance.reduce((sum, a) => sum + safeNumber_(a.early_leave_minutes, 0), 0);
 
-    // Calculate pay
-    const hourlyRate = staff.monthly_salary / monthlyWorkingHours;
+    // Calculate pay (monthlyWorkingHours は固定値なので 0 除算なし、ただし monthlySalary=0 で hourlyRate=0)
+    const hourlyRate = monthlyWorkingHours > 0 ? monthlySalary / monthlyWorkingHours : 0;
     const minuteRate = hourlyRate / 60;
 
     const overtimePay = Math.floor(overtimeHours * hourlyRate * 1.25);
     const nightPay = 0; // Would need hour-by-hour calculation
     const holidayPay = 0; // Would need to check holiday flags
 
-    const incentiveTotal = staffIncentives.reduce((sum, i) => sum + (i.amount || 0), 0);
+    const incentiveTotal = staffIncentives.reduce((sum, i) => sum + safeNumber_(i.amount, 0), 0);
 
-    const grossPay = staff.monthly_salary + overtimePay + nightPay + holidayPay +
-                     staff.transportation + incentiveTotal;
+    const grossPay = monthlySalary + overtimePay + nightPay + holidayPay +
+                     transportation + incentiveTotal;
 
     // Deductions
     const lateDeduction = Math.floor(lateMinutes * minuteRate);
     const earlyLeaveDeduction = Math.floor(earlyLeaveMinutes * minuteRate);
 
     // Insurance (simplified - would use standard remuneration table)
-    const healthInsurance = Math.floor(grossPay * rates.healthInsuranceRate / 100);
+    const healthRate = safeNumber_(rates.healthInsuranceRate, 0);
+    const nursingRate = safeNumber_(rates.nursingInsuranceRate, 0);
+    const pensionRate = safeNumber_(rates.pensionRate, 0);
+    const empInsRate = safeNumber_(rates.employmentInsuranceRate, 0);
+    const healthInsurance = Math.floor(grossPay * healthRate / 100);
     const nursingInsurance = isNursingInsuranceTarget(staff.birth_date) ?
-                            Math.floor(grossPay * rates.nursingInsuranceRate / 100) : 0;
-    const pension = Math.floor(grossPay * rates.pensionRate / 100);
-    const employmentInsurance = Math.floor(grossPay * rates.employmentInsuranceRate / 100);
+                            Math.floor(grossPay * nursingRate / 100) : 0;
+    const pension = Math.floor(grossPay * pensionRate / 100);
+    const employmentInsurance = Math.floor(grossPay * empInsRate / 100);
 
     // Tax
-    const incomeTax = staffTax.income_tax || 0;
-    const residentTax = staffTax.resident_tax || 0;
+    const incomeTax = safeNumber_(staffTax.income_tax, 0);
+    const residentTax = safeNumber_(staffTax.resident_tax, 0);
 
     const totalDeduction = lateDeduction + earlyLeaveDeduction +
                           healthInsurance + nursingInsurance + pension + employmentInsurance +
@@ -1419,7 +1592,7 @@ function handleCalculateSalary(body) {
     const salaryRecord = {
       staffId: staff.staff_id,
       name: staff.name,
-      baseSalary: staff.monthly_salary,
+      baseSalary: monthlySalary,
       totalWorkHours: Math.round(totalWorkHours * 100) / 100,
       overtimeHours: Math.round(overtimeHours * 100) / 100,
       nightHours: 0,
@@ -1427,7 +1600,7 @@ function handleCalculateSalary(body) {
       overtimePay,
       nightPay,
       holidayPay,
-      transportation: staff.transportation,
+      transportation: transportation,
       incentive: incentiveTotal,
       grossPay,
       lateDeduction,
@@ -1459,10 +1632,28 @@ function handleCalculateSalary(body) {
       salaryRecord.totalDeduction, salaryRecord.netPay
     ];
 
+    // setValues は対象シートに rowData.length 列以上が無いと例外になる。
+    // 万一足りない場合は列を追加して書き込み可能にする。
+    if (salarySheet.getMaxColumns() < rowData.length) {
+      try {
+        salarySheet.insertColumnsAfter(salarySheet.getMaxColumns(), rowData.length - salarySheet.getMaxColumns());
+      } catch (e) {
+        Logger.log('insertColumnsAfter failed in handleCalculateSalary: ' + (e && e.message));
+      }
+    }
+
     if (existingRow !== -1) {
-      salarySheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+      try {
+        salarySheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+      } catch (e) {
+        Logger.log('salarySheet.setValues failed: ' + (e && e.message));
+      }
     } else {
-      salarySheet.appendRow(rowData);
+      try {
+        salarySheet.appendRow(rowData);
+      } catch (e) {
+        Logger.log('salarySheet.appendRow failed: ' + (e && e.message));
+      }
     }
   }
 
@@ -1476,7 +1667,12 @@ function handleGetSalary(params) {
     return { success: false, error: 'Missing required parameters' };
   }
 
-  const sheet = getSalarySheet(parseInt(year), parseInt(month));
+  const yNum = parseInt(year, 10);
+  const mNum = parseInt(month, 10);
+  if (!yNum || !mNum || mNum < 1 || mNum > 12) {
+    return { success: false, error: 'Invalid year/month' };
+  }
+  const sheet = getSalarySheet(yNum, mNum);
   const data = sheetToObjects(sheet);
   const record = data.find(r => r.staff_id === staffId);
 
@@ -1521,9 +1717,12 @@ function handleUpdateAttendance(body) {
     return { success: false, error: 'Missing required fields' };
   }
 
-  const dateParts = date.split('-');
-  const year = parseInt(dateParts[0]);
-  const month = parseInt(dateParts[1]);
+  const dateParts = String(date).split('-');
+  const year = parseInt(dateParts[0], 10);
+  const month = parseInt(dateParts[1], 10);
+  if (!year || !month || month < 1 || month > 12) {
+    return { success: false, error: 'Invalid date format (YYYY-MM-DD expected)' };
+  }
   const yearMonth = year + '-' + String(month).padStart(2, '0');
 
   // 提出済みの月はスタッフ編集不可（管理者は許可）
@@ -1534,14 +1733,16 @@ function handleUpdateAttendance(body) {
 
   const sheet = getAttendanceSheet(year, month);
   const data = sheet.getDataRange().getValues();
-  const headers = data[0];
+  const headers = (data && data[0]) ? data[0] : [];
 
   // Find the row（date 列は Date 型 / 文字列の両方ありうる）
   let rowIndex = -1;
-  for (let i = 1; i < data.length; i++) {
-    if (formatDateOnly_(data[i][0]) === date && data[i][1] === staffId) {
-      rowIndex = i + 1;
-      break;
+  if (data && data.length > 1) {
+    for (let i = 1; i < data.length; i++) {
+      if (formatDateOnly_(data[i][0]) === date && data[i][1] === staffId) {
+        rowIndex = i + 1;
+        break;
+      }
     }
   }
 
@@ -1606,13 +1807,13 @@ function handleUpdateAttendance(body) {
     if (wmCol !== -1 && ciCol !== -1 && coCol !== -1 && brCol !== -1) {
       const ciVal = sheet.getRange(rowIndex, ciCol + 1).getValue();
       const coVal = sheet.getRange(rowIndex, coCol + 1).getValue();
-      const brVal = Number(sheet.getRange(rowIndex, brCol + 1).getValue()) || 0;
+      const brVal = safeNumber_(sheet.getRange(rowIndex, brCol + 1).getValue(), 0);
       if (ciVal && coVal) {
         // Sheets は ISO 文字列を Date に自動変換することがあるため両対応する
-        const start = ciVal instanceof Date ? ciVal : new Date(ciVal);
-        const end = coVal instanceof Date ? coVal : new Date(coVal);
-        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-          const elapsed = Math.floor((end - start) / 60000);
+        const start = toDateOrNull_(ciVal);
+        const end = toDateOrNull_(coVal);
+        if (start && end) {
+          const elapsed = Math.floor((end.getTime() - start.getTime()) / 60000);
           const workMin = Math.max(0, elapsed - brVal);
           sheet.getRange(rowIndex, wmCol + 1).setValue(workMin);
         }
@@ -1643,7 +1844,8 @@ function appendAttendanceHistory_(date, staffId, field, oldValue, newValue, edit
 function isNursingInsuranceTarget(birthDate) {
   if (!birthDate) return false;
 
-  const birth = new Date(birthDate);
+  const birth = toDateOrNull_(birthDate);
+  if (!birth) return false;
   const today = new Date();
 
   let age = today.getFullYear() - birth.getFullYear();
@@ -1789,9 +1991,9 @@ function formatDateValue_(value, defaultYear, defaultMonth) {
 
 /** GET shifts/monthly?year=&month= → 全スタッフの月次シフト */
 function handleGetMonthlyShifts(params) {
-  const year = parseInt(params.year);
-  const month = parseInt(params.month);
-  if (!year || !month) return { success: false, error: 'Missing year/month' };
+  const year = parseInt(params.year, 10);
+  const month = parseInt(params.month, 10);
+  if (!year || !month || month < 1 || month > 12) return { success: false, error: 'Missing or invalid year/month' };
   const result = readShiftSheet_(year, month);
   return { success: true, data: { exists: result.exists, shifts: result.shifts } };
 }
@@ -1799,9 +2001,9 @@ function handleGetMonthlyShifts(params) {
 /** GET shifts/staff-month?staffId=&year=&month= → 当該スタッフの月次シフト */
 function handleGetStaffMonthShifts(params) {
   const { staffId } = params;
-  const year = parseInt(params.year);
-  const month = parseInt(params.month);
-  if (!staffId || !year || !month) return { success: false, error: 'Missing required params' };
+  const year = parseInt(params.year, 10);
+  const month = parseInt(params.month, 10);
+  if (!staffId || !year || !month || month < 1 || month > 12) return { success: false, error: 'Missing or invalid required params' };
   const result = readShiftSheet_(year, month);
   return {
     success: true,
@@ -1915,14 +2117,17 @@ function handleApproveApplication(body) {
   const rowIndex = findRowIndex(sheet, 'id', id);
   if (rowIndex === -1) return { success: false, error: 'Application not found' };
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  sheet.getRange(rowIndex, headers.indexOf('status') + 1).setValue('approved');
-  sheet.getRange(rowIndex, headers.indexOf('reviewed_at') + 1).setValue(new Date().toISOString());
-  sheet.getRange(rowIndex, headers.indexOf('reviewed_by') + 1).setValue(reviewedBy || '');
+  const headers = getHeaderRow_(sheet);
+  setCellByColumnName_(sheet, rowIndex, headers, 'status', 'approved');
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', new Date().toISOString());
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', reviewedBy || '');
 
   // notify staff
   const app = sheetToObjects(sheet).find(r => r.id === id);
-  if (app) notifyStaffApplicationReviewed_(app, 'approved');
+  if (app) {
+    try { notifyStaffApplicationReviewed_(app, 'approved'); }
+    catch (e) { Logger.log('notifyStaffApplicationReviewed_ failed: ' + (e && e.message)); }
+  }
 
   return { success: true };
 }
@@ -1936,14 +2141,17 @@ function handleRejectApplication(body) {
   const rowIndex = findRowIndex(sheet, 'id', id);
   if (rowIndex === -1) return { success: false, error: 'Application not found' };
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  sheet.getRange(rowIndex, headers.indexOf('status') + 1).setValue('rejected');
-  sheet.getRange(rowIndex, headers.indexOf('reviewed_at') + 1).setValue(new Date().toISOString());
-  sheet.getRange(rowIndex, headers.indexOf('reviewed_by') + 1).setValue(reviewedBy || '');
-  sheet.getRange(rowIndex, headers.indexOf('rejection_reason') + 1).setValue(rejectionReason);
+  const headers = getHeaderRow_(sheet);
+  setCellByColumnName_(sheet, rowIndex, headers, 'status', 'rejected');
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', new Date().toISOString());
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', reviewedBy || '');
+  setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', rejectionReason);
 
   const app = sheetToObjects(sheet).find(r => r.id === id);
-  if (app) notifyStaffApplicationReviewed_(app, 'rejected', rejectionReason);
+  if (app) {
+    try { notifyStaffApplicationReviewed_(app, 'rejected', rejectionReason); }
+    catch (e) { Logger.log('notifyStaffApplicationReviewed_ failed: ' + (e && e.message)); }
+  }
 
   return { success: true };
 }
@@ -2013,24 +2221,27 @@ function handleSubmitMonthly(body) {
   if (rowIndex === -1) {
     sheet.appendRow([staffId, staff.name, yearMonth, 'submitted', now, '', '', remarks || '', '']);
   } else {
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    sheet.getRange(rowIndex, headers.indexOf('status') + 1).setValue('submitted');
-    sheet.getRange(rowIndex, headers.indexOf('submitted_at') + 1).setValue(now);
-    sheet.getRange(rowIndex, headers.indexOf('remarks') + 1).setValue(remarks || '');
-    sheet.getRange(rowIndex, headers.indexOf('rejection_reason') + 1).setValue('');
+    const headers = getHeaderRow_(sheet);
+    setCellByColumnName_(sheet, rowIndex, headers, 'status', 'submitted');
+    setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
+    setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks || '');
+    setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', '');
   }
 
-  notifyAdminsMonthlySubmitted_(staff, yearMonth);
+  try { notifyAdminsMonthlySubmitted_(staff, yearMonth); }
+  catch (e) { Logger.log('notifyAdminsMonthlySubmitted_ failed: ' + (e && e.message)); }
 
   return { success: true };
 }
 
 function findSubmissionRowIndex_(sheet, staffId, yearMonth) {
+  if (!sheet) return -1;
   const data = sheet.getDataRange().getValues();
-  if (data.length < 2) return -1;
-  const headers = data[0];
+  if (!data || data.length < 2) return -1;
+  const headers = data[0] || [];
   const sIdx = headers.indexOf('staff_id');
   const ymIdx = headers.indexOf('year_month');
+  if (sIdx === -1 || ymIdx === -1) return -1;
   for (let i = 1; i < data.length; i++) {
     if (data[i][sIdx] === staffId && data[i][ymIdx] === yearMonth) {
       return i + 1;
@@ -2069,13 +2280,16 @@ function handleApproveSubmission(body) {
   const rowIndex = findSubmissionRowIndex_(sheet, staffId, yearMonth);
   if (rowIndex === -1) return { success: false, error: 'Submission not found' };
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  sheet.getRange(rowIndex, headers.indexOf('status') + 1).setValue('approved');
-  sheet.getRange(rowIndex, headers.indexOf('reviewed_at') + 1).setValue(new Date().toISOString());
-  sheet.getRange(rowIndex, headers.indexOf('reviewed_by') + 1).setValue(reviewedBy || '');
+  const headers = getHeaderRow_(sheet);
+  setCellByColumnName_(sheet, rowIndex, headers, 'status', 'approved');
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', new Date().toISOString());
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', reviewedBy || '');
 
   const sub = sheetToObjects(sheet).find(r => r.staff_id === staffId && r.year_month === yearMonth);
-  if (sub) notifyStaffMonthlyReviewed_(sub, 'approved');
+  if (sub) {
+    try { notifyStaffMonthlyReviewed_(sub, 'approved'); }
+    catch (e) { Logger.log('notifyStaffMonthlyReviewed_ failed: ' + (e && e.message)); }
+  }
 
   return { success: true };
 }
@@ -2089,14 +2303,17 @@ function handleRejectSubmission(body) {
   const rowIndex = findSubmissionRowIndex_(sheet, staffId, yearMonth);
   if (rowIndex === -1) return { success: false, error: 'Submission not found' };
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  sheet.getRange(rowIndex, headers.indexOf('status') + 1).setValue('rejected');
-  sheet.getRange(rowIndex, headers.indexOf('reviewed_at') + 1).setValue(new Date().toISOString());
-  sheet.getRange(rowIndex, headers.indexOf('reviewed_by') + 1).setValue(reviewedBy || '');
-  sheet.getRange(rowIndex, headers.indexOf('rejection_reason') + 1).setValue(rejectionReason);
+  const headers = getHeaderRow_(sheet);
+  setCellByColumnName_(sheet, rowIndex, headers, 'status', 'rejected');
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', new Date().toISOString());
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', reviewedBy || '');
+  setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', rejectionReason);
 
   const sub = sheetToObjects(sheet).find(r => r.staff_id === staffId && r.year_month === yearMonth);
-  if (sub) notifyStaffMonthlyReviewed_(sub, 'rejected', rejectionReason);
+  if (sub) {
+    try { notifyStaffMonthlyReviewed_(sub, 'rejected', rejectionReason); }
+    catch (e) { Logger.log('notifyStaffMonthlyReviewed_ failed: ' + (e && e.message)); }
+  }
 
   return { success: true };
 }
@@ -2121,9 +2338,9 @@ function handleChangePassword(body) {
   const newSalt = generateSalt();
   const newHash = hashPassword(newPassword, newSalt);
   const sheet = ctx.sheet;
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  sheet.getRange(ctx.rowIndex, headers.indexOf('password_hash') + 1).setValue(newHash);
-  sheet.getRange(ctx.rowIndex, headers.indexOf('password_salt') + 1).setValue(newSalt);
+  const headers = getHeaderRow_(sheet);
+  setCellByColumnName_(sheet, ctx.rowIndex, headers, 'password_hash', newHash);
+  setCellByColumnName_(sheet, ctx.rowIndex, headers, 'password_salt', newSalt);
 
   return { success: true };
 }
@@ -2139,9 +2356,9 @@ function handleResetPassword(body) {
   const newSalt = generateSalt();
   const newHash = hashPassword(newPassword, newSalt);
   const sheet = ctx.sheet;
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  sheet.getRange(ctx.rowIndex, headers.indexOf('password_hash') + 1).setValue(newHash);
-  sheet.getRange(ctx.rowIndex, headers.indexOf('password_salt') + 1).setValue(newSalt);
+  const headers = getHeaderRow_(sheet);
+  setCellByColumnName_(sheet, ctx.rowIndex, headers, 'password_hash', newHash);
+  setCellByColumnName_(sheet, ctx.rowIndex, headers, 'password_salt', newSalt);
   return { success: true };
 }
 
@@ -2196,14 +2413,14 @@ function handleUpdateAdmin(body) {
   const rowIndex = findRowIndex(sheet, 'admin_id', adminId);
   if (rowIndex === -1) return { success: false, error: 'Admin not found' };
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  if (name) sheet.getRange(rowIndex, headers.indexOf('name') + 1).setValue(name);
-  if (email) sheet.getRange(rowIndex, headers.indexOf('email') + 1).setValue(String(email).trim().toLowerCase());
+  const headers = getHeaderRow_(sheet);
+  if (name) setCellByColumnName_(sheet, rowIndex, headers, 'name', name);
+  if (email) setCellByColumnName_(sheet, rowIndex, headers, 'email', String(email).trim().toLowerCase());
   if (password) {
     const salt = generateSalt();
     const hash = hashPassword(password, salt);
-    sheet.getRange(rowIndex, headers.indexOf('password_hash') + 1).setValue(hash);
-    sheet.getRange(rowIndex, headers.indexOf('password_salt') + 1).setValue(salt);
+    setCellByColumnName_(sheet, rowIndex, headers, 'password_hash', hash);
+    setCellByColumnName_(sheet, rowIndex, headers, 'password_salt', salt);
   }
   return { success: true };
 }
