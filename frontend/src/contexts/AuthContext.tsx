@@ -9,6 +9,11 @@ interface AuthContextType {
   admin: AdminInfo | null;
   token: string | null;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string; isAdmin?: boolean }>;
+  register: (params: {
+    name: string;
+    email: string;
+    password: string;
+  }) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -84,6 +89,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const register = useCallback(async (params: { name: string; email: string; password: string }) => {
+    try {
+      const normalizedEmail = params.email.trim().toLowerCase();
+      const response = await authApi.register({
+        name: params.name.trim(),
+        email: normalizedEmail,
+        password: params.password,
+      });
+      if (response.success && response.data?.success && response.data.staffInfo) {
+        const staffInfo = response.data.staffInfo;
+        const tokenStr = response.data.token || '';
+
+        // セルフ登録は常にスタッフ。admin にはならない。
+        setIsAdmin(false);
+        setStaff(staffInfo);
+        setAdmin(null);
+        setToken(tokenStr);
+
+        const stored: StoredAuth = {
+          isAdmin: false,
+          staff: staffInfo,
+          admin: null,
+          token: tokenStr,
+          expiry: Date.now() + 24 * 60 * 60 * 1000,
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+
+        return { success: true };
+      }
+      return {
+        success: false,
+        error: response.error || response.data?.error || '登録に失敗しました',
+      };
+    } catch {
+      return { success: false, error: 'ネットワークエラーが発生しました' };
+    }
+  }, []);
+
   const logout = useCallback(() => {
     setStaff(null);
     setAdmin(null);
@@ -99,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     admin,
     token,
     login,
+    register,
     logout,
     isLoading: false,
   };

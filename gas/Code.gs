@@ -547,6 +547,11 @@ function handleRequest(e, method) {
         result = handleAdminAuth(body);
         break;
 
+      // Self-registration (staff only)
+      case 'auth/register':
+        result = handleRegister(body);
+        break;
+
       // Clock operations
       case 'clock':
         result = handleClock(body);
@@ -797,6 +802,78 @@ function handleAuth(body) {
  */
 function handleAdminAuth(body) {
   return handleAuth(body);
+}
+
+/**
+ * スタッフのセルフ登録（ログイン画面の「新規登録」フォームから呼ばれる）。
+ * 管理者は GAS 関数 (addTestAdmin / handleCreateAdmin) からのみ作成する仕様。
+ *
+ * 登録時の値:
+ *   - 必須: name / email / password
+ *   - 自動: staffId / hire_date(今日) / status='active'
+ *   - 既定値0: monthly_salary, transportation, paid_leave_balance, birth_date
+ *   - 給与・誕生日・有給日数は管理者画面から後で設定する想定
+ *
+ * 重複チェック: staff_master と admins の両方で email を確認する
+ * （両方で同じ email を作らない）。
+ *
+ * 成功時は {staffInfo, token} を返し、フロント側で自動ログイン可能にする。
+ */
+function handleRegister(body) {
+  const name = body && body.name ? String(body.name).trim() : '';
+  const email = body && body.email ? String(body.email).trim().toLowerCase() : '';
+  const password = body && body.password ? String(body.password) : '';
+
+  if (!name || !email || !password) {
+    return { success: false, error: '氏名・メールアドレス・パスワードをすべて入力してください' };
+  }
+
+  // 簡易バリデーション
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { success: false, error: 'メールアドレスの形式が正しくありません' };
+  }
+  if (password.length < 8) {
+    return { success: false, error: 'パスワードは8文字以上で設定してください' };
+  }
+
+  // 既存登録チェック（staff_master）
+  const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+  const staffData = sheetToObjects(staffSheet);
+  if (staffData.find(function (s) { return String(s.email || '').toLowerCase() === email; })) {
+    return { success: false, error: 'このメールアドレスは既に登録されています' };
+  }
+
+  // 既存登録チェック（admins）— 衝突を避ける
+  const adminSheet = getOrCreateSheet(SHEETS.ADMINS);
+  const adminData = sheetToObjects(adminSheet);
+  if (adminData.find(function (a) { return String(a.email || '').toLowerCase() === email; })) {
+    return { success: false, error: 'このメールアドレスは既に登録されています' };
+  }
+
+  // 作成
+  const staffId = 'S' + String(Date.now()).slice(-6);
+  const salt = generateSalt();
+  const hash = hashPassword(password, salt);
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+
+  // ヘッダー: staff_id, email, password_hash, password_salt, name,
+  //          monthly_salary, transportation, hire_date, paid_leave_balance, status, birth_date
+  staffSheet.appendRow([
+    staffId, email, hash, salt, name,
+    0, 0, today, 0, 'active', ''
+  ]);
+
+  return {
+    success: true,
+    isAdmin: false,
+    staffInfo: {
+      staffId: staffId,
+      email: email,
+      name: name,
+      status: 'active'
+    },
+    token: generateId()
+  };
 }
 
 /**
