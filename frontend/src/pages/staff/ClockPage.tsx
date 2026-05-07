@@ -6,8 +6,6 @@ import {
   Clock as ClockIcon,
   AlertCircle,
   CheckCircle,
-  Building,
-  User,
   ChevronRight,
   Loader2,
   ListChecks,
@@ -26,10 +24,8 @@ export function ClockPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isClocking, setIsClocking] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [pendingClockType, setPendingClockType] = useState<ClockType | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Redirect if not authenticated
   useEffect(() => {
     if (!isAuthenticated || !staff) {
       navigate('/');
@@ -55,14 +51,13 @@ export function ClockPage() {
     fetchTodayAttendance();
   }, [fetchTodayAttendance]);
 
-  const handleClock = async (type: ClockType) => {
+  const handleClockIn = async () => {
     if (!staff) return;
-    if (type === 'clock_out' || type === 'early_leave_company' || type === 'early_leave_self') {
-      setPendingClockType(type);
-      setShowConfirmModal(true);
-      return;
-    }
-    await performClock(type);
+    await performClock('clock_in');
+  };
+
+  const handleClockOutClick = () => {
+    setShowConfirmModal(true);
   };
 
   const performClock = async (type: ClockType) => {
@@ -70,18 +65,12 @@ export function ClockPage() {
     setIsClocking(true);
     setMessage(null);
     setShowConfirmModal(false);
-    setPendingClockType(null);
 
     try {
       const response = await attendanceApi.clock(staff.staffId, type);
       if (response.success) {
-        const typeLabels: Record<ClockType, string> = {
-          clock_in: '出勤',
-          clock_out: '退勤',
-          early_leave_company: '早上がり',
-          early_leave_self: '早退',
-        };
-        setMessage({ type: 'success', text: `${typeLabels[type]}を記録しました` });
+        const label = type === 'clock_in' ? '出勤' : '退勤';
+        setMessage({ type: 'success', text: `${label}を記録しました` });
         await fetchTodayAttendance();
       } else {
         setMessage({ type: 'error', text: response.error || '打刻に失敗しました' });
@@ -93,27 +82,12 @@ export function ClockPage() {
     }
   };
 
-  const getButtonState = (type: ClockType): { disabled: boolean; active: boolean } => {
-    const isWorking = status === 'working';
-    const isFinished = status === 'finished';
-    const hasClockIn = records.some(r => r.type === 'clock_in');
-    const hasClockOut = records.some(r =>
-      ['clock_out', 'early_leave_company', 'early_leave_self'].includes(r.type)
-    );
-    const clockedIn = isWorking || isFinished || hasClockIn;
-    const clockedOut = isFinished || hasClockOut;
-
-    switch (type) {
-      case 'clock_in':
-        return { disabled: clockedIn, active: clockedIn };
-      case 'clock_out':
-      case 'early_leave_company':
-      case 'early_leave_self':
-        return { disabled: !isWorking || clockedOut, active: clockedOut };
-      default:
-        return { disabled: false, active: false };
-    }
-  };
+  const isWorking = status === 'working';
+  const isFinished = status === 'finished';
+  const hasClockIn = records.some(r => r.type === 'clock_in');
+  const hasClockOut = records.some(r => r.type === 'clock_out');
+  const clockInDisabled = isWorking || isFinished || hasClockIn;
+  const clockOutDisabled = !isWorking || isFinished || hasClockOut;
 
   const formatTime = (isoString: string): string => {
     const date = new Date(isoString);
@@ -132,13 +106,7 @@ export function ClockPage() {
   };
 
   const getTypeLabel = (type: ClockType): string => {
-    const labels: Record<ClockType, string> = {
-      clock_in: '出勤',
-      clock_out: '退勤',
-      early_leave_company: '早上がり',
-      early_leave_self: '早退',
-    };
-    return labels[type] || type;
+    return type === 'clock_in' ? '出勤' : '退勤';
   };
 
   const statusInfo = getStatusLabel(status);
@@ -190,66 +158,41 @@ export function ClockPage() {
         )}
 
         {/* Clock Buttons */}
-        <div className="grid grid-cols-1 gap-4 mb-6">
-          {/* 出勤 - full width */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
           <button
-            onClick={() => handleClock('clock_in')}
-            disabled={getButtonState('clock_in').disabled || isClocking}
-            className={`relative group flex items-center justify-center gap-3 h-24 rounded-2xl font-semibold transition-all duration-300 ${
-              getButtonState('clock_in').active
+            onClick={handleClockIn}
+            disabled={clockInDisabled || isClocking}
+            className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
+              hasClockIn
                 ? 'bg-green-50 text-green-700 border-2 border-green-300'
                 : 'bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg shadow-green-500/25 hover:shadow-xl hover:shadow-green-500/35 hover:-translate-y-0.5'
-            } ${getButtonState('clock_in').disabled && !getButtonState('clock_in').active ? 'opacity-50 cursor-not-allowed' : ''}`}
+            } ${clockInDisabled && !hasClockIn ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Play className="w-7 h-7" />
-            <span className="text-xl">出勤</span>
-            {getButtonState('clock_in').active && (
+            <span className="text-lg">出勤</span>
+            {hasClockIn && (
               <span className="absolute top-2 right-2 text-xs bg-green-200 text-green-700 px-2.5 py-0.5 rounded-full font-bold">済</span>
             )}
           </button>
 
-          {/* 退勤系 3種 */}
-          <div className="grid grid-cols-3 gap-3">
-            <button
-              onClick={() => handleClock('clock_out')}
-              disabled={getButtonState('clock_out').disabled || isClocking}
-              className={`relative flex flex-col items-center justify-center gap-1 h-24 rounded-2xl font-semibold transition-all duration-300 ${
-                getButtonState('clock_out').active
-                  ? 'bg-primary-50 text-primary-700 border-2 border-primary-300'
-                  : 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/35 hover:-translate-y-0.5'
-              } ${getButtonState('clock_out').disabled && !getButtonState('clock_out').active ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <LogOut className="w-6 h-6" />
-              <span className="text-base">退勤</span>
-            </button>
-
-            <button
-              onClick={() => handleClock('early_leave_company')}
-              disabled={getButtonState('early_leave_company').disabled || isClocking}
-              className={`flex flex-col items-center justify-center gap-1 h-24 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 hover:-translate-y-0.5 ${
-                getButtonState('early_leave_company').disabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              <Building className="w-5 h-5" />
-              <span className="text-sm">早上がり</span>
-              <span className="text-[10px] opacity-80">(会社都合)</span>
-            </button>
-
-            <button
-              onClick={() => handleClock('early_leave_self')}
-              disabled={getButtonState('early_leave_self').disabled || isClocking}
-              className={`flex flex-col items-center justify-center gap-1 h-24 rounded-2xl font-semibold transition-all duration-300 bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 hover:shadow-xl hover:shadow-red-500/35 hover:-translate-y-0.5 ${
-                getButtonState('early_leave_self').disabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              <User className="w-5 h-5" />
-              <span className="text-sm">早退</span>
-              <span className="text-[10px] opacity-80">(自己都合)</span>
-            </button>
-          </div>
+          <button
+            onClick={handleClockOutClick}
+            disabled={clockOutDisabled || isClocking}
+            className={`relative group flex flex-col items-center justify-center gap-2 h-28 rounded-2xl font-semibold transition-all duration-300 ${
+              hasClockOut
+                ? 'bg-primary-50 text-primary-700 border-2 border-primary-300'
+                : 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/35 hover:-translate-y-0.5'
+            } ${clockOutDisabled && !hasClockOut ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <LogOut className="w-7 h-7" />
+            <span className="text-lg">退勤</span>
+            {hasClockOut && (
+              <span className="absolute top-2 right-2 text-xs bg-primary-200 text-primary-700 px-2.5 py-0.5 rounded-full font-bold">済</span>
+            )}
+          </button>
         </div>
 
-        {/* 補足: 休憩は法定通り自動付与 */}
+        {/* 補足 */}
         <div className="bg-primary-50/50 border border-primary-200/50 rounded-2xl px-5 py-3 mb-5 text-sm text-secondary-600">
           休憩時間は退勤時に法定通り（拘束9h超→60分 / 6h45m超→45分）自動付与されます。実態と異なる場合は出勤簿で修正してください。
         </div>
@@ -320,40 +263,28 @@ export function ClockPage() {
       {/* Confirmation Modal */}
       <Modal
         isOpen={showConfirmModal}
-        onClose={() => {
-          setShowConfirmModal(false);
-          setPendingClockType(null);
-        }}
-        title="確認"
+        onClose={() => setShowConfirmModal(false)}
+        title="退勤しますか？"
         size="sm"
       >
         <div className="text-center py-6">
           <div className="w-20 h-20 mx-auto mb-5 rounded-2xl bg-primary-50 flex items-center justify-center">
             <LogOut className="w-10 h-10 text-primary-600" />
           </div>
-          <p className="text-secondary-700 mb-8 whitespace-pre-line text-lg">
-            {pendingClockType === 'clock_out' && '退勤しますか？'}
-            {pendingClockType === 'early_leave_company' && '早上がり（会社都合）で\n退勤しますか？'}
-            {pendingClockType === 'early_leave_self' && '早退（自己都合）で退勤しますか？\n※控除の対象となります'}
-          </p>
+          <p className="text-secondary-700 mb-8 text-lg">退勤を記録します</p>
 
           <div className="flex gap-3">
             <button
-              onClick={() => {
-                setShowConfirmModal(false);
-                setPendingClockType(null);
-              }}
+              onClick={() => setShowConfirmModal(false)}
               className="btn btn-secondary flex-1"
             >
               キャンセル
             </button>
             <button
-              onClick={() => pendingClockType && performClock(pendingClockType)}
-              className={`btn flex-1 ${
-                pendingClockType === 'early_leave_self' ? 'btn-danger' : 'btn-primary'
-              }`}
+              onClick={() => performClock('clock_out')}
+              className="btn btn-primary flex-1"
             >
-              確定
+              退勤
             </button>
           </div>
         </div>

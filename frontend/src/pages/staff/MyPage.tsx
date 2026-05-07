@@ -341,12 +341,6 @@ export function MyPage() {
                     <div className="text-secondary-700">{formatTime(record.clockIn)}</div>
                     <div className="text-secondary-700">
                       {formatTime(record.clockOut)}
-                      {record.clockOutType === 'early_company' && (
-                        <span className="ml-1 text-xs text-blue-600">早上</span>
-                      )}
-                      {record.clockOutType === 'early_self' && (
-                        <span className="ml-1 text-xs text-red-600">早退</span>
-                      )}
                     </div>
                     <div className="text-secondary-700">
                       {record.breakMinutes > 0 ? `${record.breakMinutes}分` : '-'}

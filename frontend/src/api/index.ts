@@ -418,10 +418,7 @@ async function handleDemoRequest<T>(
 
     switch (type) {
       case 'clock_in': record.status = 'working'; break;
-      case 'clock_out':
-      case 'early_leave_company':
-      case 'early_leave_self':
-        record.status = 'finished'; break;
+      case 'clock_out': record.status = 'finished'; break;
     }
 
     return { success: true, data: { success: true, record } as unknown as T };

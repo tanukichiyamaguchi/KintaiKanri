@@ -887,7 +887,7 @@ function handleClock(body) {
     return { success: false, error: 'Missing required fields' };
   }
 
-  const allowedTypes = ['clock_in', 'clock_out', 'early_leave_company', 'early_leave_self'];
+  const allowedTypes = ['clock_in', 'clock_out'];
   if (allowedTypes.indexOf(type) === -1) {
     return { success: false, error: 'Invalid clock type' };
   }
@@ -968,7 +968,7 @@ function handleClock(body) {
         return { success: false, error: '本日は既に出勤打刻されています' };
       }
       sheet.getRange(rowIndex, 4).setValue(timeStr);
-    } else if (type === 'clock_out' || type === 'early_leave_company' || type === 'early_leave_self') {
+    } else if (type === 'clock_out') {
       const existingClockIn = sheet.getRange(rowIndex, 4).getValue();
       if (!existingClockIn) {
         return { success: false, error: '出勤打刻が記録されていません' };
@@ -978,10 +978,7 @@ function handleClock(body) {
         return { success: false, error: '本日は既に退勤打刻されています' };
       }
       sheet.getRange(rowIndex, 5).setValue(timeStr);
-      sheet.getRange(rowIndex, 6).setValue(
-        type === 'clock_out' ? 'normal' :
-        type === 'early_leave_company' ? 'early_company' : 'early_self'
-      );
+      sheet.getRange(rowIndex, 6).setValue('normal');
 
       // Auto-calculate break (legal minimum) + work minutes
       // existingClockIn は Date / 文字列のどちらでもありうる（Sheets が自動変換するため）
@@ -1047,9 +1044,7 @@ function handleGetTodayAttendance(params) {
     records.push({ type: 'clock_in', time: toIsoString_(todayRecord.clock_in) });
   }
   if (todayRecord.clock_out) {
-    const clockOutType = todayRecord.clock_out_type === 'early_company' ? 'early_leave_company' :
-                         todayRecord.clock_out_type === 'early_self' ? 'early_leave_self' : 'clock_out';
-    records.push({ type: clockOutType, time: toIsoString_(todayRecord.clock_out) });
+    records.push({ type: 'clock_out', time: toIsoString_(todayRecord.clock_out) });
   }
 
   // Determine status (no break state in new model)
