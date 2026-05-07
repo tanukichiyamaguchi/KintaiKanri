@@ -1138,6 +1138,27 @@ function formatDateOnly_(value) {
   return String(value);
 }
 
+// "YYYY-MM" 形式に正規化。Google Sheets は "2026-05" 等の文字列を自動的に
+// Date オブジェクトに変換してしまうことがあるため、比較前に必ずこれを通す。
+function formatYearMonthValue_(value) {
+  if (value == null || value === '') return '';
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return '';
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM');
+  }
+  const s = String(value).trim();
+  // "YYYY-MM" / "YYYY-M" 形式
+  const m1 = s.match(/^(\d{4})-(\d{1,2})$/);
+  if (m1) return m1[1] + '-' + String(parseInt(m1[2], 10)).padStart(2, '0');
+  // "YYYY-MM-DD" 形式（先頭7文字を取って正規化）
+  const m2 = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m2) return m2[1] + '-' + String(parseInt(m2[2], 10)).padStart(2, '0');
+  // "YYYY/MM" or "YYYY/MM/DD"
+  const m3 = s.match(/^(\d{4})\/(\d{1,2})/);
+  if (m3) return m3[1] + '-' + String(parseInt(m3[2], 10)).padStart(2, '0');
+  return s;
+}
+
 function handleGetStaffList() {
   const sheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const data = sheetToObjects(sheet);
@@ -2363,15 +2384,19 @@ function handleRejectApplication(body) {
 function getSubmissionStatus_(staffId, yearMonth) {
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
   const data = sheetToObjects(sheet);
-  const rec = data.find(r => r.staff_id === staffId && r.year_month === yearMonth);
+  const targetYm = formatYearMonthValue_(yearMonth);
+  const rec = data.find(r => r.staff_id === staffId && formatYearMonthValue_(r.year_month) === targetYm);
   return rec ? rec.status : 'draft';
 }
 
 function handleGetSubmissionStatus(params) {
   const { staffId, yearMonth } = params;
   if (!staffId || !yearMonth) return { success: false, error: '必須パラメータが指定されていません' };
+  const targetYm = formatYearMonthValue_(yearMonth);
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
-  const rec = sheetToObjects(sheet).find(r => r.staff_id === staffId && r.year_month === yearMonth);
+  const rec = sheetToObjects(sheet).find(
+    r => r.staff_id === staffId && formatYearMonthValue_(r.year_month) === targetYm
+  );
   if (!rec) {
     return { success: true, data: { staffId, yearMonth, status: 'draft' } };
   }
@@ -2380,7 +2405,7 @@ function handleGetSubmissionStatus(params) {
     data: {
       staffId: rec.staff_id,
       staffName: rec.staff_name,
-      yearMonth: rec.year_month,
+      yearMonth: formatYearMonthValue_(rec.year_month),
       status: rec.status,
       submittedAt: toIsoString_(rec.submitted_at),
       reviewedAt: toIsoString_(rec.reviewed_at),
@@ -2442,8 +2467,9 @@ function findSubmissionRowIndex_(sheet, staffId, yearMonth) {
   const sIdx = headers.indexOf('staff_id');
   const ymIdx = headers.indexOf('year_month');
   if (sIdx === -1 || ymIdx === -1) return -1;
+  const targetYm = formatYearMonthValue_(yearMonth);
   for (let i = 1; i < data.length; i++) {
-    if (data[i][sIdx] === staffId && data[i][ymIdx] === yearMonth) {
+    if (data[i][sIdx] === staffId && formatYearMonthValue_(data[i][ymIdx]) === targetYm) {
       return i + 1;
     }
   }
@@ -2455,14 +2481,17 @@ function handleListSubmissions(params) {
   const data = sheetToObjects(sheet);
   const { yearMonth, status } = params;
   let filtered = data;
-  if (yearMonth) filtered = filtered.filter(r => r.year_month === yearMonth);
+  if (yearMonth) {
+    const targetYm = formatYearMonthValue_(yearMonth);
+    filtered = filtered.filter(r => formatYearMonthValue_(r.year_month) === targetYm);
+  }
   if (status) filtered = filtered.filter(r => r.status === status);
   return {
     success: true,
     data: filtered.map(r => ({
       staffId: r.staff_id,
       staffName: r.staff_name,
-      yearMonth: r.year_month,
+      yearMonth: formatYearMonthValue_(r.year_month),
       status: r.status,
       submittedAt: toIsoString_(r.submitted_at),
       reviewedAt: toIsoString_(r.reviewed_at),
