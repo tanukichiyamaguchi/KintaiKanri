@@ -55,15 +55,24 @@ export function ShiftRequestPage() {
     if (!isAuthenticated || !staff) navigate('/');
   }, [isAuthenticated, staff, navigate]);
 
-  // 確定済み (approved / rejected) は自動的に表示されてロックされる。
-  // pending は selectedDates として編集可能。
+  // 確定済みのうち、approved のみロック（再申請不可）。
+  // rejected はスタッフが再選択することで再申請（pending 化）できるようにする。
   const lockedDayMap = useMemo(() => {
     const map = new Map<string, ShiftRequestOffDay>();
     if (existing) {
       for (const d of existing.offDays) {
-        if (d.status === 'approved' || d.status === 'rejected') {
-          map.set(d.date, d);
-        }
+        if (d.status === 'approved') map.set(d.date, d);
+      }
+    }
+    return map;
+  }, [existing]);
+
+  // 過去に却下された日（再申請のため UI 上で識別する）
+  const rejectedDayMap = useMemo(() => {
+    const map = new Map<string, ShiftRequestOffDay>();
+    if (existing) {
+      for (const d of existing.offDays) {
+        if (d.status === 'rejected') map.set(d.date, d);
       }
     }
     return map;
@@ -238,7 +247,7 @@ export function ShiftRequestPage() {
           <Info className="w-4 h-4 text-primary-600 flex-shrink-0 mt-1" />
           <div className="text-secondary-700 space-y-1">
             <p>休みを希望する日をタップして選択してください（複数選択可）。</p>
-            <p>承認済み・却下済みの日は固定で表示されます（変更不可）。</p>
+            <p>承認済みの日は変更できません。却下された日も再度タップすれば再申請できます。</p>
           </div>
         </div>
 
@@ -289,19 +298,22 @@ export function ShiftRequestPage() {
                 const dow = d.getDay();
                 const locked = lockedDayMap.get(date);
                 const isApproved = locked?.status === 'approved';
-                const isRejected = locked?.status === 'rejected';
+                const wasRejected = rejectedDayMap.has(date);
                 const isSelected = selectedDates.has(date);
-                const isLocked = !!locked;
+                const isLocked = !!locked; // approved のみ
                 const cellDisabled = isLocked || !isOpen || isSubmitting;
 
                 let cellClass = 'min-h-12 sm:min-h-14 rounded-xl border-2 p-1 flex flex-col items-center justify-center transition-all relative ';
                 if (isApproved) {
                   cellClass += 'bg-green-50 border-green-300 text-green-700 cursor-not-allowed';
-                } else if (isRejected) {
-                  cellClass += 'bg-red-50 border-red-300 text-red-700 cursor-not-allowed';
+                } else if (wasRejected && isSelected) {
+                  // 再申請中（却下→再選択）
+                  cellClass += 'bg-amber-100 border-red-400 text-red-700 shadow-sm shadow-amber-500/20';
+                } else if (wasRejected) {
+                  cellClass += 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100 active:scale-95 cursor-pointer';
                 } else if (isSelected) {
                   cellClass += 'bg-amber-100 border-amber-400 text-amber-700 shadow-sm shadow-amber-500/20';
-                } else if (cellDisabled) {
+                } else if (!isOpen || isSubmitting) {
                   cellClass += 'bg-secondary-50 border-secondary-100 text-secondary-300 cursor-not-allowed';
                 } else {
                   cellClass += 'bg-white border-secondary-200 text-secondary-700 hover:border-amber-300 hover:bg-amber-50/40 active:scale-95 cursor-pointer';
@@ -314,7 +326,7 @@ export function ShiftRequestPage() {
                     onClick={() => toggleDate(date)}
                     disabled={cellDisabled}
                     className={cellClass}
-                    aria-label={`${formatJpDate(date)}${isSelected ? ' 選択中' : ''}${isApproved ? ' 承認済' : ''}${isRejected ? ' 却下' : ''}`}
+                    aria-label={`${formatJpDate(date)}${isSelected ? ' 選択中' : ''}${isApproved ? ' 承認済' : ''}${wasRejected ? ' 却下' : ''}`}
                   >
                     <div className={`text-xs font-medium ${
                       dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : ''
@@ -323,8 +335,9 @@ export function ShiftRequestPage() {
                     </div>
                     <div className="text-base font-bold">{day}</div>
                     {isApproved && <div className="text-[9px] mt-0.5 leading-none">承認</div>}
-                    {isRejected && <div className="text-[9px] mt-0.5 leading-none">却下</div>}
-                    {isSelected && !isLocked && <div className="text-[9px] mt-0.5 leading-none">希望</div>}
+                    {wasRejected && isSelected && <div className="text-[9px] mt-0.5 leading-none font-bold">再申請</div>}
+                    {wasRejected && !isSelected && <div className="text-[9px] mt-0.5 leading-none">却下</div>}
+                    {!wasRejected && isSelected && !isLocked && <div className="text-[9px] mt-0.5 leading-none">希望</div>}
                   </button>
                 );
               })}
