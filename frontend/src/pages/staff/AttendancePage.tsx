@@ -139,9 +139,11 @@ export function AttendancePage() {
           const clockIn = extractLocalTimeHHMM(ex.clockIn);
           const clockOut = extractLocalTimeHHMM(ex.clockOut);
           const elapsed = calcElapsedMinutes(clockIn, clockOut);
+          // 手動修正フラグが立っている場合のみ保存値を尊重する。
+          // 立っていなければ常に最新の法定値を再計算（閾値の改訂・古い保存値の自動補正のため）。
           const breakMin = ex.breakMinutesIsManual && typeof ex.breakMinutes === 'number'
             ? ex.breakMinutes
-            : (ex.breakMinutes ?? getLegalBreakMinutes(elapsed));
+            : getLegalBreakMinutes(elapsed);
           const { workMinutes, overtimeMinutes } = computeWorkAndOvertime(clockIn, clockOut, breakMin);
           return {
             date,
