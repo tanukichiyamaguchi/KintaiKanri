@@ -301,20 +301,23 @@ function getIncentiveSheet(year, month) {
 // 注: 厳密な RFC 2898 準拠ではない（GAS の computeHmacSha256Signature(value, key) は
 // "value=メッセージ / key=鍵" の順なので、ここでは password と salt の役割が標準とは
 // 入れ替わっているが、ハッシュ生成と検証で同じ手順を踏めば自己整合する）。
-// XOR の累積は JS 配列に確実にコピーしてから行う（GAS の戻り値は Java の Byte[] のため、
-// 直接書き戻すと環境によって反映されない可能性がある）。
+// 注: GAS の Utilities.computeHmacSha256Signature は (String,String) または (Byte[],Byte[])
+// のオーバーロードしか持たず、(Byte[],String) は実行時例外になる。そのため2回目以降の
+// 反復では salt を base64 デコードしたバイト列に切り替える。
 function hashPassword(password, salt) {
   if (!password || !salt) return '';
   const iterations = PBKDF2_ITERATIONS;
-  // 初回 HMAC: U_1
+  // 初回: (String, String) 版で U_1
   let buffer = Utilities.computeHmacSha256Signature(password, salt);
   // result は JS 配列にコピーして以降は通常配列として扱う
   const result = [];
   for (let j = 0; j < buffer.length; j++) {
     result[j] = buffer[j];
   }
+  // 2回目以降は (Byte[], Byte[]) 版を使うため salt をバイトに変換
+  const saltBytes = Utilities.base64Decode(salt);
   for (let i = 1; i < iterations; i++) {
-    buffer = Utilities.computeHmacSha256Signature(buffer, salt);
+    buffer = Utilities.computeHmacSha256Signature(buffer, saltBytes);
     for (let j = 0; j < buffer.length; j++) {
       // signed byte 同士の XOR は signed byte 範囲に収まる(-128..127)
       result[j] = (result[j] ^ buffer[j]) | 0;
