@@ -43,6 +43,135 @@ const LEGACY_SHEET_NAME_MAP = {
   'shift_requests': SHEETS.SHIFT_REQUESTS,
 };
 
+// シートのカラムヘッダー: 英語キー(コード) ↔ 日本語ラベル(表示) のマッピング。
+// コード内では英語キー（snake_case）でアクセスし、シート上の表示は日本語にする。
+// sheetToObjects / findHeaderIndex_ などの helper が両方向を吸収する。
+const HEADER_LABELS = {
+  'id': 'ID',
+  'staff_id': 'スタッフID',
+  'staff_name': 'スタッフ名',
+  'admin_id': '管理者ID',
+  'email': 'メールアドレス',
+  'password_hash': 'パスワードハッシュ',
+  'password_salt': 'ソルト',
+  'name': '氏名',
+  'monthly_salary': '月給',
+  'transportation': '交通費',
+  'hire_date': '入社日',
+  'paid_leave_balance': '有給残日数',
+  'status': 'ステータス',
+  'birth_date': '生年月日',
+  'created_at': '作成日時',
+  'request_date': '申請日',
+  'leave_date': '取得希望日',
+  'approved_date': '承認日',
+  'remarks': '備考',
+  'effective_date': '適用開始日',
+  'health_insurance_rate': '健康保険料率',
+  'nursing_insurance_rate': '介護保険料率',
+  'pension_rate': '厚生年金料率',
+  'employment_insurance_rate': '雇用保険料率',
+  'updated_at': '更新日時',
+  'updated_by': '更新者',
+  'grade': '等級',
+  'monthly_min': '月額下限',
+  'monthly_max': '月額上限',
+  'standard_monthly': '標準報酬月額',
+  'date': '日付',
+  'type': '種別',
+  'reason': '理由',
+  'details_json': '詳細(JSON)',
+  'submitted_at': '提出日時',
+  'reviewed_at': '審査日時',
+  'reviewed_by': '審査者',
+  'rejection_reason': '却下理由',
+  'year_month': '対象年月',
+  'field': 'フィールド',
+  'old_value': '旧値',
+  'new_value': '新値',
+  'edited_at': '編集日時',
+  'edited_by': '編集者',
+  'editor_role': '編集者種別',
+  'target_year_month': '対象年月',
+  'days_json': '希望日(JSON)',
+  'days_summary': '日付別状況',
+  'clock_in': '出勤',
+  'clock_out': '退勤',
+  'clock_out_type': '退勤区分',
+  'break_minutes': '休憩分',
+  'break_minutes_is_manual': '休憩手動',
+  'work_minutes': '実労働分',
+  'late_minutes': '遅刻分',
+  'early_leave_minutes': '早退分',
+  'is_holiday': '休日',
+  'source': '入力方法',
+  'base_salary': '基本給',
+  'total_work_hours': '総労働時間',
+  'overtime_hours': '残業時間',
+  'night_hours': '深夜時間',
+  'holiday_hours': '休日労働時間',
+  'overtime_pay': '残業手当',
+  'night_pay': '深夜手当',
+  'holiday_pay': '休日手当',
+  'incentive': 'インセンティブ',
+  'gross_pay': '総支給',
+  'late_deduction': '遅刻控除',
+  'early_leave_deduction': '早退控除',
+  'health_insurance': '健康保険料',
+  'nursing_insurance': '介護保険料',
+  'pension': '厚生年金',
+  'employment_insurance': '雇用保険料',
+  'income_tax': '所得税',
+  'resident_tax': '住民税',
+  'total_deduction': '控除合計',
+  'net_pay': '差引支給額',
+  'item_name': '項目',
+  'amount': '金額',
+};
+
+// 日本語 → 英語の逆引き（実行時に1回だけ構築）
+const REVERSE_HEADER_LABELS = (function () {
+  const out = {};
+  for (const k in HEADER_LABELS) {
+    if (Object.prototype.hasOwnProperty.call(HEADER_LABELS, k)) {
+      out[HEADER_LABELS[k]] = k;
+    }
+  }
+  return out;
+})();
+
+// 英語 headers 配列 → 日本語 labels 配列。
+// 既知の英語キーのみ翻訳、未登録のものはそのまま通す。
+function localizeHeaders_(headers) {
+  if (!headers) return [];
+  return headers.map(function (h) {
+    if (typeof h !== 'string') return h;
+    return HEADER_LABELS[h] || h;
+  });
+}
+
+// 与えた headers 行 (英語/日本語混在許容) から、英語キー or 日本語キー どちらでも
+// 該当する列の 0-indexed インデックスを返す。見つからなければ -1。
+function findHeaderIndex_(headers, key) {
+  if (!headers || !headers.length || !key) return -1;
+  // 直接ヒット
+  const direct = headers.indexOf(key);
+  if (direct !== -1) return direct;
+  // key が英語 → 日本語ラベルでも探す
+  const ja = HEADER_LABELS[key];
+  if (ja) {
+    const i = headers.indexOf(ja);
+    if (i !== -1) return i;
+  }
+  // key が日本語 → 英語キーでも探す
+  const en = REVERSE_HEADER_LABELS[key];
+  if (en) {
+    const i = headers.indexOf(en);
+    if (i !== -1) return i;
+  }
+  return -1;
+}
+
 // 月次シート名（年・月から組み立てる）
 function shiftSheetName(year, month) {
   return 'シフト_' + year + String(month).padStart(2, '0');
@@ -121,7 +250,8 @@ function setupSystem() {
     // Set headers if row 1 is empty
     const firstRow = sheet.getRange(1, 1, 1, sheetInfo.headers.length).getValues()[0];
     if (!firstRow[0]) {
-      sheet.getRange(1, 1, 1, sheetInfo.headers.length).setValues([sheetInfo.headers]);
+      const labels = localizeHeaders_(sheetInfo.headers);
+      sheet.getRange(1, 1, 1, labels.length).setValues([labels]);
       Logger.log('Added headers to: ' + sheetInfo.name);
     }
   }
@@ -229,12 +359,10 @@ function getHeaderRow_(sheet) {
 }
 
 // ヘッダー名から列番号(1-indexed)を取得。見つからなければ -1。
+// 英語キーで呼ばれた場合でも、日本語ラベルが書かれているシートで正しく解決する。
 function getColumnIndex_(headers, columnName) {
-  if (!headers || !headers.length) return -1;
-  for (let i = 0; i < headers.length; i++) {
-    if (headers[i] === columnName) return i + 1;
-  }
-  return -1;
+  const idx = findHeaderIndex_(headers, columnName);
+  return idx === -1 ? -1 : idx + 1;
 }
 
 // ヘッダー名で列に値を書き込む防御的ラッパ。列が存在しなければ no-op + ログ。
@@ -326,7 +454,7 @@ function initializeSheet(sheet, sheetName) {
     ],
     [SHEETS.SHIFT_REQUESTS]: [
       'id', 'staff_id', 'staff_name', 'target_year_month', 'days_json',
-      'remarks', 'submitted_at'
+      'days_summary', 'remarks', 'submitted_at'
     ],
   };
 
@@ -334,12 +462,14 @@ function initializeSheet(sheet, sheetName) {
     if (sheet.getMaxColumns() < headers[sheetName].length) {
       sheet.insertColumnsAfter(sheet.getMaxColumns(), headers[sheetName].length - sheet.getMaxColumns());
     }
-    sheet.getRange(1, 1, 1, headers[sheetName].length).setValues([headers[sheetName]]);
+    const labels = localizeHeaders_(headers[sheetName]);
+    sheet.getRange(1, 1, 1, labels.length).setValues([labels]);
   }
 }
 
 // 後方互換: 既存の英名シートが残っているケース用に try-fallback で取得
-function getOrCreateMonthlySheet_(year, month, primaryName, legacyName, headers) {
+// columnFormats: { 英語キー: 'HH:mm' 等 } を渡すと、新規作成時のみ列全体に書式設定を適用する
+function getOrCreateMonthlySheet_(year, month, primaryName, legacyName, headers, columnFormats) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName(primaryName);
   if (!sheet && legacyName) {
@@ -354,10 +484,37 @@ function getOrCreateMonthlySheet_(year, month, primaryName, legacyName, headers)
       if (sheet.getMaxColumns() < headers.length) {
         try { sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns()); } catch (e) {}
       }
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      const labels = localizeHeaders_(headers);
+      sheet.getRange(1, 1, 1, labels.length).setValues([labels]);
     }
+    if (columnFormats && headers && headers.length) {
+      applyMonthlyColumnFormats_(sheet, headers, columnFormats);
+    }
+  } else if (columnFormats) {
+    // 既存シートにも書式が無ければ適用（idempotent）
+    applyMonthlyColumnFormats_(sheet, null, columnFormats);
   }
   return sheet;
+}
+
+// 列ごとの数値フォーマットを適用するヘルパ。headers が null の場合はシートの1行目から解決する。
+function applyMonthlyColumnFormats_(sheet, headersOrNull, columnFormats) {
+  if (!sheet || !columnFormats) return;
+  const lastCol = sheet.getLastColumn();
+  if (!lastCol) return;
+  const headers = headersOrNull && headersOrNull.length
+    ? headersOrNull
+    : sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const maxRows = Math.max(sheet.getMaxRows(), 1);
+  Object.keys(columnFormats).forEach(function (key) {
+    const idx = findHeaderIndex_(headers, key);
+    if (idx === -1) return;
+    try {
+      sheet.getRange(2, idx + 1, Math.max(maxRows - 1, 1), 1).setNumberFormat(columnFormats[key]);
+    } catch (e) {
+      Logger.log('setNumberFormat failed for ' + key + ': ' + (e && e.message));
+    }
+  });
 }
 
 // Get attendance sheet for a specific month
@@ -368,7 +525,11 @@ function getAttendanceSheet(year, month) {
     'break_minutes', 'break_minutes_is_manual', 'work_minutes',
     'late_minutes', 'early_leave_minutes',
     'is_holiday', 'remarks', 'source'
-  ]);
+  ], {
+    'date': 'yyyy-mm-dd',
+    'clock_in': 'HH:mm',
+    'clock_out': 'HH:mm',
+  });
 }
 
 // Get salary sheet for a specific month
@@ -488,20 +649,23 @@ function sheetToObjects(sheet) {
     const obj = {};
     headers.forEach((header, index) => {
       if (header !== '' && header != null) {
-        obj[header] = row[index];
+        // 日本語ラベルが書かれている場合は英語キーに正規化（既存コードが英語キーでアクセスするため）
+        const en = (typeof header === 'string') ? REVERSE_HEADER_LABELS[header] : null;
+        const key = en || header;
+        obj[key] = row[index];
       }
     });
     return obj;
   });
 }
 
-// Find row index by column value
+// Find row index by column value (英語キー / 日本語ラベル どちらでも検索可能)
 function findRowIndex(sheet, column, value) {
   if (!sheet) return -1;
   const data = sheet.getDataRange().getValues();
   if (!data || data.length === 0) return -1;
   const headers = data[0] || [];
-  const colIndex = headers.indexOf(column);
+  const colIndex = findHeaderIndex_(headers, column);
 
   if (colIndex === -1) return -1;
 
@@ -973,7 +1137,9 @@ function handleClock(body) {
     }
   }
 
-  const timeStr = now.toISOString();
+  // Date オブジェクトとして書き込み、シート側で HH:mm 形式に表示させる。
+  // toISOString() の UTC-Z 文字列はスプレッドシート上で読みづらいため。
+  const timeValue = now;
 
   // Column index reference (1-based) for new schema (no GPS):
   // 1=date, 2=staff_id, 3=name, 4=clock_in, 5=clock_out, 6=clock_out_type,
@@ -993,7 +1159,7 @@ function handleClock(body) {
     ];
 
     if (type === 'clock_in') {
-      newRow[3] = timeStr;
+      newRow[3] = timeValue;
     } else {
       // 出勤打刻が無いまま退勤等を打とうとした場合のガード
       return { success: false, error: '出勤打刻が記録されていません' };
@@ -1008,7 +1174,7 @@ function handleClock(body) {
       if (existingClockIn) {
         return { success: false, error: '本日は既に出勤打刻されています' };
       }
-      sheet.getRange(rowIndex, 4).setValue(timeStr);
+      sheet.getRange(rowIndex, 4).setValue(timeValue);
     } else if (type === 'clock_out') {
       const existingClockIn = sheet.getRange(rowIndex, 4).getValue();
       if (!existingClockIn) {
@@ -1018,7 +1184,7 @@ function handleClock(body) {
       if (existingClockOut) {
         return { success: false, error: '本日は既に退勤打刻されています' };
       }
-      sheet.getRange(rowIndex, 5).setValue(timeStr);
+      sheet.getRange(rowIndex, 5).setValue(timeValue);
       sheet.getRange(rowIndex, 6).setValue('normal');
 
       // Auto-calculate break (legal minimum) + work minutes
@@ -1918,7 +2084,7 @@ function handleUpdateAttendance(body) {
   };
 
   const columnName = fieldMap[field] || field;
-  const colIndex = headers.indexOf(columnName);
+  const colIndex = findHeaderIndex_(headers, columnName);
 
   if (colIndex === -1) {
     return { success: false, error: '不正なフィールド名です: ' + field };
@@ -1932,20 +2098,20 @@ function handleUpdateAttendance(body) {
 
   // Mark break as manually overridden if user changed break_minutes
   if (columnName === 'break_minutes') {
-    const manualCol = headers.indexOf('break_minutes_is_manual');
+    const manualCol = findHeaderIndex_(headers, 'break_minutes_is_manual');
     if (manualCol !== -1) sheet.getRange(rowIndex, manualCol + 1).setValue(true);
   }
 
   // Source becomes 'manual' on edit
-  const sourceCol = headers.indexOf('source');
+  const sourceCol = findHeaderIndex_(headers, 'source');
   if (sourceCol !== -1) sheet.getRange(rowIndex, sourceCol + 1).setValue('manual');
 
   // Recompute work_minutes if a time field changed
   if (columnName === 'clock_in' || columnName === 'clock_out' || columnName === 'break_minutes') {
-    const ciCol = headers.indexOf('clock_in');
-    const coCol = headers.indexOf('clock_out');
-    const brCol = headers.indexOf('break_minutes');
-    const wmCol = headers.indexOf('work_minutes');
+    const ciCol = findHeaderIndex_(headers, 'clock_in');
+    const coCol = findHeaderIndex_(headers, 'clock_out');
+    const brCol = findHeaderIndex_(headers, 'break_minutes');
+    const wmCol = findHeaderIndex_(headers, 'work_minutes');
     if (wmCol !== -1 && ciCol !== -1 && coCol !== -1 && brCol !== -1) {
       const ciVal = sheet.getRange(rowIndex, ciCol + 1).getValue();
       const coVal = sheet.getRange(rowIndex, coCol + 1).getValue();
@@ -2045,9 +2211,10 @@ function handleBulkSaveAttendance(body) {
       continue;
     }
 
-    // HH:MM → ISO 文字列に正規化（保存形式統一）
-    const clockInIso = clockIn && /^\d{1,2}:\d{2}$/.test(clockIn) ? (date + 'T' + clockIn.padStart(5, '0') + ':00') : '';
-    const clockOutIso = clockOut && /^\d{1,2}:\d{2}$/.test(clockOut) ? (date + 'T' + clockOut.padStart(5, '0') + ':00') : '';
+    // HH:MM → Date オブジェクトに変換し、シートに保存（HH:mm 形式で表示される）
+    const clockInVal = clockIn && /^\d{1,2}:\d{2}$/.test(clockIn) ? new Date(date + 'T' + clockIn.padStart(5, '0') + ':00') : '';
+    const clockOutVal = clockOut && /^\d{1,2}:\d{2}$/.test(clockOut) ? new Date(date + 'T' + clockOut.padStart(5, '0') + ':00') : '';
+    const hasClockOut = clockOutVal instanceof Date && !isNaN(clockOutVal.getTime());
 
     let rowIndex = dateToRowIndex[date];
     if (!rowIndex) {
@@ -2057,7 +2224,7 @@ function handleBulkSaveAttendance(body) {
       //          late_minutes, early_leave_minutes, is_holiday, remarks, source
       sheet.appendRow([
         date, staffId, staff.name,
-        clockInIso, clockOutIso, clockOutIso ? 'normal' : '',
+        clockInVal, clockOutVal, hasClockOut ? 'normal' : '',
         breakMinutes, breakMinutesIsManual,
         workMinutes, 0, 0,
         isHoliday, remarks,
@@ -2067,9 +2234,9 @@ function handleBulkSaveAttendance(body) {
       dateToRowIndex[date] = rowIndex;
     } else {
       // 既存行を更新（カラム名指定で安全に書き込み）
-      setCellByColumnName_(sheet, rowIndex, headers, 'clock_in', clockInIso);
-      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out', clockOutIso);
-      if (clockOutIso) setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', 'normal');
+      setCellByColumnName_(sheet, rowIndex, headers, 'clock_in', clockInVal);
+      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out', clockOutVal);
+      if (hasClockOut) setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', 'normal');
       setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes', breakMinutes);
       setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes_is_manual', breakMinutesIsManual);
       setCellByColumnName_(sheet, rowIndex, headers, 'work_minutes', workMinutes);
@@ -2520,8 +2687,8 @@ function findSubmissionRowIndex_(sheet, staffId, yearMonth) {
   const data = sheet.getDataRange().getValues();
   if (!data || data.length < 2) return -1;
   const headers = data[0] || [];
-  const sIdx = headers.indexOf('staff_id');
-  const ymIdx = headers.indexOf('year_month');
+  const sIdx = findHeaderIndex_(headers, 'staff_id');
+  const ymIdx = findHeaderIndex_(headers, 'year_month');
   if (sIdx === -1 || ymIdx === -1) return -1;
   const targetYm = formatYearMonthValue_(yearMonth);
   for (let i = 1; i < data.length; i++) {
@@ -2542,8 +2709,8 @@ function findAllSubmissionRows_(sheet, staffId, yearMonth) {
   const data = sheet.getDataRange().getValues();
   if (!data || data.length < 2) return result;
   const headers = data[0] || [];
-  const sIdx = headers.indexOf('staff_id');
-  const ymIdx = headers.indexOf('year_month');
+  const sIdx = findHeaderIndex_(headers, 'staff_id');
+  const ymIdx = findHeaderIndex_(headers, 'year_month');
   if (sIdx === -1 || ymIdx === -1) return result;
   const targetYm = formatYearMonthValue_(yearMonth);
   for (let i = 1; i < data.length; i++) {
@@ -2998,22 +3165,147 @@ function migrateSheetNames() {
     }
   }
 
-  return { success: true, renamed: renamed };
+  // 全シートのヘッダー行も日本語化（idempotent）
+  const headerMigrated = [];
+  const allAfterRename = ss.getSheets();
+  for (let i = 0; i < allAfterRename.length; i++) {
+    const s = allAfterRename[i];
+    if (migrateHeaderRow_(s)) {
+      headerMigrated.push(s.getName());
+    }
+  }
+
+  // 希望休申請シートに「日付別状況」列が無ければ追加し、既存行に対しても要約を埋める
+  const summaryUpdated = ensureShiftRequestSummaryColumn_();
+
+  return { success: true, renamed: renamed, headerMigrated: headerMigrated, summaryUpdated: summaryUpdated };
+}
+
+/**
+ * 希望休申請シートに「日付別状況」列が存在しなければ追加し、
+ * 既存の各行に対して days_json から要約を生成して書き込む。
+ * idempotent。戻り値: { added: bool, rowsFilled: number }
+ */
+function ensureShiftRequestSummaryColumn_() {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(SHEETS.SHIFT_REQUESTS);
+  if (!sheet) return { added: false, rowsFilled: 0 };
+  const lastCol = sheet.getLastColumn();
+  if (!lastCol) return { added: false, rowsFilled: 0 };
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const summaryIdx = findHeaderIndex_(headers, 'days_summary');
+  let summaryCol;
+  let added = false;
+  if (summaryIdx === -1) {
+    // days_json の隣に挿入する
+    const djIdx = findHeaderIndex_(headers, 'days_json');
+    if (djIdx === -1) return { added: false, rowsFilled: 0 };
+    try {
+      sheet.insertColumnAfter(djIdx + 1);
+    } catch (e) {
+      Logger.log('insertColumnAfter failed: ' + (e && e.message));
+      return { added: false, rowsFilled: 0 };
+    }
+    summaryCol = djIdx + 2; // 1-indexed の挿入後位置
+    sheet.getRange(1, summaryCol).setValue(HEADER_LABELS['days_summary'] || '日付別状況');
+    added = true;
+  } else {
+    summaryCol = summaryIdx + 1;
+  }
+
+  // 既存行の summary を再生成
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { added: added, rowsFilled: 0 };
+  const headersAfter = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const djIdx2 = findHeaderIndex_(headersAfter, 'days_json');
+  if (djIdx2 === -1) return { added: added, rowsFilled: 0 };
+  const djCol = djIdx2 + 1;
+  const jsonValues = sheet.getRange(2, djCol, lastRow - 1, 1).getValues();
+  const summaryValues = sheet.getRange(2, summaryCol, lastRow - 1, 1).getValues();
+  let rowsFilled = 0;
+  for (let i = 0; i < jsonValues.length; i++) {
+    const offDays = normalizeOffDays_(safeJsonParse_(jsonValues[i][0]));
+    const summary = formatOffDaysSummary_(offDays);
+    if (summaryValues[i][0] !== summary) {
+      summaryValues[i][0] = summary;
+      rowsFilled++;
+    }
+  }
+  if (rowsFilled > 0) {
+    sheet.getRange(2, summaryCol, summaryValues.length, 1).setValues(summaryValues);
+  }
+  return { added: added, rowsFilled: rowsFilled };
+}
+
+/**
+ * 1行目のヘッダー値を日本語ラベルに置き換える。idempotent。
+ * 既に日本語または未登録の値はそのまま残す。
+ */
+function migrateHeaderRow_(sheet) {
+  if (!sheet) return false;
+  const lastCol = sheet.getLastColumn();
+  if (!lastCol || lastCol < 1) return false;
+  let row;
+  try {
+    row = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  } catch (e) {
+    return false;
+  }
+  let changed = false;
+  const updated = row.map(function (v) {
+    if (typeof v !== 'string') return v;
+    const ja = HEADER_LABELS[v];
+    if (ja && ja !== v) {
+      changed = true;
+      return ja;
+    }
+    return v;
+  });
+  if (changed) {
+    try {
+      sheet.getRange(1, 1, 1, updated.length).setValues([updated]);
+    } catch (e) {
+      Logger.log('migrateHeaderRow_ setValues failed: ' + (e && e.message));
+      return false;
+    }
+  }
+  return changed;
 }
 
 function menuMigrateSheetNames() {
   const ui = SpreadsheetApp.getUi();
   const res = ui.alert(
     'シート名を日本語に移行',
-    '英語名で作成された既存シート（staff_master, attendance_YYYYMM 等）を日本語名にリネームします。\n\n実行しますか？',
+    '英語名で作成された既存シート（staff_master, attendance_YYYYMM 等）を日本語名にリネームし、\n各シートのカラムヘッダーも日本語ラベルに置き換えます。\n\n実行しますか？',
     ui.ButtonSet.YES_NO
   );
   if (res !== ui.Button.YES) return;
   const result = migrateSheetNames();
+  const lines = [];
   if (result.renamed && result.renamed.length > 0) {
-    ui.alert('移行完了', result.renamed.join('\n'), ui.ButtonSet.OK);
+    lines.push('【シート名の変更】');
+    lines.push.apply(lines, result.renamed);
+  }
+  if (result.headerMigrated && result.headerMigrated.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push('【ヘッダー行の日本語化】');
+    lines.push.apply(lines, result.headerMigrated);
+  }
+  if (result.summaryUpdated) {
+    const su = result.summaryUpdated;
+    const parts = [];
+    if (su.added) parts.push('「日付別状況」列を追加');
+    if (su.rowsFilled > 0) parts.push(su.rowsFilled + '件の要約を更新');
+    if (parts.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push('【希望休申請シート】');
+      lines.push(parts.join(' / '));
+    }
+  }
+  if (lines.length > 0) {
+    ui.alert('移行完了', lines.join('\n'), ui.ButtonSet.OK);
   } else {
-    ui.alert('移行不要', '対象の旧名シートはありませんでした。', ui.ButtonSet.OK);
+    ui.alert('移行不要', '対象の旧名/旧ヘッダーはありませんでした。', ui.ButtonSet.OK);
   }
 }
 
@@ -3084,6 +3376,28 @@ function normalizeOffDays_(parsed) {
 }
 
 /**
+ * offDays 配列を「日付別状況」列向けの人間可読な文字列に整形する。
+ * 例: "7/15(承認), 7/22(却下:他のスタッフと重複), 7/30(未承認)"
+ * 空配列・null は空文字を返す。
+ */
+function formatOffDaysSummary_(offDays) {
+  if (!Array.isArray(offDays) || offDays.length === 0) return '';
+  const STATUS_LABEL = { approved: '承認', rejected: '却下', pending: '未承認' };
+  const sorted = offDays.slice().sort(function (a, b) {
+    return (a.date || '') < (b.date || '') ? -1 : 1;
+  });
+  return sorted.map(function (d) {
+    const m = String(d.date).match(/^\d{4}-(\d{1,2})-(\d{1,2})/);
+    const label = m ? (Number(m[1]) + '/' + Number(m[2])) : String(d.date || '');
+    const st = STATUS_LABEL[d.status] || (d.status || '');
+    if (d.status === 'rejected' && d.rejectionReason) {
+      return label + '(' + st + ':' + d.rejectionReason + ')';
+    }
+    return label + '(' + st + ')';
+  }).join(', ');
+}
+
+/**
  * スタッフが希望休を提出。同一 (staff_id × target_year_month) はマージ更新。
  *  - approved / rejected の日は保持
  *  - pending かつ送信に含まれない日 → 取り下げ（削除）
@@ -3118,9 +3432,9 @@ function handleSubmitShiftRequest(body) {
   const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
   const data = sheet.getDataRange().getValues();
   const headers = (data && data[0]) ? data[0] : [];
-  const sIdx = headers.indexOf('staff_id');
-  const ymIdx = headers.indexOf('target_year_month');
-  const djIdx = headers.indexOf('days_json');
+  const sIdx = findHeaderIndex_(headers, 'staff_id');
+  const ymIdx = findHeaderIndex_(headers, 'target_year_month');
+  const djIdx = findHeaderIndex_(headers, 'days_json');
 
   let rowIndex = -1;
   let existingOffDays = [];
@@ -3182,11 +3496,29 @@ function handleSubmitShiftRequest(body) {
     : null;
   const now = new Date().toISOString();
   const daysJson = JSON.stringify(merged);
+  const daysSummary = formatOffDaysSummary_(merged);
 
   if (rowIndex === -1) {
-    sheet.appendRow([id, staffId, staff.name, targetYearMonth, daysJson, remarks, now]);
+    // appendRow は実シートのヘッダー順に従って値を並べる
+    const sheetHeaders = (data && data[0]) ? data[0] : headers;
+    const colCount = Math.max(sheetHeaders.length, 8);
+    const newRow = new Array(colCount).fill('');
+    const setByKey = function (key, v) {
+      const i = findHeaderIndex_(sheetHeaders, key);
+      if (i !== -1 && i < newRow.length) newRow[i] = v;
+    };
+    setByKey('id', id);
+    setByKey('staff_id', staffId);
+    setByKey('staff_name', staff.name);
+    setByKey('target_year_month', targetYearMonth);
+    setByKey('days_json', daysJson);
+    setByKey('days_summary', daysSummary);
+    setByKey('remarks', remarks);
+    setByKey('submitted_at', now);
+    sheet.appendRow(newRow);
   } else {
     setCellByColumnName_(sheet, rowIndex, headers, 'days_json', daysJson);
+    setCellByColumnName_(sheet, rowIndex, headers, 'days_summary', daysSummary);
     setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks);
     setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
   }
@@ -3263,7 +3595,7 @@ function handleReviewShiftRequestDay(body) {
   if (rowIndex === -1) return { success: false, error: '希望シフト申請が見つかりません' };
 
   const headers = getHeaderRow_(sheet);
-  const djIdx = headers.indexOf('days_json');
+  const djIdx = findHeaderIndex_(headers, 'days_json');
   if (djIdx === -1) return { success: false, error: 'days_json 列が見つかりません' };
 
   const cellValue = sheet.getRange(rowIndex, djIdx + 1).getValue();
@@ -3281,10 +3613,11 @@ function handleReviewShiftRequestDay(body) {
   }
 
   setCellByColumnName_(sheet, rowIndex, headers, 'days_json', JSON.stringify(offDays));
+  setCellByColumnName_(sheet, rowIndex, headers, 'days_summary', formatOffDaysSummary_(offDays));
 
   // スタッフへメール通知
   try {
-    const sIdx = headers.indexOf('staff_id');
+    const sIdx = findHeaderIndex_(headers, 'staff_id');
     const staffId = sIdx !== -1 ? sheet.getRange(rowIndex, sIdx + 1).getValue() : '';
     const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
     const staff = sheetToObjects(staffSheet).find(function (s) { return s.staff_id === staffId; });

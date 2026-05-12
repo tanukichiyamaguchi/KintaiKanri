@@ -53,10 +53,17 @@ export function AdminShiftRequestsPage() {
     return [...opens, ...past].sort();
   }, []);
 
-  const [filterMonth, setFilterMonth] = useState<string>(targetCandidates[0] || '');
+  // デフォルトは「全期間」。必要に応じて月絞り込みに切り替える。
+  const [rangeMode, setRangeMode] = useState<'all' | 'month'>('all');
+  const today0 = new Date();
+  const [filterMonth, setFilterMonth] = useState<string>(
+    targetCandidates.find(c => c >= `${today0.getFullYear()}-${String(today0.getMonth() + 1).padStart(2, '0')}`)
+      || targetCandidates[0]
+      || ''
+  );
   const [staffFilter, setStaffFilter] = useState<string>('');
   const [staffList, setStaffList] = useState<StaffInfo[]>([]);
-  const [requests, setRequests] = useState<ShiftRequest[]>([]);
+  const [allRequests, setAllRequests] = useState<ShiftRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -79,21 +86,27 @@ export function AdminShiftRequestsPage() {
     setIsLoading(true);
     setError(null);
     try {
+      // 月フィルタはクライアント側で適用するため、ここでは全月分を取得する。
       const res = await shiftRequestApi.list({
-        targetYearMonth: filterMonth || undefined,
         staffId: staffFilter || undefined,
       });
-      if (res.success && res.data) setRequests(res.data);
-      else { setError(res.error || '取得に失敗しました'); setRequests([]); }
+      if (res.success && res.data) setAllRequests(res.data);
+      else { setError(res.error || '取得に失敗しました'); setAllRequests([]); }
     } catch {
       setError('取得に失敗しました');
-      setRequests([]);
+      setAllRequests([]);
     } finally {
       setIsLoading(false);
     }
-  }, [filterMonth, staffFilter]);
+  }, [staffFilter]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // 表示対象: rangeMode='month' の場合のみ月で絞り込み
+  const requests = useMemo(() => {
+    if (rangeMode !== 'month' || !filterMonth) return allRequests;
+    return allRequests.filter(r => r.targetYearMonth === filterMonth);
+  }, [allRequests, rangeMode, filterMonth]);
 
   const sorted = useMemo(() => {
     return [...requests].sort((a, b) => {
@@ -248,8 +261,19 @@ export function AdminShiftRequestsPage() {
             <Filter className="w-4 h-4 text-primary-500" />
             <span className="text-sm font-semibold">絞り込み</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
+              <label className="label">期間</label>
+              <select
+                value={rangeMode}
+                onChange={e => setRangeMode(e.target.value as 'all' | 'month')}
+                className="input min-h-11"
+              >
+                <option value="all">全期間</option>
+                <option value="month">月で指定</option>
+              </select>
+            </div>
+            <div className={rangeMode === 'month' ? '' : 'opacity-40 pointer-events-none'}>
               <label className="label">対象月</label>
               <div className="flex items-center gap-1">
                 <button
@@ -257,17 +281,19 @@ export function AdminShiftRequestsPage() {
                   onClick={goPrevMonth}
                   className="h-11 w-11 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600 flex items-center justify-center flex-shrink-0"
                   aria-label="前月へ"
+                  disabled={rangeMode !== 'month'}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <div className="flex-1 text-center font-semibold text-secondary-800">
-                  {formatTargetMonthLabel(filterMonth)}
+                  {formatTargetMonthLabel(filterMonth) || '—'}
                 </div>
                 <button
                   type="button"
                   onClick={goNextMonth}
                   className="h-11 w-11 rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600 flex items-center justify-center flex-shrink-0"
                   aria-label="翌月へ"
+                  disabled={rangeMode !== 'month'}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
