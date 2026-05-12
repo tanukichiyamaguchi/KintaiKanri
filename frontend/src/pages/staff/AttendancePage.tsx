@@ -388,6 +388,15 @@ export function AttendancePage() {
     details: ShiftDiff['details'];
   }) => {
     if (!currentStaffId || !appModalDate) throw new Error('内部エラー: 状態が不正です');
+    // 申請対象日の編集内容が下書き保存されていないと、再読込時にロールバックされてしまう。
+    // 申請送信前に必ず一旦下書き保存しておく（失敗時は申請を中止）。
+    if (hasUnsavedChanges) {
+      const saveRes = await bulkAttendanceApi.save(currentStaffId, selectedYear, selectedMonth, rows);
+      if (!saveRes.success) {
+        throw new Error(saveRes.error || '下書き保存に失敗したため申請を中止しました');
+      }
+      setHasUnsavedChanges(false);
+    }
     const res = await applicationApi.create({
       staffId: currentStaffId,
       date: appModalDate,
@@ -396,7 +405,7 @@ export function AttendancePage() {
       details: params.details,
     });
     if (!res.success) throw new Error(res.error || '申請に失敗しました');
-    setMessage({ type: 'success', text: '申請を送信しました' });
+    setMessage({ type: 'success', text: '申請を送信しました（下書きも自動保存されました）' });
     await loadAll();
   };
 
@@ -559,45 +568,6 @@ export function AttendancePage() {
           </div>
         )}
 
-        {/* Summary cards */}
-        {!isLoading && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <CalendarDays className="w-4 h-4 text-primary-500" />
-                <span className="text-xs font-medium text-secondary-500">入力済み</span>
-              </div>
-              <div className="text-2xl font-bold text-secondary-800">{filledRowCount}<span className="text-sm text-secondary-400 ml-1">/ {expectedWorkDays}日</span></div>
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <ClockIcon className="w-4 h-4 text-blue-500" />
-                <span className="text-xs font-medium text-secondary-500">総労働時間</span>
-              </div>
-              <div className="text-2xl font-bold text-secondary-800">{formatMinutes(totalWorkMinutes)}</div>
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
-                <span className="text-xs font-medium text-secondary-500">残業時間</span>
-              </div>
-              <div className="text-2xl font-bold text-amber-600">{formatMinutes(totalOvertimeMinutes)}</div>
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <FileText className="w-4 h-4 text-primary-500" />
-                <span className="text-xs font-medium text-secondary-500">申請</span>
-              </div>
-              <div className="text-2xl font-bold text-secondary-800">
-                {applications.length}
-                <span className="text-xs text-secondary-400 ml-1">
-                  ({applications.filter(a => a.status === 'approved').length}承認/{applications.filter(a => a.status === 'pending').length}待)
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Guide */}
         <div className="bg-primary-50/50 border border-primary-200/50 rounded-2xl px-5 py-3.5 mb-5">
           <div className="flex items-start gap-3 text-sm">
@@ -641,9 +611,9 @@ export function AttendancePage() {
                     key={row.date}
                     className={`rounded-xl border overflow-hidden ${cardBg}`}
                   >
-                    {/* Header: date + shift */}
+                    {/* Header: date + shift + 定時ボタン */}
                     <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-secondary-100/70">
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                         <span className={`text-sm font-bold ${
                           isSunday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-secondary-800'
                         }`}>
@@ -669,42 +639,39 @@ export function AttendancePage() {
                         <button
                           type="button"
                           onClick={() => applyScheduledTime(index)}
-                          className="shrink-0 px-2.5 h-8 text-xs font-semibold border border-primary-300 text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors"
+                          className="shrink-0 inline-flex items-center gap-1 px-3 h-9 text-xs font-bold border border-primary-400 text-primary-700 bg-primary-100 rounded-lg hover:bg-primary-200 active:scale-95 transition-all shadow-sm"
                           title="出勤・退勤を定時で埋める"
                         >
-                          定時
+                          <ClockIcon className="w-3.5 h-3.5" />定時で入力
                         </button>
                       )}
                     </div>
 
-                    {/* Body: clock-in/out, break, work/overtime */}
+                    {/* Body: clock-in/out, break, work/overtime — 横一列 */}
                     <div className="px-3 py-2 space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="block">
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <label className="block min-w-0">
                           <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">出勤</span>
                           <input
                             type="time"
                             value={row.clockIn}
                             onChange={e => updateRow(index, 'clockIn', e.target.value)}
                             disabled={cellDisabled}
-                            className="w-full h-10 px-2 text-sm border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
+                            className="w-full h-10 px-1 text-sm text-center border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
                           />
                         </label>
-                        <label className="block">
+                        <label className="block min-w-0">
                           <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">退勤</span>
                           <input
                             type="time"
                             value={row.clockOut}
                             onChange={e => updateRow(index, 'clockOut', e.target.value)}
                             disabled={cellDisabled}
-                            className="w-full h-10 px-2 text-sm border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
+                            className="w-full h-10 px-1 text-sm text-center border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
                           />
                         </label>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="block">
-                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">休憩(分)</span>
+                        <label className="block min-w-0">
+                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">休憩</span>
                           <input
                             type="number"
                             min={0}
@@ -719,25 +686,23 @@ export function AttendancePage() {
                             }
                             onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
                             disabled={cellDisabled || (!row.clockIn || !row.clockOut)}
-                            className={`w-full h-10 px-2 text-sm text-center border rounded-md focus:outline-none ${
+                            className={`w-full h-10 px-1 text-sm text-center border rounded-md focus:outline-none ${
                               row.breakMinutesIsManual ? 'border-amber-300 bg-amber-50' : 'border-secondary-200 bg-white'
                             } focus:border-primary-400 focus:ring-2 focus:ring-primary-200 disabled:bg-secondary-50 disabled:text-secondary-300`}
                             placeholder="-"
                             title={row.breakMinutesIsManual ? '手動修正済み' : '法定休憩を自動付与'}
                           />
                         </label>
-                        <div className="block">
-                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">実働 / 残業</span>
-                          <div className="h-10 flex items-center justify-between px-2 rounded-md bg-secondary-50 border border-secondary-100">
+                        <div className="block min-w-0">
+                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">実働{hasOvertime ? '/残業' : ''}</span>
+                          <div className="h-10 flex flex-col items-center justify-center px-1 rounded-md bg-secondary-50 border border-secondary-100 leading-tight">
                             <span className={`text-sm font-mono ${row.workMinutes > 0 ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
                               {formatMinutes(row.workMinutes)}
                             </span>
-                            {hasOvertime ? (
-                              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full border border-amber-200">
-                                <AlertTriangle className="w-3 h-3" />{formatMinutes(row.overtimeMinutes)}
+                            {hasOvertime && (
+                              <span className="text-[9px] font-semibold text-amber-600">
+                                残{formatMinutes(row.overtimeMinutes)}
                               </span>
-                            ) : (
-                              <span className="text-[10px] text-secondary-300">残業 -</span>
                             )}
                           </div>
                         </div>
@@ -967,6 +932,78 @@ export function AttendancePage() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* ページ末尾のアクション + サマリ（スクロール末尾でも操作できるように） */}
+            <div className="mt-6 sm:mt-8 space-y-4">
+              {/* アクションボタン */}
+              {!isLocked && (
+                <div className="card !p-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  {hasUnsavedChanges && (
+                    <span className="self-start text-sm text-amber-600 inline-flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
+                      <AlertTriangle className="w-3.5 h-3.5" />未保存の変更あり
+                    </span>
+                  )}
+                  <div className="grid grid-cols-2 sm:flex sm:items-center sm:ml-auto gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={handleSave}
+                      disabled={isSaving || !currentStaffId}
+                      className="btn btn-secondary inline-flex items-center justify-center gap-2 min-h-11 whitespace-nowrap"
+                    >
+                      {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      <span>下書き保存</span>
+                    </button>
+                    {!isAdmin && (
+                      <button
+                        onClick={() => setShowSubmitModal(true)}
+                        disabled={!submissionGate.canSubmit || isSubmitting}
+                        className="btn btn-primary inline-flex items-center justify-center gap-2 min-h-11 whitespace-nowrap"
+                        title={submissionGate.canSubmit ? '月次提出' : submissionGate.blockingReasons[0]}
+                      >
+                        <Send className="w-4 h-4" />
+                        <span>申請する</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* サマリ */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="card p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CalendarDays className="w-4 h-4 text-primary-500" />
+                    <span className="text-xs font-medium text-secondary-500">入力済み</span>
+                  </div>
+                  <div className="text-2xl font-bold text-secondary-800">{filledRowCount}<span className="text-sm text-secondary-400 ml-1">/ {expectedWorkDays}日</span></div>
+                </div>
+                <div className="card p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ClockIcon className="w-4 h-4 text-blue-500" />
+                    <span className="text-xs font-medium text-secondary-500">総労働時間</span>
+                  </div>
+                  <div className="text-2xl font-bold text-secondary-800">{formatMinutes(totalWorkMinutes)}</div>
+                </div>
+                <div className="card p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs font-medium text-secondary-500">残業時間</span>
+                  </div>
+                  <div className="text-2xl font-bold text-amber-600">{formatMinutes(totalOvertimeMinutes)}</div>
+                </div>
+                <div className="card p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="w-4 h-4 text-primary-500" />
+                    <span className="text-xs font-medium text-secondary-500">申請</span>
+                  </div>
+                  <div className="text-2xl font-bold text-secondary-800">
+                    {applications.length}
+                    <span className="text-xs text-secondary-400 ml-1">
+                      ({applications.filter(a => a.status === 'approved').length}承認/{applications.filter(a => a.status === 'pending').length}待)
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </>
