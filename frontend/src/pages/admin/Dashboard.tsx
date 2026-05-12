@@ -205,7 +205,7 @@ export function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="KATEstageLASH 管理画面" />
+      <Header title="管理画面" />
 
       <main className="max-w-5xl mx-auto p-4 sm:p-6">
         {/* Error */}
