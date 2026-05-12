@@ -33,13 +33,17 @@ export function ApplicationModal({
     preselectedType || availableKinds[0] || null
   );
   const [reason, setReason] = useState('');
+  const [reasonType, setReasonType] = useState<'company' | 'personal'>('personal');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const needsReasonType = selectedType === 'late_arrival' || selectedType === 'early_leave';
 
   useEffect(() => {
     if (isOpen) {
       setSelectedType(preselectedType || availableKinds[0] || null);
       setReason('');
+      setReasonType('personal');
       setError(null);
     }
   }, [isOpen, preselectedType, availableKinds]);
@@ -56,10 +60,14 @@ export function ApplicationModal({
     setIsSubmitting(true);
     setError(null);
     try {
+      const baseDetails = diff?.details || {};
+      const details = needsReasonType
+        ? { ...baseDetails, reasonType }
+        : baseDetails;
       await onSubmit({
         type: selectedType,
         reason: reason.trim(),
-        details: diff?.details || {},
+        details,
       });
       onClose();
     } catch (e) {
@@ -141,6 +149,42 @@ export function ApplicationModal({
             </select>
           )}
         </div>
+
+        {/* 会社都合 / 個人都合 (遅刻・早退の場合のみ) */}
+        {needsReasonType && (
+          <div>
+            <label className="label">理由区分 <span className="text-red-500">*</span></label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setReasonType('company')}
+                className={`px-3 min-h-11 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                  reasonType === 'company'
+                    ? 'border-blue-400 bg-blue-50 text-blue-700'
+                    : 'border-secondary-200 bg-white text-secondary-600 hover:border-blue-200'
+                }`}
+              >
+                会社都合
+              </button>
+              <button
+                type="button"
+                onClick={() => setReasonType('personal')}
+                className={`px-3 min-h-11 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                  reasonType === 'personal'
+                    ? 'border-amber-400 bg-amber-50 text-amber-700'
+                    : 'border-secondary-200 bg-white text-secondary-600 hover:border-amber-200'
+                }`}
+              >
+                個人都合
+              </button>
+            </div>
+            <p className="text-xs text-secondary-500 mt-1">
+              {reasonType === 'company'
+                ? '会社都合のため給与控除は行われません。'
+                : '個人都合のため通常通り給与控除されます。'}
+            </p>
+          </div>
+        )}
 
         {/* 理由 */}
         <div>

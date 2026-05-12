@@ -590,10 +590,30 @@ function applyMonthlyColumnFormats_(sheet, headersOrNull, columnFormats) {
   });
 }
 
+// 指定キーの列に「チェックボックス」データ検証を適用する。FALSE/TRUE が
+// シート上で ☐/☑ として可読に表示される。
+function applyCheckboxValidation_(sheet, columnKeys) {
+  if (!sheet || !columnKeys || columnKeys.length === 0) return;
+  const lastCol = sheet.getLastColumn();
+  if (!lastCol) return;
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const maxRows = Math.max(sheet.getMaxRows(), 1);
+  const rule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+  columnKeys.forEach(function (key) {
+    const idx = findHeaderIndex_(headers, key);
+    if (idx === -1) return;
+    try {
+      sheet.getRange(2, idx + 1, Math.max(maxRows - 1, 1), 1).setDataValidation(rule);
+    } catch (e) {
+      Logger.log('setDataValidation(checkbox) failed for ' + key + ': ' + (e && e.message));
+    }
+  });
+}
+
 // Get attendance sheet for a specific month
 function getAttendanceSheet(year, month) {
   const mm = String(month).padStart(2, '0');
-  return getOrCreateMonthlySheet_(year, month, attendanceSheetName_(year, month), 'attendance_' + year + mm, [
+  const sheet = getOrCreateMonthlySheet_(year, month, attendanceSheetName_(year, month), 'attendance_' + year + mm, [
     'date', 'staff_id', 'name', 'clock_in', 'clock_out', 'clock_out_type',
     'break_minutes', 'break_minutes_is_manual', 'work_minutes',
     'late_minutes', 'early_leave_minutes',
@@ -603,6 +623,9 @@ function getAttendanceSheet(year, month) {
     'clock_in': 'HH:mm',
     'clock_out': 'HH:mm',
   });
+  // Boolean 列はチェックボックス表示にする（社労士提出時の可読性のため）
+  applyCheckboxValidation_(sheet, ['is_holiday', 'break_minutes_is_manual']);
+  return sheet;
 }
 
 // Get salary sheet for a specific month
@@ -1897,6 +1920,12 @@ function handleCalculateSalary(body) {
   const attendanceSheet = getAttendanceSheet(yNum, mNum);
   const attendanceData = sheetToObjects(attendanceSheet);
 
+  // 当該月の承認済み申請を取得し、遅刻・早退の「会社都合」分を控除対象から外す
+  const applicationsSheet = getOrCreateSheet(SHEETS.APPLICATIONS);
+  const monthApplications = sheetToObjects(applicationsSheet).filter(function (a) {
+    return a.status === 'approved' && formatDateOnly_(a.date).startsWith(year + '-' + String(mNum).padStart(2, '0'));
+  });
+
   const taxSheet = getTaxSheet(yNum, mNum);
   const taxData = sheetToObjects(taxSheet);
 
@@ -1931,9 +1960,29 @@ function handleCalculateSalary(body) {
     const monthlyWorkingHours = (WEEKLY_HOURS * 52) / 12;
     const overtimeHours = Math.max(0, totalWorkHours - monthlyWorkingHours);
 
+    // 会社都合の遅刻・早退申請（承認済み）がある日を控除対象から除外する
+    const companyLateDates = {};
+    const companyEarlyDates = {};
+    monthApplications.forEach(function (a) {
+      if (a.staff_id !== staff.staff_id) return;
+      const details = safeJsonParse_(a.details_json) || {};
+      if (details.reasonType !== 'company') return;
+      const dateKey = formatDateOnly_(a.date);
+      if (a.type === 'late_arrival') companyLateDates[dateKey] = true;
+      else if (a.type === 'early_leave') companyEarlyDates[dateKey] = true;
+    });
+
     // Late and early leave
-    const lateMinutes = staffAttendance.reduce((sum, a) => sum + safeNumber_(a.late_minutes, 0), 0);
-    const earlyLeaveMinutes = staffAttendance.reduce((sum, a) => sum + safeNumber_(a.early_leave_minutes, 0), 0);
+    const lateMinutes = staffAttendance.reduce(function (sum, a) {
+      const dateKey = formatDateOnly_(a.date);
+      if (companyLateDates[dateKey]) return sum; // 会社都合は控除しない
+      return sum + safeNumber_(a.late_minutes, 0);
+    }, 0);
+    const earlyLeaveMinutes = staffAttendance.reduce(function (sum, a) {
+      const dateKey = formatDateOnly_(a.date);
+      if (companyEarlyDates[dateKey]) return sum; // 会社都合は控除しない
+      return sum + safeNumber_(a.early_leave_minutes, 0);
+    }, 0);
 
     // Calculate pay (monthlyWorkingHours は固定値なので 0 除算なし、ただし monthlySalary=0 で hourlyRate=0)
     const hourlyRate = monthlyWorkingHours > 0 ? monthlySalary / monthlyWorkingHours : 0;
@@ -3272,6 +3321,8 @@ function migrateSheetNames() {
   const summaryUpdated = ensureShiftRequestSummaryColumn_();
   const appSummaryUpdated = ensureApplicationSummaryColumn_();
   const enumLocalized = localizeExistingEnumValues_();
+  // 勤怠シートの boolean 列をチェックボックス表示に変換
+  const checkboxApplied = applyAttendanceCheckboxes_();
 
   return {
     success: true,
@@ -3279,6 +3330,7 @@ function migrateSheetNames() {
     headerMigrated: headerMigrated,
     summaryUpdated: summaryUpdated,
     appSummaryUpdated: appSummaryUpdated,
+    checkboxApplied: checkboxApplied,
     enumLocalized: enumLocalized,
   };
 }
@@ -3336,6 +3388,24 @@ function ensureApplicationSummaryColumn_() {
     sheet.getRange(2, summaryCol, summaryValues.length, 1).setValues(summaryValues);
   }
   return { added: added, rowsFilled: rowsFilled };
+}
+
+/**
+ * 既存の勤怠_YYYYMM シートの boolean 列をチェックボックス表示に変換する。
+ * 戻り値: 適用したシート名の配列
+ */
+function applyAttendanceCheckboxes_() {
+  const ss = getSpreadsheet();
+  const sheets = ss.getSheets();
+  const applied = [];
+  for (let i = 0; i < sheets.length; i++) {
+    const sheet = sheets[i];
+    const name = sheet.getName();
+    if (!/^勤怠_\d{6}$/.test(name) && !/^attendance_\d{6}$/.test(name)) continue;
+    applyCheckboxValidation_(sheet, ['is_holiday', 'break_minutes_is_manual']);
+    applied.push(name);
+  }
+  return applied;
 }
 
 /**
@@ -3519,6 +3589,11 @@ function menuMigrateSheetNames() {
       });
     }
   }
+  if (result.checkboxApplied && result.checkboxApplied.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push('【勤怠シートの Boolean 列をチェックボックス表示に】');
+    result.checkboxApplied.forEach(function (n) { lines.push('  ' + n); });
+  }
   if (lines.length > 0) {
     ui.alert('移行完了', lines.join('\n'), ui.ButtonSet.OK);
   } else {
@@ -3600,6 +3675,10 @@ function normalizeOffDays_(parsed) {
 function formatApplicationDetailsSummary_(type, details) {
   if (!details || typeof details !== 'object') return '';
   const parts = [];
+  // 遅刻・早退の理由区分（会社都合/個人都合）は先頭に表示
+  if ((type === 'late_arrival' || type === 'early_leave') && details.reasonType) {
+    parts.push(details.reasonType === 'company' ? '会社都合' : '個人都合');
+  }
   const ps = details.plannedStart || '';
   const pe = details.plannedEnd || '';
   const as = details.actualStart || '';
