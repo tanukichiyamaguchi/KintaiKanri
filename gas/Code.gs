@@ -81,6 +81,7 @@ const HEADER_LABELS = {
   'type': '種別',
   'reason': '理由',
   'details_json': '詳細(JSON)',
+  'details_summary': '内容',
   'submitted_at': '提出日時',
   'reviewed_at': '審査日時',
   'reviewed_by': '審査者',
@@ -139,6 +140,75 @@ const REVERSE_HEADER_LABELS = (function () {
   }
   return out;
 })();
+
+// 列に格納される選択値 (enum) の英語キー ↔ 日本語ラベル。
+// シート上は日本語で表示し、コード上は従来通り英語キーで比較する。
+// sheetToObjects が読込時に日本語→英語へ正規化し、setCellByColumnName_/
+// localizeEnumValue_ が書込時に英語→日本語へ変換する。
+const ENUM_LABEL_MAP = {
+  // 申請種別 (application.type / shift diff kind)
+  'late_arrival': '遅刻',
+  'early_leave': '早退',
+  'overtime': '残業',
+  'absence': '欠勤',
+  'extra_work': 'シフト外勤務',
+  'shift_change': '時刻変更',
+  'break_deviation': '休憩相違',
+  // 申請 / 有給 / 希望休のステータス
+  'pending': '審査待ち',
+  // 月次提出のステータス（『審査待ち』とは別概念のため区別）
+  'submitted': '承認待ち',
+  'draft': '下書き',
+  // 共通の承認結果
+  'approved': '承認',
+  'rejected': '却下',
+  'cancelled': '取消',
+  // 勤怠の入力経路
+  'punch': '打刻',
+  'manual': '手動入力',
+  // 退勤区分
+  'normal': '通常',
+  'forgot': '打刻忘れ',
+  // 編集者種別
+  'staff': 'スタッフ',
+  'admin': '管理者',
+  // スタッフ在籍状況
+  'active': '在籍',
+  'inactive': '退職',
+};
+
+const REVERSE_ENUM_LABEL_MAP = (function () {
+  const out = {};
+  for (const k in ENUM_LABEL_MAP) {
+    if (Object.prototype.hasOwnProperty.call(ENUM_LABEL_MAP, k)) {
+      out[ENUM_LABEL_MAP[k]] = k;
+    }
+  }
+  return out;
+})();
+
+// enum 値として localize/normalize 対象とする列キーの集合（英語キーで指定）
+const ENUM_COLUMNS = {
+  'type': true,
+  'status': true,
+  'source': true,
+  'clock_out_type': true,
+  'editor_role': true,
+};
+
+// 英語キー → 日本語ラベル。未登録キーはそのまま返す（user 入力テキスト等を破壊しないため）。
+function localizeEnumValue_(value) {
+  if (typeof value !== 'string') return value;
+  return ENUM_LABEL_MAP[value] || value;
+}
+
+// セル値（日本語ラベル想定）から英語キーに正規化する。
+// columnName が enum カラムでない、または値が未登録の場合は as-is で返す。
+function normalizeEnumValueFromCell_(columnName, value) {
+  if (!ENUM_COLUMNS[columnName]) return value;
+  if (typeof value !== 'string') return value;
+  return REVERSE_ENUM_LABEL_MAP[value] || value;
+}
 
 // 英語 headers 配列 → 日本語 labels 配列。
 // 既知の英語キーのみ翻訳、未登録のものはそのまま通す。
@@ -292,7 +362,7 @@ function addTestStaff() {
     hash,
     salt,
     'テストスタッフ',
-    250000, 15000, today, 10, 'active', '1990-01-01'
+    250000, 15000, today, 10, localizeEnumValue_('active'), '1990-01-01'
   ]);
 
   Logger.log('Test staff added! email: test@example.com / password: test1234');
@@ -379,7 +449,9 @@ function setCellByColumnName_(sheet, rowIndex, headers, columnName, value) {
     return false;
   }
   try {
-    sheet.getRange(rowIndex, col).setValue(value);
+    // enum 列なら日本語ラベルに変換してから書き込む
+    const finalValue = ENUM_COLUMNS[columnName] ? localizeEnumValue_(value) : value;
+    sheet.getRange(rowIndex, col).setValue(finalValue);
     return true;
   } catch (e) {
     Logger.log('setCellByColumnName_ failed col=' + columnName + ': ' + (e && e.message));
@@ -442,7 +514,8 @@ function initializeSheet(sheet, sheetName) {
     ],
     [SHEETS.APPLICATIONS]: [
       'id', 'staff_id', 'staff_name', 'date', 'type', 'reason', 'details_json',
-      'status', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason'
+      'details_summary', 'status', 'submitted_at', 'reviewed_at', 'reviewed_by',
+      'rejection_reason'
     ],
     [SHEETS.SUBMISSIONS]: [
       'staff_id', 'staff_name', 'year_month', 'status', 'submitted_at',
@@ -652,7 +725,8 @@ function sheetToObjects(sheet) {
         // 日本語ラベルが書かれている場合は英語キーに正規化（既存コードが英語キーでアクセスするため）
         const en = (typeof header === 'string') ? REVERSE_HEADER_LABELS[header] : null;
         const key = en || header;
-        obj[key] = row[index];
+        // enum セルの日本語表示も英語キーへ正規化（status/type/source/clock_out_type/editor_role）
+        obj[key] = normalizeEnumValueFromCell_(key, row[index]);
       }
     });
     return obj;
@@ -669,8 +743,10 @@ function findRowIndex(sheet, column, value) {
 
   if (colIndex === -1) return -1;
 
+  // 列が enum の場合、セルが日本語の可能性があるので英語キーへ正規化して比較
   for (let i = 1; i < data.length; i++) {
-    if (data[i][colIndex] === value) {
+    const cellNormalized = normalizeEnumValueFromCell_(column, data[i][colIndex]);
+    if (cellNormalized === value || data[i][colIndex] === value) {
       return i + 1; // 1-indexed
     }
   }
@@ -1065,7 +1141,7 @@ function handleRegister(body) {
   //          monthly_salary, transportation, hire_date, paid_leave_balance, status, birth_date
   staffSheet.appendRow([
     staffId, email, hash, salt, name,
-    0, 0, today, 0, 'active', ''
+    0, 0, today, 0, localizeEnumValue_('active'), ''
   ]);
 
   return {
@@ -1155,7 +1231,7 @@ function handleClock(body) {
       0, false,              // break_minutes, break_minutes_is_manual
       0, 0, 0,               // work_minutes, late_minutes, early_leave_minutes
       false, '',             // is_holiday, remarks
-      'punch'                // source
+      localizeEnumValue_('punch')  // source
     ];
 
     if (type === 'clock_in') {
@@ -1185,7 +1261,7 @@ function handleClock(body) {
         return { success: false, error: '本日は既に退勤打刻されています' };
       }
       sheet.getRange(rowIndex, 5).setValue(timeValue);
-      sheet.getRange(rowIndex, 6).setValue('normal');
+      sheet.getRange(rowIndex, 6).setValue(localizeEnumValue_('normal'));
 
       // Auto-calculate break (legal minimum) + work minutes
       // existingClockIn は Date / 文字列のどちらでもありうる（Sheets が自動変換するため）
@@ -1427,7 +1503,7 @@ function handleCreateStaff(body) {
   sheet.appendRow([
     staffId, normalizedEmail, hash, salt, name,
     monthlySalary || 0, transportation || 0,
-    hireDate || '', paidLeaveBalance || 0, 'active', birthDate || ''
+    hireDate || '', paidLeaveBalance || 0, localizeEnumValue_('active'), birthDate || ''
   ]);
 
   return { success: true, staffId };
@@ -1558,7 +1634,7 @@ function handlePaidLeaveRequest(body) {
   const now = new Date().toISOString();
 
   sheet.appendRow([
-    requestId, staffId, staff.name, now, leaveDate, 'pending', '', ''
+    requestId, staffId, staff.name, now, leaveDate, localizeEnumValue_('pending'), '', ''
   ]);
 
   return { success: true, requestId };
@@ -2067,7 +2143,7 @@ function handleUpdateAttendance(body) {
       0, false,
       0, 0, 0,
       false, '',
-      'manual'
+      localizeEnumValue_('manual')
     ]);
     rowIndex = sheet.getLastRow();
   }
@@ -2104,7 +2180,7 @@ function handleUpdateAttendance(body) {
 
   // Source becomes 'manual' on edit
   const sourceCol = findHeaderIndex_(headers, 'source');
-  if (sourceCol !== -1) sheet.getRange(rowIndex, sourceCol + 1).setValue('manual');
+  if (sourceCol !== -1) sheet.getRange(rowIndex, sourceCol + 1).setValue(localizeEnumValue_('manual'));
 
   // Recompute work_minutes if a time field changed
   if (columnName === 'clock_in' || columnName === 'clock_out' || columnName === 'break_minutes') {
@@ -2224,11 +2300,11 @@ function handleBulkSaveAttendance(body) {
       //          late_minutes, early_leave_minutes, is_holiday, remarks, source
       sheet.appendRow([
         date, staffId, staff.name,
-        clockInVal, clockOutVal, hasClockOut ? 'normal' : '',
+        clockInVal, clockOutVal, hasClockOut ? localizeEnumValue_('normal') : '',
         breakMinutes, breakMinutesIsManual,
         workMinutes, 0, 0,
         isHoliday, remarks,
-        'manual'
+        localizeEnumValue_('manual')
       ]);
       rowIndex = sheet.getLastRow();
       dateToRowIndex[date] = rowIndex;
@@ -2258,7 +2334,7 @@ function appendAttendanceHistory_(date, staffId, field, oldValue, newValue, edit
     newValue == null ? '' : String(newValue),
     new Date().toISOString(),
     editorId || '',
-    editorRole || 'staff',
+    localizeEnumValue_(editorRole || 'staff'),
     reason || ''
   ]);
 }
@@ -2497,11 +2573,27 @@ function handleCreateApplication(body) {
   const sheet = getOrCreateSheet(SHEETS.APPLICATIONS);
   const id = 'AP' + Date.now() + Math.random().toString(36).slice(2, 6);
   const now = new Date().toISOString();
-  sheet.appendRow([
-    id, staffId, staff.name, date, type, reason,
-    JSON.stringify(details || {}),
-    'pending', now, '', '', ''
-  ]);
+  // ヘッダー順に厳密に並べる（details_summary 列追加に対応した防御的書き込み）
+  const data = sheet.getDataRange().getValues();
+  const sheetHeaders = (data && data[0]) ? data[0] : [];
+  const detailsObj = details || {};
+  const colCount = Math.max(sheetHeaders.length, 13);
+  const newRow = new Array(colCount).fill('');
+  const setByKey = function (key, v) {
+    const i = findHeaderIndex_(sheetHeaders, key);
+    if (i !== -1 && i < newRow.length) newRow[i] = v;
+  };
+  setByKey('id', id);
+  setByKey('staff_id', staffId);
+  setByKey('staff_name', staff.name);
+  setByKey('date', date);
+  setByKey('type', localizeEnumValue_(type));
+  setByKey('reason', reason);
+  setByKey('details_json', JSON.stringify(detailsObj));
+  setByKey('details_summary', formatApplicationDetailsSummary_(type, detailsObj));
+  setByKey('status', localizeEnumValue_('pending'));
+  setByKey('submitted_at', now);
+  sheet.appendRow(newRow);
 
   // notify all admins
   notifyAdminsApplicationSubmitted_(staff, date, type, reason);
@@ -2667,7 +2759,7 @@ function handleSubmitMonthly(body) {
   const now = new Date().toISOString();
 
   if (rowIndex === -1) {
-    sheet.appendRow([staffId, staff.name, yearMonth, 'submitted', now, '', '', remarks || '', '']);
+    sheet.appendRow([staffId, staff.name, yearMonth, localizeEnumValue_('submitted'), now, '', '', remarks || '', '']);
   } else {
     const headers = getHeaderRow_(sheet);
     setCellByColumnName_(sheet, rowIndex, headers, 'status', 'submitted');
@@ -3177,8 +3269,111 @@ function migrateSheetNames() {
 
   // 希望休申請シートに「日付別状況」列が無ければ追加し、既存行に対しても要約を埋める
   const summaryUpdated = ensureShiftRequestSummaryColumn_();
+  const appSummaryUpdated = ensureApplicationSummaryColumn_();
+  const enumLocalized = localizeExistingEnumValues_();
 
-  return { success: true, renamed: renamed, headerMigrated: headerMigrated, summaryUpdated: summaryUpdated };
+  return {
+    success: true,
+    renamed: renamed,
+    headerMigrated: headerMigrated,
+    summaryUpdated: summaryUpdated,
+    appSummaryUpdated: appSummaryUpdated,
+    enumLocalized: enumLocalized,
+  };
+}
+
+/**
+ * 勤怠申請シートに「内容」列が無ければ追加し、details_json から要約を埋める。
+ * idempotent。
+ */
+function ensureApplicationSummaryColumn_() {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(SHEETS.APPLICATIONS);
+  if (!sheet) return { added: false, rowsFilled: 0 };
+  const lastCol = sheet.getLastColumn();
+  if (!lastCol) return { added: false, rowsFilled: 0 };
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const summaryIdx = findHeaderIndex_(headers, 'details_summary');
+  let summaryCol;
+  let added = false;
+  if (summaryIdx === -1) {
+    const djIdx = findHeaderIndex_(headers, 'details_json');
+    if (djIdx === -1) return { added: false, rowsFilled: 0 };
+    try {
+      sheet.insertColumnAfter(djIdx + 1);
+    } catch (e) {
+      Logger.log('insertColumnAfter failed: ' + (e && e.message));
+      return { added: false, rowsFilled: 0 };
+    }
+    summaryCol = djIdx + 2;
+    sheet.getRange(1, summaryCol).setValue(HEADER_LABELS['details_summary'] || '内容');
+    added = true;
+  } else {
+    summaryCol = summaryIdx + 1;
+  }
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { added: added, rowsFilled: 0 };
+  const headersAfter = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const djCol = findHeaderIndex_(headersAfter, 'details_json') + 1;
+  const typeCol = findHeaderIndex_(headersAfter, 'type') + 1;
+  if (djCol < 1) return { added: added, rowsFilled: 0 };
+  const jsonValues = sheet.getRange(2, djCol, lastRow - 1, 1).getValues();
+  const typeValues = typeCol >= 1 ? sheet.getRange(2, typeCol, lastRow - 1, 1).getValues() : null;
+  const summaryValues = sheet.getRange(2, summaryCol, lastRow - 1, 1).getValues();
+  let rowsFilled = 0;
+  for (let i = 0; i < jsonValues.length; i++) {
+    const details = safeJsonParse_(jsonValues[i][0]) || {};
+    const typeRaw = typeValues ? typeValues[i][0] : '';
+    const typeEn = REVERSE_ENUM_LABEL_MAP[typeRaw] || typeRaw;
+    const summary = formatApplicationDetailsSummary_(typeEn, details);
+    if (summaryValues[i][0] !== summary) {
+      summaryValues[i][0] = summary;
+      rowsFilled++;
+    }
+  }
+  if (rowsFilled > 0) {
+    sheet.getRange(2, summaryCol, summaryValues.length, 1).setValues(summaryValues);
+  }
+  return { added: added, rowsFilled: rowsFilled };
+}
+
+/**
+ * 既存シートの enum 列に英語が残っていれば日本語ラベルに置き換える。idempotent。
+ * 戻り値: { sheetName: rowCount, ... } 更新が発生したシートのみ含む。
+ */
+function localizeExistingEnumValues_() {
+  const ss = getSpreadsheet();
+  const sheets = ss.getSheets();
+  const updated = {};
+  for (let s = 0; s < sheets.length; s++) {
+    const sheet = sheets[s];
+    const lastCol = sheet.getLastColumn();
+    const lastRow = sheet.getLastRow();
+    if (lastCol < 1 || lastRow < 2) continue;
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    // 各 enum 列について置換
+    Object.keys(ENUM_COLUMNS).forEach(function (key) {
+      const idx = findHeaderIndex_(headers, key);
+      if (idx === -1) return;
+      const col = idx + 1;
+      const values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+      let changed = 0;
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i][0];
+        if (typeof v !== 'string' || !v) continue;
+        if (ENUM_LABEL_MAP[v]) {
+          values[i][0] = ENUM_LABEL_MAP[v];
+          changed++;
+        }
+      }
+      if (changed > 0) {
+        sheet.getRange(2, col, values.length, 1).setValues(values);
+        const name = sheet.getName();
+        updated[name] = (updated[name] || 0) + changed;
+      }
+    });
+  }
+  return updated;
 }
 
 /**
@@ -3302,6 +3497,27 @@ function menuMigrateSheetNames() {
       lines.push(parts.join(' / '));
     }
   }
+  if (result.appSummaryUpdated) {
+    const a = result.appSummaryUpdated;
+    const parts = [];
+    if (a.added) parts.push('「内容」列を追加');
+    if (a.rowsFilled > 0) parts.push(a.rowsFilled + '件の要約を更新');
+    if (parts.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push('【勤怠申請シート】');
+      lines.push(parts.join(' / '));
+    }
+  }
+  if (result.enumLocalized) {
+    const sheetsUpdated = Object.keys(result.enumLocalized);
+    if (sheetsUpdated.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push('【選択値（種別/ステータス等）を日本語に変換】');
+      sheetsUpdated.forEach(function (n) {
+        lines.push('  ' + n + ': ' + result.enumLocalized[n] + '件');
+      });
+    }
+  }
   if (lines.length > 0) {
     ui.alert('移行完了', lines.join('\n'), ui.ButtonSet.OK);
   } else {
@@ -3373,6 +3589,33 @@ function normalizeOffDays_(parsed) {
     // kind='none'/'time' は破棄
   }
   return result;
+}
+
+/**
+ * 勤怠申請の details JSON を人間可読な短文に整形する。
+ * 例: '予定 09:00→17:00 / 実 09:01→16:01 / 休憩 60→55分'
+ * type と details に応じて関連項目のみを連結する。
+ */
+function formatApplicationDetailsSummary_(type, details) {
+  if (!details || typeof details !== 'object') return '';
+  const parts = [];
+  const ps = details.plannedStart || '';
+  const pe = details.plannedEnd || '';
+  const as = details.actualStart || '';
+  const ae = details.actualEnd || '';
+  const pb = (details.plannedBreak !== undefined && details.plannedBreak !== null) ? Number(details.plannedBreak) : null;
+  const ab = (details.actualBreak !== undefined && details.actualBreak !== null) ? Number(details.actualBreak) : null;
+  if (ps || pe) parts.push('予定 ' + (ps || '?') + '→' + (pe || '?'));
+  if (as || ae) parts.push('実 ' + (as || '?') + '→' + (ae || '?'));
+  if (pb !== null || ab !== null) {
+    if (pb !== null && ab !== null && pb !== ab) parts.push('休憩 ' + pb + '→' + ab + '分');
+    else if (ab !== null) parts.push('休憩 ' + ab + '分');
+    else if (pb !== null) parts.push('休憩 ' + pb + '分(予定)');
+  }
+  if (details.overtimeMinutes !== undefined && details.overtimeMinutes !== null && Number(details.overtimeMinutes) !== 0) {
+    parts.push('残業 ' + Number(details.overtimeMinutes) + '分');
+  }
+  return parts.join(' / ');
 }
 
 /**
