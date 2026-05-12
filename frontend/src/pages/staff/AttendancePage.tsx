@@ -489,37 +489,38 @@ export function AttendancePage() {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
             {hasUnsavedChanges && !isLocked && (
-              <span className="text-sm text-amber-600 flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
+              <span className="self-start text-sm text-amber-600 inline-flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
                 <AlertTriangle className="w-3.5 h-3.5" />未保存
               </span>
             )}
             {isLocked ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary-100 text-secondary-600 text-sm">
+              <span className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary-100 text-secondary-600 text-sm">
                 <Lock className="w-3.5 h-3.5" />編集ロック中
               </span>
             ) : (
-              <>
+              <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={handleSave}
                   disabled={isSaving || !currentStaffId}
-                  className="btn btn-secondary flex flex-1 sm:flex-initial items-center gap-2 min-h-11"
+                  className="btn btn-secondary inline-flex items-center justify-center gap-2 min-h-11 whitespace-nowrap"
                 >
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  下書き保存
+                  <span>下書き保存</span>
                 </button>
                 {!isAdmin && (
                   <button
                     onClick={() => setShowSubmitModal(true)}
                     disabled={!submissionGate.canSubmit || isSubmitting}
-                    className="btn btn-primary flex flex-1 sm:flex-initial items-center gap-2 min-h-11"
+                    className="btn btn-primary inline-flex items-center justify-center gap-2 min-h-11 whitespace-nowrap"
                     title={submissionGate.canSubmit ? '月次提出' : submissionGate.blockingReasons[0]}
                   >
-                    <Send className="w-4 h-4" />申請する（提出）
+                    <Send className="w-4 h-4" />
+                    <span>申請する</span>
                   </button>
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -616,7 +617,7 @@ export function AttendancePage() {
         ) : (
           <>
             {/* Mobile: Card stack (< sm) */}
-            <div className="sm:hidden space-y-3">
+            <div className="sm:hidden space-y-2">
               {rows.map((row, index) => {
                 const diff = rowDiffs[index];
                 const dateApps = applicationsByDate[row.date] || [];
@@ -638,18 +639,18 @@ export function AttendancePage() {
                 return (
                   <div
                     key={row.date}
-                    className={`rounded-2xl border overflow-hidden shadow-sm ${cardBg}`}
+                    className={`rounded-xl border overflow-hidden ${cardBg}`}
                   >
                     {/* Header: date + shift */}
-                    <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-secondary-100">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-base font-bold ${
+                    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-secondary-100/70">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-sm font-bold ${
                           isSunday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-secondary-800'
                         }`}>
                           {selectedMonth}/{formatDateLabel(row.date)}
                         </span>
                         {row.shift ? (
-                          <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
                             row.shift.isTentative
                               ? 'text-secondary-400 border-secondary-200 bg-secondary-50'
                               : row.shift.isOff
@@ -659,7 +660,7 @@ export function AttendancePage() {
                             {shiftLabel}
                           </span>
                         ) : (
-                          <span className="text-xs px-2 py-0.5 rounded-full border border-secondary-200 bg-secondary-50 text-secondary-300">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-secondary-200 bg-secondary-50 text-secondary-300">
                             シフト未登録
                           </span>
                         )}
@@ -668,7 +669,7 @@ export function AttendancePage() {
                         <button
                           type="button"
                           onClick={() => applyScheduledTime(index)}
-                          className="shrink-0 px-3 h-9 text-xs font-semibold border border-primary-300 text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors"
+                          className="shrink-0 px-2.5 h-8 text-xs font-semibold border border-primary-300 text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors"
                           title="出勤・退勤を定時で埋める"
                         >
                           定時
@@ -677,33 +678,33 @@ export function AttendancePage() {
                     </div>
 
                     {/* Body: clock-in/out, break, work/overtime */}
-                    <div className="px-4 py-3 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
+                    <div className="px-3 py-2 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
                         <label className="block">
-                          <span className="block text-xs font-medium text-secondary-500 mb-1">出勤</span>
+                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">出勤</span>
                           <input
                             type="time"
                             value={row.clockIn}
                             onChange={e => updateRow(index, 'clockIn', e.target.value)}
                             disabled={cellDisabled}
-                            className="w-full h-11 px-3 text-base border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
+                            className="w-full h-10 px-2 text-sm border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
                           />
                         </label>
                         <label className="block">
-                          <span className="block text-xs font-medium text-secondary-500 mb-1">退勤</span>
+                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">退勤</span>
                           <input
                             type="time"
                             value={row.clockOut}
                             onChange={e => updateRow(index, 'clockOut', e.target.value)}
                             disabled={cellDisabled}
-                            className="w-full h-11 px-3 text-base border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
+                            className="w-full h-10 px-2 text-sm border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
                           />
                         </label>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-2">
                         <label className="block">
-                          <span className="block text-xs font-medium text-secondary-500 mb-1">休憩（分）</span>
+                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">休憩(分)</span>
                           <input
                             type="number"
                             min={0}
@@ -718,7 +719,7 @@ export function AttendancePage() {
                             }
                             onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
                             disabled={cellDisabled || (!row.clockIn || !row.clockOut)}
-                            className={`w-full h-11 px-3 text-base text-center border rounded-lg focus:outline-none ${
+                            className={`w-full h-10 px-2 text-sm text-center border rounded-md focus:outline-none ${
                               row.breakMinutesIsManual ? 'border-amber-300 bg-amber-50' : 'border-secondary-200 bg-white'
                             } focus:border-primary-400 focus:ring-2 focus:ring-primary-200 disabled:bg-secondary-50 disabled:text-secondary-300`}
                             placeholder="-"
@@ -726,17 +727,17 @@ export function AttendancePage() {
                           />
                         </label>
                         <div className="block">
-                          <span className="block text-xs font-medium text-secondary-500 mb-1">実働 / 残業</span>
-                          <div className="h-11 flex items-center justify-between px-3 rounded-lg bg-secondary-50 border border-secondary-100">
-                            <span className={`text-base font-mono ${row.workMinutes > 0 ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
+                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">実働 / 残業</span>
+                          <div className="h-10 flex items-center justify-between px-2 rounded-md bg-secondary-50 border border-secondary-100">
+                            <span className={`text-sm font-mono ${row.workMinutes > 0 ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
                               {formatMinutes(row.workMinutes)}
                             </span>
                             {hasOvertime ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full border border-amber-200">
                                 <AlertTriangle className="w-3 h-3" />{formatMinutes(row.overtimeMinutes)}
                               </span>
                             ) : (
-                              <span className="text-xs text-secondary-300">残業 -</span>
+                              <span className="text-[10px] text-secondary-300">残業 -</span>
                             )}
                           </div>
                         </div>
@@ -785,13 +786,13 @@ export function AttendancePage() {
 
                       {/* Remarks */}
                       <label className="block">
-                        <span className="block text-xs font-medium text-secondary-500 mb-1">備考</span>
+                        <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">備考</span>
                         <input
                           type="text"
                           value={row.remarks}
                           onChange={e => updateRow(index, 'remarks', e.target.value)}
                           disabled={cellDisabled}
-                          className="w-full h-11 px-3 text-base border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
+                          className="w-full h-10 px-2 text-sm border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
                           placeholder="-"
                         />
                       </label>
