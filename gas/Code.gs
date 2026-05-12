@@ -2169,8 +2169,9 @@ function handleUpdateAttendance(body) {
   // Capture old value for history
   const oldValue = sheet.getRange(rowIndex, colIndex + 1).getValue();
 
-  // Apply update
-  sheet.getRange(rowIndex, colIndex + 1).setValue(value);
+  // Apply update（enum 列なら日本語ラベルに変換してから書き込む）
+  const finalValue = ENUM_COLUMNS[columnName] ? localizeEnumValue_(value) : value;
+  sheet.getRange(rowIndex, colIndex + 1).setValue(finalValue);
 
   // Mark break as manually overridden if user changed break_minutes
   if (columnName === 'break_minutes') {
