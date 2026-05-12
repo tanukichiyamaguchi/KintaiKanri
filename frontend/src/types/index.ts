@@ -133,6 +133,8 @@ export interface ShiftDiffDetails {
   overtimeMinutes?: number;
   plannedBreak?: number;
   actualBreak?: number;
+  // 遅刻/早退 申請時にのみ使用。会社都合は給与控除しない。
+  reasonType?: 'company' | 'personal';
 }
 
 export interface ShiftDiff {
