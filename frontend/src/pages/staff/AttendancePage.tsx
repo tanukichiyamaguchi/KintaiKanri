@@ -568,6 +568,45 @@ export function AttendancePage() {
           </div>
         )}
 
+        {/* Summary cards (上部) */}
+        {!isLoading && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <CalendarDays className="w-4 h-4 text-primary-500" />
+                <span className="text-xs font-medium text-secondary-500">入力済み</span>
+              </div>
+              <div className="text-2xl font-bold text-secondary-800">{filledRowCount}<span className="text-sm text-secondary-400 ml-1">/ {expectedWorkDays}日</span></div>
+            </div>
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <ClockIcon className="w-4 h-4 text-blue-500" />
+                <span className="text-xs font-medium text-secondary-500">総労働時間</span>
+              </div>
+              <div className="text-2xl font-bold text-secondary-800">{formatMinutes(totalWorkMinutes)}</div>
+            </div>
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                <span className="text-xs font-medium text-secondary-500">残業時間</span>
+              </div>
+              <div className="text-2xl font-bold text-amber-600">{formatMinutes(totalOvertimeMinutes)}</div>
+            </div>
+            <div className="card p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="w-4 h-4 text-primary-500" />
+                <span className="text-xs font-medium text-secondary-500">申請</span>
+              </div>
+              <div className="text-2xl font-bold text-secondary-800">
+                {applications.length}
+                <span className="text-xs text-secondary-400 ml-1">
+                  ({applications.filter(a => a.status === 'approved').length}承認/{applications.filter(a => a.status === 'pending').length}待)
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Guide */}
         <div className="bg-primary-50/50 border border-primary-200/50 rounded-2xl px-5 py-3.5 mb-5">
           <div className="flex items-start gap-3 text-sm">
