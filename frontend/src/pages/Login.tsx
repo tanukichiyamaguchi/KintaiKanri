@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, Sparkles, Mail, Lock, Eye, EyeOff, User as UserIcon } from 'lucide-react';
+import { AlertCircle, Mail, Lock, Eye, EyeOff, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Loading } from '../components/common';
 
@@ -106,14 +106,13 @@ export function LoginPage() {
       <div className="absolute bottom-0 right-0 w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-gradient-to-tl from-primary-200/20 to-transparent rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
 
       <div className="w-full max-w-md relative z-10">
-        {/* Logo / Title */}
+        {/* Logo */}
         <div className="text-center mb-6 sm:mb-10">
-          <div className="w-16 h-16 sm:w-24 sm:h-24 mx-auto mb-4 sm:mb-6 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-primary-400 via-primary-500 to-primary-600 flex items-center justify-center shadow-xl shadow-primary-500/30 transform hover:scale-105 transition-transform gold-shine">
-            <Sparkles className="w-8 h-8 sm:w-12 sm:h-12 text-white" />
-          </div>
-          <h1 className="text-2xl sm:text-4xl font-bold logo-text mb-2 sm:mb-3 tracking-wider">KATEstageLASH</h1>
-          <div className="divider-elegant w-24 sm:w-32 mx-auto mb-2 sm:mb-3" />
-          <p className="text-secondary-500 text-xs sm:text-sm tracking-[0.15em] sm:tracking-[0.2em] uppercase">Attendance Management</p>
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt="KATEstageLASH"
+            className="mx-auto max-h-32 sm:max-h-40 w-auto object-contain"
+          />
         </div>
 
         {/* Mode Tabs */}
@@ -264,12 +263,6 @@ export function LoginPage() {
               : '管理者アカウントは別途、管理者にて作成されます'}
           </p>
         </form>
-
-        <div className="mt-6 sm:mt-12 text-center">
-          <p className="text-xs text-secondary-400 tracking-wider">
-            &copy; 2025 KATEstageLASH. All rights reserved.
-          </p>
-        </div>
       </div>
     </div>
   );

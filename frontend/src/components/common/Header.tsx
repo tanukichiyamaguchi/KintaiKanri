@@ -1,4 +1,4 @@
-import { Menu, LogOut, User, Sparkles } from 'lucide-react';
+import { Menu, LogOut, User } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface HeaderProps {
@@ -7,7 +7,7 @@ interface HeaderProps {
   onMenuClick?: () => void;
 }
 
-export function Header({ title = 'KATEstageLASH', showMenu = false, onMenuClick }: HeaderProps) {
+export function Header({ title, showMenu = false, onMenuClick }: HeaderProps) {
   const { staff, isAdmin, logout } = useAuth();
 
   return (
@@ -24,13 +24,17 @@ export function Header({ title = 'KATEstageLASH', showMenu = false, onMenuClick 
                 <Menu className="w-5 h-5 text-secondary-600" />
               </button>
             )}
-            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-sm shadow-primary-500/20 flex-shrink-0">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-              <h1 className="text-base sm:text-lg font-bold logo-text tracking-wide truncate">
-                {title}
-              </h1>
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <img
+                src={`${import.meta.env.BASE_URL}logo.png`}
+                alt="KATEstageLASH"
+                className="h-10 sm:h-12 w-auto object-contain flex-shrink-0"
+              />
+              {title && (
+                <h1 className="text-base sm:text-lg font-bold text-secondary-700 truncate">
+                  {title}
+                </h1>
+              )}
             </div>
           </div>
 
