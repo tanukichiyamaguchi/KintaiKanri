@@ -2669,11 +2669,38 @@ function handleCreateApplication(body) {
   if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
   const sheet = getOrCreateSheet(SHEETS.APPLICATIONS);
-  const id = 'AP' + Date.now() + Math.random().toString(36).slice(2, 6);
-  const now = new Date().toISOString();
-  // ヘッダー順に厳密に並べる（details_summary 列追加に対応した防御的書き込み）
   const data = sheet.getDataRange().getValues();
   const sheetHeaders = (data && data[0]) ? data[0] : [];
+
+  // 重複チェック: 同一スタッフ × 同一日 × 同一種別 の申請が
+  // すでに pending / approved で存在する場合は受け付けない（DoS / 二重 email 防止）
+  if (sheetHeaders.length > 0 && data.length > 1) {
+    const sIdx = findHeaderIndex_(sheetHeaders, 'staff_id');
+    const dIdx = findHeaderIndex_(sheetHeaders, 'date');
+    const tIdx = findHeaderIndex_(sheetHeaders, 'type');
+    const stIdx = findHeaderIndex_(sheetHeaders, 'status');
+    if (sIdx !== -1 && dIdx !== -1 && tIdx !== -1 && stIdx !== -1) {
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][sIdx]) !== String(staffId)) continue;
+        if (formatDateOnly_(data[i][dIdx]) !== formatDateOnly_(date)) continue;
+        const rawT = data[i][tIdx];
+        const rowType = (typeof rawT === 'string') ? (REVERSE_ENUM_LABEL_MAP[rawT] || rawT) : rawT;
+        if (rowType !== type) continue;
+        const rawS = data[i][stIdx];
+        const rowStatus = (typeof rawS === 'string') ? (REVERSE_ENUM_LABEL_MAP[rawS] || rawS) : rawS;
+        if (rowStatus === 'pending') {
+          return { success: false, error: '同じ申請がすでに承認待ちで存在します。承認/却下されるまでお待ちください。' };
+        }
+        if (rowStatus === 'approved') {
+          return { success: false, error: '同じ申請がすでに承認されています。' };
+        }
+        // rejected の場合は再申請を許可する（pending 化扱いで新規行を作る）
+      }
+    }
+  }
+
+  const id = 'AP' + Date.now() + Math.random().toString(36).slice(2, 6);
+  const now = new Date().toISOString();
   const detailsObj = details || {};
   const colCount = Math.max(sheetHeaders.length, 13);
   const newRow = new Array(colCount).fill('');
