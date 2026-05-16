@@ -82,6 +82,14 @@ const HEADER_LABELS = {
   'reason': '理由',
   'details_json': '詳細(JSON)',
   'details_summary': '内容',
+  'reason_type': '理由区分',
+  'planned_start': '予定開始時刻',
+  'planned_end': '予定終了時刻',
+  'actual_start': '実績開始時刻',
+  'actual_end': '実績終了時刻',
+  'planned_break_min': '予定休憩(分)',
+  'actual_break_min': '実績休憩(分)',
+  'overtime_min': '残業(分)',
   'submitted_at': '提出日時',
   'reviewed_at': '審査日時',
   'reviewed_by': '審査者',
@@ -175,6 +183,9 @@ const ENUM_LABEL_MAP = {
   // スタッフ在籍状況
   'active': '在籍',
   'inactive': '退職',
+  // 遅刻/早退の理由区分
+  'company': '会社都合',
+  'personal': '個人都合',
 };
 
 const REVERSE_ENUM_LABEL_MAP = (function () {
@@ -194,6 +205,7 @@ const ENUM_COLUMNS = {
   'source': true,
   'clock_out_type': true,
   'editor_role': true,
+  'reason_type': true,
 };
 
 // 英語キー → 日本語ラベル。未登録キーはそのまま返す（user 入力テキスト等を破壊しないため）。
@@ -331,7 +343,7 @@ function setupSystem() {
   if (insuranceSheet) {
     const insuranceData = insuranceSheet.getDataRange().getValues();
     if (insuranceData.length <= 1) {
-      const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      const today = Utilities.formatDate(new Date(), scriptTimeZone_(), 'yyyy-MM-dd');
       insuranceSheet.appendRow([today, 4.905, 0.80, 9.15, 0.60, new Date().toISOString(), 'System']);
       Logger.log('Added default insurance rates');
     }
@@ -353,7 +365,7 @@ function addTestStaff() {
     return { success: false, message: 'Test staff already exists' };
   }
 
-  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const today = Utilities.formatDate(new Date(), scriptTimeZone_(), 'yyyy-MM-dd');
   const salt = generateSalt();
   const hash = hashPassword('test1234', salt);
   sheet.appendRow([
@@ -513,8 +525,10 @@ function initializeSheet(sheet, sheetName) {
       'grade', 'monthly_min', 'monthly_max', 'standard_monthly'
     ],
     [SHEETS.APPLICATIONS]: [
-      'id', 'staff_id', 'staff_name', 'date', 'type', 'reason', 'details_json',
-      'details_summary', 'status', 'submitted_at', 'reviewed_at', 'reviewed_by',
+      'id', 'staff_id', 'staff_name', 'date', 'type', 'reason',
+      'reason_type', 'planned_start', 'planned_end', 'actual_start', 'actual_end',
+      'planned_break_min', 'actual_break_min', 'overtime_min',
+      'status', 'submitted_at', 'reviewed_at', 'reviewed_by',
       'rejection_reason'
     ],
     [SHEETS.SUBMISSIONS]: [
@@ -1159,7 +1173,7 @@ function handleRegister(body) {
   const staffId = 'S' + String(Date.now()).slice(-6);
   const salt = generateSalt();
   const hash = hashPassword(password, salt);
-  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const today = Utilities.formatDate(new Date(), scriptTimeZone_(), 'yyyy-MM-dd');
 
   // ヘッダー: staff_id, email, password_hash, password_salt, name,
   //          monthly_salary, transportation, hire_date, paid_leave_balance, status, birth_date
@@ -1206,7 +1220,7 @@ function handleClock(body) {
   }
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  const dateStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const dateStr = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM-dd');
   const yearMonth = year + '-' + String(month).padStart(2, '0');
 
   // 月次提出ステータスチェック (submitted/approved の月は打刻不可)
@@ -1304,6 +1318,12 @@ function handleClock(body) {
     }
   }
 
+  // 出勤簿シートを軽量に再生成（失敗しても打刻成功は維持）
+  try {
+    const ym = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM');
+    rebuildAttendanceLogSheet_(staffId, ym);
+  } catch (e) { Logger.log('rebuildAttendanceLogSheet failed: ' + (e && e.message)); }
+
   return { success: true };
 }
 
@@ -1337,7 +1357,7 @@ function handleGetTodayAttendance(params) {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  const dateStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const dateStr = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM-dd');
 
   const sheet = getAttendanceSheet(year, month);
   const data = sheetToObjects(sheet);
@@ -1418,6 +1438,15 @@ function handleGetAttendance(params) {
 }
 
 // Date / 文字列を ISO 文字列に正規化。空・無効値は空文字を返す。
+// スクリプトの実効タイムゾーン。Session.getScriptTimeZone() が空を返す環境への防御。
+function scriptTimeZone_() {
+  try {
+    const tz = Session.getScriptTimeZone();
+    if (tz && typeof tz === 'string' && tz.length > 0) return tz;
+  } catch (e) { /* fall through */ }
+  return 'Asia/Tokyo';
+}
+
 function toIsoString_(value) {
   if (!value) return '';
   if (value instanceof Date) {
@@ -1434,30 +1463,37 @@ function toIsoString_(value) {
 function formatDateOnly_(value) {
   if (!value) return '';
   if (value instanceof Date) {
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    if (isNaN(value.getTime())) return '';
+    return Utilities.formatDate(value, scriptTimeZone_(), 'yyyy-MM-dd');
   }
   return String(value);
 }
 
 // "YYYY-MM" 形式に正規化。Google Sheets は "2026-05" 等の文字列を自動的に
 // Date オブジェクトに変換してしまうことがあるため、比較前に必ずこれを通す。
+// month が 1-12 範囲外なら空文字を返す（不正値のシート書込を防ぐ）。
 function formatYearMonthValue_(value) {
   if (value == null || value === '') return '';
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return '';
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM');
+    return Utilities.formatDate(value, scriptTimeZone_(), 'yyyy-MM');
   }
   const s = String(value).trim();
+  const validate = function (yyyy, mm) {
+    const m = parseInt(mm, 10);
+    if (!(m >= 1 && m <= 12)) return '';
+    return yyyy + '-' + String(m).padStart(2, '0');
+  };
   // "YYYY-MM" / "YYYY-M" 形式
   const m1 = s.match(/^(\d{4})-(\d{1,2})$/);
-  if (m1) return m1[1] + '-' + String(parseInt(m1[2], 10)).padStart(2, '0');
+  if (m1) return validate(m1[1], m1[2]);
   // "YYYY-MM-DD" 形式（先頭7文字を取って正規化）
   const m2 = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m2) return m2[1] + '-' + String(parseInt(m2[2], 10)).padStart(2, '0');
+  if (m2) return validate(m2[1], m2[2]);
   // "YYYY/MM" or "YYYY/MM/DD"
   const m3 = s.match(/^(\d{4})\/(\d{1,2})/);
-  if (m3) return m3[1] + '-' + String(parseInt(m3[2], 10)).padStart(2, '0');
-  return s;
+  if (m3) return validate(m3[1], m3[2]);
+  return '';
 }
 
 function handleGetStaffList() {
@@ -2259,6 +2295,9 @@ function handleUpdateAttendance(body) {
   // Append to history
   appendAttendanceHistory_(date, staffId, field, oldValue, value, editorId, editorRole, reason);
 
+  // 出勤簿シートを再構築（失敗しても更新成功は維持）
+  try { rebuildAttendanceLogSheet_(staffId, yearMonth); } catch (e) { Logger.log('rebuildAttendanceLogSheet failed (single update): ' + (e && e.message)); }
+
   return { success: true };
 }
 
@@ -2374,13 +2413,21 @@ function handleBulkSaveAttendance(body) {
     savedCount++;
   }
 
+  // 出勤簿シートを再構築（失敗しても更新成功は維持）
+  try {
+    const ym = year + '-' + String(month).padStart(2, '0');
+    rebuildAttendanceLogSheet_(staffId, ym);
+  } catch (e) { Logger.log('rebuildAttendanceLogSheet failed (admin update): ' + (e && e.message)); }
+
   return { success: true, data: { saved: savedCount } };
 }
 
 function appendAttendanceHistory_(date, staffId, field, oldValue, newValue, editorId, editorRole, reason) {
   const sheet = getOrCreateSheet(SHEETS.ATTENDANCE_HISTORY);
+  // フィールド名 (clock_in 等) は日本語ラベルへ変換して保存
+  const fieldLabel = (typeof field === 'string' && HEADER_LABELS[field]) ? HEADER_LABELS[field] : field;
   sheet.appendRow([
-    date, staffId, field,
+    date, staffId, fieldLabel,
     oldValue == null ? '' : String(oldValue),
     newValue == null ? '' : String(newValue),
     new Date().toISOString(),
@@ -2520,7 +2567,7 @@ function formatDateValue_(value, defaultYear, defaultMonth) {
   if (value == null || value === '') return null;
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return Utilities.formatDate(value, scriptTimeZone_(), 'yyyy-MM-dd');
   }
   // 数値（シリアル値）として保持されているケースは GAS で日付セルから来ることがあるが、
   // 通常 getValue() が Date を返すため通常は到達しない。念のため数値→文字列化してパース継続。
@@ -2640,8 +2687,15 @@ function handleCreateApplication(body) {
   setByKey('date', date);
   setByKey('type', localizeEnumValue_(type));
   setByKey('reason', reason);
-  setByKey('details_json', JSON.stringify(detailsObj));
-  setByKey('details_summary', formatApplicationDetailsSummary_(type, detailsObj));
+  // details の各フィールドを列ごとに展開（旧 details_json は廃止）
+  setByKey('reason_type', detailsObj.reasonType ? localizeEnumValue_(detailsObj.reasonType) : '');
+  setByKey('planned_start', detailsObj.plannedStart || '');
+  setByKey('planned_end', detailsObj.plannedEnd || '');
+  setByKey('actual_start', detailsObj.actualStart || '');
+  setByKey('actual_end', detailsObj.actualEnd || '');
+  setByKey('planned_break_min', (detailsObj.plannedBreak !== undefined && detailsObj.plannedBreak !== null) ? Number(detailsObj.plannedBreak) : '');
+  setByKey('actual_break_min', (detailsObj.actualBreak !== undefined && detailsObj.actualBreak !== null) ? Number(detailsObj.actualBreak) : '');
+  setByKey('overtime_min', (detailsObj.overtimeMinutes !== undefined && detailsObj.overtimeMinutes !== null) ? Number(detailsObj.overtimeMinutes) : '');
   setByKey('status', localizeEnumValue_('pending'));
   setByKey('submitted_at', now);
   sheet.appendRow(newRow);
@@ -2664,20 +2718,47 @@ function handleListApplications(params) {
 
   return {
     success: true,
-    data: filtered.map(r => ({
-      id: r.id,
-      staffId: r.staff_id,
-      staffName: r.staff_name,
-      date: formatDateOnly_(r.date),
-      type: r.type,
-      reason: r.reason,
-      details: safeJsonParse_(r.details_json) || {},
-      status: r.status,
-      submittedAt: toIsoString_(r.submitted_at),
-      reviewedAt: toIsoString_(r.reviewed_at),
-      reviewedBy: r.reviewed_by,
-      rejectionReason: r.rejection_reason
-    }))
+    data: filtered.map(function (r) {
+      // 列展開された値から従来の details オブジェクトを再構成（API 互換維持）
+      // 旧 details_json が残っている行（migration 前）はそちらも併用
+      const fromJson = safeJsonParse_(r.details_json) || {};
+      const details = {};
+      if (fromJson.plannedStart || r.planned_start) details.plannedStart = r.planned_start || fromJson.plannedStart;
+      if (fromJson.plannedEnd || r.planned_end) details.plannedEnd = r.planned_end || fromJson.plannedEnd;
+      if (fromJson.actualStart || r.actual_start) details.actualStart = r.actual_start || fromJson.actualStart;
+      if (fromJson.actualEnd || r.actual_end) details.actualEnd = r.actual_end || fromJson.actualEnd;
+      if (r.planned_break_min !== '' && r.planned_break_min !== undefined && r.planned_break_min !== null) {
+        details.plannedBreak = Number(r.planned_break_min);
+      } else if (fromJson.plannedBreak !== undefined) {
+        details.plannedBreak = fromJson.plannedBreak;
+      }
+      if (r.actual_break_min !== '' && r.actual_break_min !== undefined && r.actual_break_min !== null) {
+        details.actualBreak = Number(r.actual_break_min);
+      } else if (fromJson.actualBreak !== undefined) {
+        details.actualBreak = fromJson.actualBreak;
+      }
+      if (r.overtime_min !== '' && r.overtime_min !== undefined && r.overtime_min !== null) {
+        details.overtimeMinutes = Number(r.overtime_min);
+      } else if (fromJson.overtimeMinutes !== undefined) {
+        details.overtimeMinutes = fromJson.overtimeMinutes;
+      }
+      const reasonTypeRaw = r.reason_type || fromJson.reasonType || '';
+      if (reasonTypeRaw === 'company' || reasonTypeRaw === 'personal') details.reasonType = reasonTypeRaw;
+      return {
+        id: r.id,
+        staffId: r.staff_id,
+        staffName: r.staff_name,
+        date: formatDateOnly_(r.date),
+        type: r.type,
+        reason: r.reason,
+        details: details,
+        status: r.status,
+        submittedAt: toIsoString_(r.submitted_at),
+        reviewedAt: toIsoString_(r.reviewed_at),
+        reviewedBy: r.reviewed_by,
+        rejectionReason: r.rejection_reason
+      };
+    })
   };
 }
 
@@ -3139,26 +3220,33 @@ function handleGetAttendanceHistory(params) {
 
 function getAdminEmails_() {
   const sheet = getOrCreateSheet(SHEETS.ADMINS);
-  return sheetToObjects(sheet).map(a => a.email).filter(e => !!e);
+  const emails = sheetToObjects(sheet).map(function (a) { return a.email; }).filter(function (e) { return !!e; });
+  if (emails.length === 0) Logger.log('[WARN] 管理者メールアドレスが 1 件も登録されていません。通知が届きません。');
+  return emails;
 }
 
 function safeSendEmail_(to, subject, body) {
+  if (!to) return false;
   try {
-    if (!to) return;
+    // 残量チェック（MailApp は 1 日 100 通の上限あり）
+    const remaining = MailApp.getRemainingDailyQuota();
+    if (typeof remaining === 'number' && remaining <= 0) {
+      Logger.log('[WARN] メール送信枠超過のため送信スキップ to=' + to);
+      return false;
+    }
+  } catch (e) { /* quota 取得失敗は無視して送信を試みる */ }
+  try {
     // noReply: true は Google Workspace 契約のドメインでのみ有効。個人アカウントでは無視される。
-    // 失敗時は throw されることがあるので try/catch で握りつぶす。
-    MailApp.sendEmail({
-      to: to,
-      subject: subject,
-      body: body,
-      noReply: true
-    });
+    MailApp.sendEmail({ to: to, subject: subject, body: body, noReply: true });
+    return true;
   } catch (e) {
     // noReply 等のオプションで失敗するケースのため、フォールバックで再送
     try {
       MailApp.sendEmail(to, subject, body);
+      return true;
     } catch (e2) {
-      Logger.log('Mail send failed to=' + to + ' err=' + e2.message);
+      Logger.log('[WARN] Mail send failed to=' + to + ' err=' + (e2 && e2.message ? e2.message : e2));
+      return false;
     }
   }
 }
@@ -3239,12 +3327,27 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('勤怠管理')
     .addItem('翌月のシフト雛形を作成', 'menuGenerateNextMonthShift')
-    .addItem('シート名を日本語に移行', 'menuMigrateSheetNames')
+    .addItem('出勤簿を再生成', 'menuRebuildAttendanceLogs')
+    .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
     .addSeparator()
     .addItem('テストスタッフ追加', 'addTestStaff')
     .addItem('テスト管理者追加', 'addTestAdmin')
     .addItem('システム初期化', 'setupSystem')
     .addToUi();
+}
+
+/**
+ * メニュー: 出勤簿シートだけを再生成する（シート構造変更や移行は行わない軽量版）。
+ * 全スタッフ × 全 勤怠_YYYYMM の組み合わせで再構築する。
+ */
+function menuRebuildAttendanceLogs() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const sheets = rebuildAllAttendanceLogs_();
+    ui.alert('出勤簿を再生成しました', sheets.length + ' 枚のシートを生成/更新しました。\n（元の 勤怠_YYYYMM シートは非表示化されています）', ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('再生成に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+  }
 }
 
 /**
@@ -3320,75 +3423,523 @@ function migrateSheetNames() {
 
   // 希望休申請シートを行ベース形式に変換（1 行 = 1 日）。idempotent。
   const shiftRequestRebuilt = ensureShiftRequestsRowBased_(ss.getSheetByName(SHEETS.SHIFT_REQUESTS));
-  const appSummaryUpdated = ensureApplicationSummaryColumn_();
+  // 勤怠申請シートの details_json を個別列へ展開。idempotent。
+  const applicationsFlattened = ensureApplicationsFlatColumns_();
+  // 編集履歴の field 列を日本語に
+  const historyLocalized = localizeAttendanceHistoryFields_();
   const enumLocalized = localizeExistingEnumValues_();
   // 勤怠シートの boolean 列をチェックボックス表示に変換
   const checkboxApplied = applyAttendanceCheckboxes_();
+  // 出勤簿（1 スタッフ×1 月）ビューシートを再構築し、元の月次シートを非表示化
+  const attendanceLogs = rebuildAllAttendanceLogs_();
 
   return {
     success: true,
     renamed: renamed,
     headerMigrated: headerMigrated,
     shiftRequestRebuilt: shiftRequestRebuilt,
-    appSummaryUpdated: appSummaryUpdated,
+    applicationsFlattened: applicationsFlattened,
+    historyLocalized: historyLocalized,
     checkboxApplied: checkboxApplied,
     enumLocalized: enumLocalized,
+    attendanceLogs: attendanceLogs,
   };
 }
 
 /**
- * 勤怠申請シートに「内容」列が無ければ追加し、details_json から要約を埋める。
- * idempotent。
+ * 勤怠申請シートを「details_json 1 列」から「予定開始/予定終了/...」の
+ * 個別列に展開する移行ヘルパ。idempotent。
+ * - details_json / details_summary 列が残っていれば削除
+ * - 必要な新スキーマ列を追加
+ * - 既存行の JSON を解体して各列へ書き戻し
  */
-function ensureApplicationSummaryColumn_() {
+function ensureApplicationsFlatColumns_() {
   const ss = getSpreadsheet();
   const sheet = ss.getSheetByName(SHEETS.APPLICATIONS);
-  if (!sheet) return { added: false, rowsFilled: 0 };
+  if (!sheet) return { converted: false, rowsConverted: 0 };
   const lastCol = sheet.getLastColumn();
-  if (!lastCol) return { added: false, rowsFilled: 0 };
+  if (lastCol < 1) return { converted: false, rowsConverted: 0 };
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const summaryIdx = findHeaderIndex_(headers, 'details_summary');
-  let summaryCol;
-  let added = false;
-  if (summaryIdx === -1) {
-    const djIdx = findHeaderIndex_(headers, 'details_json');
-    if (djIdx === -1) return { added: false, rowsFilled: 0 };
-    try {
-      sheet.insertColumnAfter(djIdx + 1);
-    } catch (e) {
-      Logger.log('insertColumnAfter failed: ' + (e && e.message));
-      return { added: false, rowsFilled: 0 };
-    }
-    summaryCol = djIdx + 2;
-    sheet.getRange(1, summaryCol).setValue(HEADER_LABELS['details_summary'] || '内容');
-    added = true;
-  } else {
-    summaryCol = summaryIdx + 1;
-  }
+  const djIdx = findHeaderIndex_(headers, 'details_json');
+  const dsIdx = findHeaderIndex_(headers, 'details_summary');
+  // 既に新スキーマ（details_json 列なし）の場合は何もしない
+  if (djIdx === -1 && dsIdx === -1) return { converted: false, rowsConverted: 0 };
+
+  // 旧データを読み込み（行→オブジェクト）
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { added: added, rowsFilled: 0 };
-  const headersAfter = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const djCol = findHeaderIndex_(headersAfter, 'details_json') + 1;
-  const typeCol = findHeaderIndex_(headersAfter, 'type') + 1;
-  if (djCol < 1) return { added: added, rowsFilled: 0 };
-  const jsonValues = sheet.getRange(2, djCol, lastRow - 1, 1).getValues();
-  const typeValues = typeCol >= 1 ? sheet.getRange(2, typeCol, lastRow - 1, 1).getValues() : null;
-  const summaryValues = sheet.getRange(2, summaryCol, lastRow - 1, 1).getValues();
-  let rowsFilled = 0;
-  for (let i = 0; i < jsonValues.length; i++) {
-    const details = safeJsonParse_(jsonValues[i][0]) || {};
-    const typeRaw = typeValues ? typeValues[i][0] : '';
-    const typeEn = REVERSE_ENUM_LABEL_MAP[typeRaw] || typeRaw;
-    const summary = formatApplicationDetailsSummary_(typeEn, details);
-    if (summaryValues[i][0] !== summary) {
-      summaryValues[i][0] = summary;
-      rowsFilled++;
+  const oldRows = (lastRow >= 2) ? sheet.getRange(2, 1, lastRow - 1, lastCol).getValues() : [];
+  const idIdx = findHeaderIndex_(headers, 'id');
+  const sIdx = findHeaderIndex_(headers, 'staff_id');
+  const snIdx = findHeaderIndex_(headers, 'staff_name');
+  const dIdx = findHeaderIndex_(headers, 'date');
+  const tIdx = findHeaderIndex_(headers, 'type');
+  const rIdx = findHeaderIndex_(headers, 'reason');
+  const stIdx = findHeaderIndex_(headers, 'status');
+  const subIdx = findHeaderIndex_(headers, 'submitted_at');
+  const ratIdx = findHeaderIndex_(headers, 'reviewed_at');
+  const rbyIdx = findHeaderIndex_(headers, 'reviewed_by');
+  const rjIdx = findHeaderIndex_(headers, 'rejection_reason');
+
+  const newSchema = [
+    'id', 'staff_id', 'staff_name', 'date', 'type', 'reason',
+    'reason_type', 'planned_start', 'planned_end', 'actual_start', 'actual_end',
+    'planned_break_min', 'actual_break_min', 'overtime_min',
+    'status', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason'
+  ];
+
+  const records = oldRows.map(function (row) {
+    const details = safeJsonParse_(row[djIdx]) || {};
+    return {
+      id: idIdx !== -1 ? row[idIdx] : '',
+      staff_id: sIdx !== -1 ? row[sIdx] : '',
+      staff_name: snIdx !== -1 ? row[snIdx] : '',
+      date: dIdx !== -1 ? formatDateOnly_(row[dIdx]) : '',
+      type: tIdx !== -1 ? row[tIdx] : '',
+      reason: rIdx !== -1 ? row[rIdx] : '',
+      reason_type: details.reasonType ? localizeEnumValue_(details.reasonType) : '',
+      planned_start: details.plannedStart || '',
+      planned_end: details.plannedEnd || '',
+      actual_start: details.actualStart || '',
+      actual_end: details.actualEnd || '',
+      planned_break_min: (details.plannedBreak !== undefined && details.plannedBreak !== null) ? Number(details.plannedBreak) : '',
+      actual_break_min: (details.actualBreak !== undefined && details.actualBreak !== null) ? Number(details.actualBreak) : '',
+      overtime_min: (details.overtimeMinutes !== undefined && details.overtimeMinutes !== null) ? Number(details.overtimeMinutes) : '',
+      status: stIdx !== -1 ? row[stIdx] : '',
+      submitted_at: subIdx !== -1 ? row[subIdx] : '',
+      reviewed_at: ratIdx !== -1 ? row[ratIdx] : '',
+      reviewed_by: rbyIdx !== -1 ? row[rbyIdx] : '',
+      rejection_reason: rjIdx !== -1 ? row[rjIdx] : '',
+    };
+  });
+
+  // 書き込み用の全データ（ヘッダー + データ）をメモリ上で完全に組み立てる。
+  // ここまでで例外が出れば「クリアする前に」止まるため、シート内容は無傷で保たれる。
+  const headersRow = localizeHeaders_(newSchema);
+  const valuesRows = records.map(function (r) {
+    return newSchema.map(function (key) {
+      if (ENUM_COLUMNS[key]) return localizeEnumValue_(r[key]);
+      return r[key] != null ? r[key] : '';
+    });
+  });
+
+  // 列数を先に確保
+  if (sheet.getMaxColumns() < newSchema.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), newSchema.length - sheet.getMaxColumns());
+  }
+  // クリア → 書込（できるだけ短時間で）
+  sheet.getRange(1, 1, Math.max(1, lastRow), Math.max(lastCol, newSchema.length)).clearContent();
+  const allRows = [headersRow].concat(valuesRows);
+  sheet.getRange(1, 1, allRows.length, newSchema.length).setValues(allRows);
+  return { converted: true, rowsConverted: records.length };
+}
+
+/**
+ * 編集履歴シートの「フィールド」列に英語キー (clock_in 等) が残っていれば
+ * 日本語ラベルに置き換える。idempotent。
+ */
+function localizeAttendanceHistoryFields_() {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(SHEETS.ATTENDANCE_HISTORY);
+  if (!sheet) return { converted: 0 };
+  const lastCol = sheet.getLastColumn();
+  const lastRow = sheet.getLastRow();
+  if (lastCol < 1 || lastRow < 2) return { converted: 0 };
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const fIdx = findHeaderIndex_(headers, 'field');
+  if (fIdx === -1) return { converted: 0 };
+  const range = sheet.getRange(2, fIdx + 1, lastRow - 1, 1);
+  const values = range.getValues();
+  let converted = 0;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i][0];
+    if (typeof v !== 'string' || !v) continue;
+    const ja = HEADER_LABELS[v];
+    if (ja && v !== ja) {
+      values[i][0] = ja;
+      converted++;
     }
   }
-  if (rowsFilled > 0) {
-    sheet.getRange(2, summaryCol, summaryValues.length, 1).setValues(summaryValues);
+  if (converted > 0) range.setValues(values);
+  return { converted: converted };
+}
+
+// =====================================================================
+// 出勤簿（per-staff × per-month）ビューシート
+// =====================================================================
+// 1 スタッフ × 1 月で 1 枚のシートを生成し、画像の様式で日次の勤怠を表示する。
+// データソースは既存の月次 勤怠_YYYYMM シート（変更しない）。
+// シート名: 出勤簿_<氏名>_<YYYY-MM>
+// =====================================================================
+
+function attendanceLogSheetName_(name, yearMonth) {
+  const safe = String(name || '').replace(/[\/\\?*\[\]:]/g, '_');
+  return '出勤簿_' + safe + '_' + yearMonth;
+}
+
+function formatMinutesAsHHMM_(mins) {
+  if (mins == null || mins === '' || isNaN(Number(mins))) return '0:00';
+  const total = Math.max(0, Math.round(Number(mins)));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h + ':' + String(m).padStart(2, '0');
+}
+
+function nightWorkMinutesForRow_(clockIn, clockOut) {
+  // 22:00-05:00 を深夜帯として、与えられた打刻時刻範囲のうち深夜帯と重なる分数を返す。
+  if (!clockIn || !clockOut) return 0;
+  // Date 型なら formatTimeOnly_ で 'HH:mm' 文字列に正規化（String(Date) は '[object Date]' になり失敗するため）
+  const ci = (clockIn instanceof Date) ? formatTimeOnly_(clockIn) : String(clockIn);
+  const co = (clockOut instanceof Date) ? formatTimeOnly_(clockOut) : String(clockOut);
+  const ts = ci.match(/^(\d{1,2}):(\d{2})/);
+  const te = co.match(/^(\d{1,2}):(\d{2})/);
+  if (!ts || !te) return 0;
+  const startMin = Number(ts[1]) * 60 + Number(ts[2]);
+  let endMin = Number(te[1]) * 60 + Number(te[2]);
+  if (endMin < startMin) endMin += 24 * 60;
+  // 深夜帯: 0:00-5:00, 22:00-29:00 (= 翌 5:00)
+  const ranges = [[0, 5 * 60], [22 * 60, 29 * 60]];
+  let nightMin = 0;
+  for (let i = 0; i < ranges.length; i++) {
+    const ovStart = Math.max(startMin, ranges[i][0]);
+    const ovEnd = Math.min(endMin, ranges[i][1]);
+    if (ovEnd > ovStart) nightMin += ovEnd - ovStart;
   }
-  return { added: added, rowsFilled: rowsFilled };
+  return nightMin;
+}
+
+/**
+ * 出勤簿シートを 1 枚（staffId × yearMonth）再構築する。
+ * 既存シートがあれば中身をクリアして書き直す。
+ */
+function rebuildAttendanceLogSheet_(staffId, yearMonth) {
+  if (!staffId || !yearMonth) return null;
+  const m = String(yearMonth).match(/^(\d{4})-(\d{1,2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (!(month >= 1 && month <= 12)) return null;
+
+  const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+  const staff = sheetToObjects(staffSheet).find(function (s) { return s.staff_id === staffId; });
+  if (!staff) return null;
+
+  // ──── Phase 1: 読込 & メモリ上で全データを構築（書き込み前に完成させる）────
+  const srcSheet = getAttendanceSheet(year, month);
+  const rows = sheetToObjects(srcSheet).filter(function (r) { return r.staff_id === staffId; });
+  const byDate = {};
+  rows.forEach(function (r) {
+    const dk = formatDateOnly_(r.date);
+    if (dk) byDate[dk] = r;
+  });
+
+  const workDaysInMonth = getStandardWorkDaysForMonth_(year, month);
+  const standardPerDayMin = 480; // 1 日 8h = 480 分
+  const standardMonthMin = standardPerDayMin * workDaysInMonth;
+  const standardHHMM = formatMinutesAsHHMM_(standardMonthMin);
+
+  const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const COL_TOTAL = 12;
+  const HEADER_ROWS = 3; // メタ + グループ見出し + サブ見出し
+  const DATA_START = HEADER_ROWS + 1; // 4
+
+  // 日次データを配列に組み立て + 行属性を別配列で保持
+  const dataValues = [];
+  const rowFlags = []; // { wkday, hasWork }
+  let workDays = 0;
+  let totalAmMin = 0, totalPmMin = 0, totalStandardMin = 0, totalOvertimeMin = 0, totalNightMin = 0;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    const wkday = new Date(year, month - 1, d).getDay();
+    const r = byDate[date];
+    const clockIn = r && r.clock_in ? formatTimeOnly_(r.clock_in) : '';
+    const clockOut = r && r.clock_out ? formatTimeOnly_(r.clock_out) : '';
+    const breakMin = safeNumber_(r && r.break_minutes, 0);
+    const workMin = safeNumber_(r && r.work_minutes, 0);
+
+    // 午前/午後 分割（休憩開始 = 出勤 + 4h パターン）
+    let amIn = '', amOut = '', pmIn = '', pmOut = '';
+    let amMin = 0, pmMin = 0;
+    if (clockIn && clockOut) {
+      const ciMin = parseHHMMToMinutes_(clockIn);
+      let coMin = parseHHMMToMinutes_(clockOut);
+      if (coMin < ciMin) coMin += 24 * 60;
+      amIn = clockIn;
+      const totalMin = coMin - ciMin;
+      const breakStart = ciMin + 4 * 60;
+      const breakEnd = breakStart + breakMin;
+      if (breakMin > 0 && totalMin > 4 * 60 && breakEnd < coMin) {
+        amOut = formatMinutesToHHMM_(breakStart);
+        pmIn = formatMinutesToHHMM_(breakEnd);
+        pmOut = clockOut;
+        amMin = 4 * 60;
+        pmMin = coMin - breakEnd;
+      } else {
+        amOut = clockOut;
+        amMin = Math.max(0, totalMin);
+        pmIn = '';
+        pmOut = '';
+        pmMin = 0;
+      }
+    }
+
+    const hasWork = workMin > 0;
+    let standardForDay = 0;
+    let overtimeForDay = 0;
+    if (hasWork) {
+      standardForDay = Math.min(workMin, standardPerDayMin);
+      overtimeForDay = Math.max(0, workMin - standardPerDayMin);
+      workDays++;
+      totalAmMin += amMin;
+      totalPmMin += pmMin;
+      totalStandardMin += standardForDay;
+      totalOvertimeMin += overtimeForDay;
+    }
+    const nightMin = nightWorkMinutesForRow_(clockIn, clockOut);
+    if (nightMin > 0) totalNightMin += nightMin;
+
+    dataValues.push([
+      month + '/' + d, WEEKDAYS[wkday],
+      amIn, amOut, hasWork ? formatMinutesAsHHMM_(amMin) : '0:00',
+      pmIn, pmOut, hasWork ? formatMinutesAsHHMM_(pmMin) : '0:00',
+      hasWork ? formatMinutesAsHHMM_(workMin) : '0:00',
+      hasWork ? formatMinutesAsHHMM_(standardForDay) : '0:00',
+      formatMinutesAsHHMM_(overtimeForDay),
+      formatMinutesAsHHMM_(nightMin),
+    ]);
+    rowFlags.push({ wkday: wkday, hasWork: hasWork });
+  }
+
+  const sumRow = DATA_START + dataValues.length;
+  const totalRows = sumRow; // 集計行を含む最終行
+
+  // ──── Phase 2: シート取得 / クリア / 書込（一括 setValues で原子性を高める）────
+  const ss = getSpreadsheet();
+  const sheetName = attendanceLogSheetName_(staff.name, yearMonth);
+  let sheet = ss.getSheetByName(sheetName);
+  const isNew = !sheet;
+  if (isNew) sheet = ss.insertSheet(sheetName);
+
+  // 既存セル/書式/Merge を完全リセット（途中失敗時の中間状態を最小化するため
+  // ヘッダー〜集計行を「1 回の setValues」で一気に確定させる）
+  try {
+    // 既存の merge を解除（再 merge する前に必須）
+    if (!isNew) {
+      try { sheet.getRange(1, 1, Math.max(1, sheet.getMaxRows()), Math.max(1, sheet.getMaxColumns())).breakApart(); } catch (e) { /* ignore */ }
+      sheet.clear();
+    }
+    if (sheet.getMaxColumns() < COL_TOTAL) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), COL_TOTAL - sheet.getMaxColumns());
+    }
+
+    // 行 1: メタ
+    const metaRow = ['年', year, '月', month, '氏名', staff.name, '所定労働時間', standardHHMM, '', '', '', ''];
+    // 行 2: グループ見出し
+    const groupHeader = ['', '', '勤怠時間入力', '', '', '', '', '', '総労働時間', '所定労働時間', '残業時間', '深夜時間'];
+    // 行 3: サブ見出し
+    const subHeader = ['日付', '曜日', '午前', '', '', '午後', '', '', '', '', '', ''];
+    // 行 sumRow: 集計行
+    const sumLabels = ['合計', workDays + '日',
+      '', '', formatMinutesAsHHMM_(totalAmMin),
+      '', '', formatMinutesAsHHMM_(totalPmMin),
+      formatMinutesAsHHMM_(totalAmMin + totalPmMin),
+      formatMinutesAsHHMM_(totalStandardMin),
+      formatMinutesAsHHMM_(totalOvertimeMin),
+      formatMinutesAsHHMM_(totalNightMin)];
+
+    const allValues = [metaRow, groupHeader, subHeader]
+      .concat(dataValues).concat([sumLabels]);
+    sheet.getRange(1, 1, allValues.length, COL_TOTAL).setValues(allValues);
+
+    // ── 書式 ──
+    // メタ行: ラベル太字
+    sheet.getRange(1, 1).setFontWeight('bold');
+    sheet.getRange(1, 3).setFontWeight('bold');
+    sheet.getRange(1, 5).setFontWeight('bold');
+    sheet.getRange(1, 7).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, COL_TOTAL).setBackground('#fef7e0');
+
+    // ヘッダー 2 行
+    sheet.getRange(2, 1, 2, COL_TOTAL)
+      .setFontWeight('bold').setHorizontalAlignment('center').setBackground('#e8f0fe').setVerticalAlignment('middle');
+    // merge
+    try { sheet.getRange(2, 3, 1, 6).merge(); } catch (e) { /* ignore */ }
+    try { sheet.getRange(3, 3, 1, 3).merge(); } catch (e) { /* ignore */ }
+    try { sheet.getRange(3, 6, 1, 3).merge(); } catch (e) { /* ignore */ }
+    // 「総労働時間/所定/残業/深夜」のラベルは 2 行ぶん縦結合した方が読みやすい
+    for (let c = 9; c <= 12; c++) {
+      try { sheet.getRange(2, c, 2, 1).merge(); } catch (e) { /* ignore */ }
+    }
+    // 「日付」「曜日」のラベルも 2 行縦結合
+    try { sheet.getRange(2, 1, 2, 1).merge(); } catch (e) { /* ignore */ }
+    try { sheet.getRange(2, 2, 2, 1).merge(); } catch (e) { /* ignore */ }
+
+    // データ行のアラインメント
+    if (dataValues.length > 0) {
+      const dataRange = sheet.getRange(DATA_START, 1, dataValues.length, COL_TOTAL);
+      dataRange.setHorizontalAlignment('center').setVerticalAlignment('middle');
+      // 文字列セルとして固定（"9:00" が時刻型に変換されないように）
+      dataRange.setNumberFormat('@');
+    }
+
+    // 集計行
+    sheet.getRange(sumRow, 1, 1, COL_TOTAL)
+      .setFontWeight('bold').setBackground('#fff7e6').setHorizontalAlignment('center');
+
+    // 土日の背景色と「出勤無し」行の文字色をまとめて 1 回の API 呼び出しで反映
+    if (rowFlags.length > 0) {
+      const bgRows = [];
+      const fgRows = [];
+      for (let i = 0; i < rowFlags.length; i++) {
+        const flag = rowFlags[i];
+        const bg = (flag.wkday === 0) ? '#ffe5e5' : (flag.wkday === 6 ? '#e5f1ff' : null);
+        const fg = flag.hasWork ? null : '#bbbbbb';
+        const bgRow = []; const fgRow = [];
+        for (let c = 0; c < COL_TOTAL; c++) { bgRow.push(bg); fgRow.push(fg); }
+        bgRows.push(bgRow); fgRows.push(fgRow);
+      }
+      const dataRange = sheet.getRange(DATA_START, 1, rowFlags.length, COL_TOTAL);
+      try { dataRange.setBackgrounds(bgRows); } catch (e) { /* ignore */ }
+      try { dataRange.setFontColors(fgRows); } catch (e) { /* ignore */ }
+    }
+
+    // 枠線
+    sheet.getRange(2, 1, totalRows - 1, COL_TOTAL)
+      .setBorder(true, true, true, true, true, true, '#cccccc', SpreadsheetApp.BorderStyle.SOLID);
+
+    // 列幅
+    // メタ行で staff.name が表示される col 6 を広めに確保
+    sheet.setColumnWidth(1, 56);
+    sheet.setColumnWidth(2, 42);
+    sheet.setColumnWidth(3, 70); sheet.setColumnWidth(4, 70); sheet.setColumnWidth(5, 60);
+    sheet.setColumnWidth(6, 110); sheet.setColumnWidth(7, 70); sheet.setColumnWidth(8, 60);
+    sheet.setColumnWidth(9, 80); sheet.setColumnWidth(10, 90); sheet.setColumnWidth(11, 80); sheet.setColumnWidth(12, 80);
+    // メタ行のセルは折返し有効化（長い氏名・所定労働時間でも収まるように）
+    try { sheet.getRange(1, 1, 1, COL_TOTAL).setWrap(true); } catch (e) { /* ignore */ }
+
+    // 行高
+    try {
+      sheet.setRowHeight(1, 28);
+      sheet.setRowHeight(2, 26);
+      sheet.setRowHeight(3, 26);
+      sheet.setRowHeight(sumRow, 28);
+    } catch (e) { /* ignore */ }
+
+    // ヘッダー 3 行を固定
+    try { sheet.setFrozenRows(HEADER_ROWS); } catch (e) { /* ignore */ }
+    // 日付・曜日列を固定
+    try { sheet.setFrozenColumns(2); } catch (e) { /* ignore */ }
+
+    // タブ色（出勤簿シートと元データを視覚的に区別）
+    try { sheet.setTabColor('#4285f4'); } catch (e) { /* ignore */ }
+
+  } catch (e) {
+    // 書込中に致命エラーが出てもユーザーには「失敗を明示」して中間状態を残さないようログに残す
+    Logger.log('rebuildAttendanceLogSheet_ failed for ' + staffId + '/' + yearMonth + ': ' + (e && e.message ? e.message : e));
+    throw e;
+  }
+
+  return sheet;
+}
+
+function parseHHMMToMinutes_(hhmm) {
+  if (!hhmm) return 0;
+  const m = String(hhmm).match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return 0;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function formatMinutesToHHMM_(mins) {
+  if (mins == null || isNaN(Number(mins))) return '';
+  let total = Math.round(Number(mins));
+  // 翌日跨ぎは 24h を超えうるので mod する
+  total = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(total / 60);
+  const mi = total % 60;
+  return String(h).padStart(2, '0') + ':' + String(mi).padStart(2, '0');
+}
+
+// 月の所定労働分数（週 44 時間 × 月の所定労働日数 / 5.5 日基準）
+// 美容業特例 (週 44h) を 1 日 8h × 5.5 日と按分し、所定日数 × 8h 換算で返す。
+function getStandardWorkMinutesForMonth_(year, month) {
+  const workDays = getStandardWorkDaysForMonth_(year, month);
+  // 1 日所定 = 44h ÷ 5.5d = 8h = 480 分
+  return Math.round((44 * 60 / 5.5) * workDays);
+}
+
+// 月の所定労働日数（簡易: 月の日数 - 法定休日相当としてざっくり 4 を引く）
+function getStandardWorkDaysForMonth_(year, month) {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  // 日曜のみ休む想定で week × 1
+  let workDays = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const w = new Date(year, month - 1, d).getDay();
+    if (w !== 0) workDays++;
+  }
+  return workDays;
+}
+
+function formatTimeOnly_(v) {
+  if (!v) return '';
+  if (v instanceof Date) {
+    // スクリプトのタイムゾーン (既定 Asia/Tokyo) で 'HH:mm' を取得する。
+    // 単純な v.getHours() は実行環境次第で UTC ベースになり時刻がズレる。
+    try { return Utilities.formatDate(v, scriptTimeZone_(), 'HH:mm'); } catch (e) { /* fall through */ }
+  }
+  const m = String(v).match(/(\d{1,2}):(\d{2})/);
+  return m ? (String(Number(m[1])).padStart(2, '0') + ':' + m[2]) : String(v);
+}
+
+/**
+ * 全スタッフ × 既存の勤怠_YYYYMM シートに対応する 出勤簿シートを再構築する。
+ * 戻り値: 作成/更新したシート名の配列
+ * 同時実行ガード: LockService で他のプロセスと衝突しないよう保護
+ */
+function rebuildAllAttendanceLogs_() {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30 * 1000); // 最大 30 秒待つ
+  } catch (e) {
+    Logger.log('rebuildAllAttendanceLogs_ lock timeout: ' + (e && e.message));
+    return [];
+  }
+  try {
+    const ss = getSpreadsheet();
+    const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+    const staffList = sheetToObjects(staffSheet);
+    const monthlySheetRe = /^勤怠_(\d{4})(\d{2})$/;
+    const sheets = ss.getSheets();
+    const monthsFound = [];
+    sheets.forEach(function (s) {
+      const m = s.getName().match(monthlySheetRe);
+      if (m) monthsFound.push({ year: Number(m[1]), month: Number(m[2]) });
+    });
+    const built = [];
+    const failed = [];
+    staffList.forEach(function (staff) {
+      monthsFound.forEach(function (ym) {
+        const yearMonth = ym.year + '-' + String(ym.month).padStart(2, '0');
+        try {
+          const out = rebuildAttendanceLogSheet_(staff.staff_id, yearMonth);
+          if (out) built.push(out.getName());
+        } catch (e) {
+          failed.push(staff.staff_id + '/' + yearMonth);
+          Logger.log('rebuildAttendanceLog failed for ' + staff.staff_id + '/' + yearMonth + ': ' + (e && e.message));
+        }
+      });
+    });
+    // 元データの 勤怠_YYYYMM シートを非表示にする
+    sheets.forEach(function (s) {
+      if (monthlySheetRe.test(s.getName())) {
+        try { s.hideSheet(); } catch (e) { /* ignore */ }
+      }
+    });
+    if (failed.length > 0) Logger.log('rebuildAllAttendanceLogs_ partial failures: ' + failed.join(', '));
+    return built;
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* ignore */ }
+  }
 }
 
 /**
@@ -3446,62 +3997,6 @@ function localizeExistingEnumValues_() {
     });
   }
   return updated;
-}
-
-/**
- * 希望休申請シートに「日付別状況」列が存在しなければ追加し、
- * 既存の各行に対して days_json から要約を生成して書き込む。
- * idempotent。戻り値: { added: bool, rowsFilled: number }
- */
-function ensureShiftRequestSummaryColumn_() {
-  const ss = getSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.SHIFT_REQUESTS);
-  if (!sheet) return { added: false, rowsFilled: 0 };
-  const lastCol = sheet.getLastColumn();
-  if (!lastCol) return { added: false, rowsFilled: 0 };
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const summaryIdx = findHeaderIndex_(headers, 'days_summary');
-  let summaryCol;
-  let added = false;
-  if (summaryIdx === -1) {
-    // days_json の隣に挿入する
-    const djIdx = findHeaderIndex_(headers, 'days_json');
-    if (djIdx === -1) return { added: false, rowsFilled: 0 };
-    try {
-      sheet.insertColumnAfter(djIdx + 1);
-    } catch (e) {
-      Logger.log('insertColumnAfter failed: ' + (e && e.message));
-      return { added: false, rowsFilled: 0 };
-    }
-    summaryCol = djIdx + 2; // 1-indexed の挿入後位置
-    sheet.getRange(1, summaryCol).setValue(HEADER_LABELS['days_summary'] || '日付別状況');
-    added = true;
-  } else {
-    summaryCol = summaryIdx + 1;
-  }
-
-  // 既存行の summary を再生成
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { added: added, rowsFilled: 0 };
-  const headersAfter = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const djIdx2 = findHeaderIndex_(headersAfter, 'days_json');
-  if (djIdx2 === -1) return { added: added, rowsFilled: 0 };
-  const djCol = djIdx2 + 1;
-  const jsonValues = sheet.getRange(2, djCol, lastRow - 1, 1).getValues();
-  const summaryValues = sheet.getRange(2, summaryCol, lastRow - 1, 1).getValues();
-  let rowsFilled = 0;
-  for (let i = 0; i < jsonValues.length; i++) {
-    const offDays = normalizeOffDays_(safeJsonParse_(jsonValues[i][0]));
-    const summary = formatOffDaysSummary_(offDays);
-    if (summaryValues[i][0] !== summary) {
-      summaryValues[i][0] = summary;
-      rowsFilled++;
-    }
-  }
-  if (rowsFilled > 0) {
-    sheet.getRange(2, summaryCol, summaryValues.length, 1).setValues(summaryValues);
-  }
-  return { added: added, rowsFilled: rowsFilled };
 }
 
 /**
@@ -3563,16 +4058,20 @@ function menuMigrateSheetNames() {
     lines.push('【希望休申請シート】');
     lines.push('JSON 形式 → 1 行 1 日の行ベースに変換: ' + result.shiftRequestRebuilt.rowsCreated + '行を生成');
   }
-  if (result.appSummaryUpdated) {
-    const a = result.appSummaryUpdated;
-    const parts = [];
-    if (a.added) parts.push('「内容」列を追加');
-    if (a.rowsFilled > 0) parts.push(a.rowsFilled + '件の要約を更新');
-    if (parts.length > 0) {
-      if (lines.length > 0) lines.push('');
-      lines.push('【勤怠申請シート】');
-      lines.push(parts.join(' / '));
-    }
+  if (result.applicationsFlattened && result.applicationsFlattened.converted) {
+    if (lines.length > 0) lines.push('');
+    lines.push('【勤怠申請シート】');
+    lines.push('詳細(JSON) → 個別列に展開: ' + result.applicationsFlattened.rowsConverted + '行を変換');
+  }
+  if (result.historyLocalized && result.historyLocalized.converted > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push('【編集履歴シート】');
+    lines.push('フィールド名 (clock_in 等) を日本語化: ' + result.historyLocalized.converted + '行');
+  }
+  if (result.attendanceLogs && result.attendanceLogs.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push('【出勤簿シート】');
+    lines.push('1 スタッフ×1 月の出勤簿を ' + result.attendanceLogs.length + ' 枚生成（元の 勤怠_YYYYMM は非表示化）');
   }
   if (result.enumLocalized) {
     const sheetsUpdated = Object.keys(result.enumLocalized);
@@ -3629,7 +4128,7 @@ function shiftRequestDeadline_(targetYearMonth) {
 function isShiftRequestOpen_(targetYearMonth) {
   const deadline = shiftRequestDeadline_(targetYearMonth);
   if (!deadline) return false;
-  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const today = Utilities.formatDate(new Date(), scriptTimeZone_(), 'yyyy-MM-dd');
   return today <= deadline;
 }
 
@@ -3662,58 +4161,6 @@ function normalizeOffDays_(parsed) {
   return result;
 }
 
-/**
- * 勤怠申請の details JSON を人間可読な短文に整形する。
- * 例: '予定 09:00→17:00 / 実 09:01→16:01 / 休憩 60→55分'
- * type と details に応じて関連項目のみを連結する。
- */
-function formatApplicationDetailsSummary_(type, details) {
-  if (!details || typeof details !== 'object') return '';
-  const parts = [];
-  // 遅刻・早退の理由区分（会社都合/個人都合）は先頭に表示
-  if ((type === 'late_arrival' || type === 'early_leave') && details.reasonType) {
-    parts.push(details.reasonType === 'company' ? '会社都合' : '個人都合');
-  }
-  const ps = details.plannedStart || '';
-  const pe = details.plannedEnd || '';
-  const as = details.actualStart || '';
-  const ae = details.actualEnd || '';
-  const pb = (details.plannedBreak !== undefined && details.plannedBreak !== null) ? Number(details.plannedBreak) : null;
-  const ab = (details.actualBreak !== undefined && details.actualBreak !== null) ? Number(details.actualBreak) : null;
-  if (ps || pe) parts.push('予定 ' + (ps || '?') + '→' + (pe || '?'));
-  if (as || ae) parts.push('実 ' + (as || '?') + '→' + (ae || '?'));
-  if (pb !== null || ab !== null) {
-    if (pb !== null && ab !== null && pb !== ab) parts.push('休憩 ' + pb + '→' + ab + '分');
-    else if (ab !== null) parts.push('休憩 ' + ab + '分');
-    else if (pb !== null) parts.push('休憩 ' + pb + '分(予定)');
-  }
-  if (details.overtimeMinutes !== undefined && details.overtimeMinutes !== null && Number(details.overtimeMinutes) !== 0) {
-    parts.push('残業 ' + Number(details.overtimeMinutes) + '分');
-  }
-  return parts.join(' / ');
-}
-
-/**
- * offDays 配列を「日付別状況」列向けの人間可読な文字列に整形する。
- * 例: "7/15(承認), 7/22(却下:他のスタッフと重複), 7/30(未承認)"
- * 空配列・null は空文字を返す。
- */
-function formatOffDaysSummary_(offDays) {
-  if (!Array.isArray(offDays) || offDays.length === 0) return '';
-  const STATUS_LABEL = { approved: '承認', rejected: '却下', pending: '未承認' };
-  const sorted = offDays.slice().sort(function (a, b) {
-    return (a.date || '') < (b.date || '') ? -1 : 1;
-  });
-  return sorted.map(function (d) {
-    const m = String(d.date).match(/^\d{4}-(\d{1,2})-(\d{1,2})/);
-    const label = m ? (Number(m[1]) + '/' + Number(m[2])) : String(d.date || '');
-    const st = STATUS_LABEL[d.status] || (d.status || '');
-    if (d.status === 'rejected' && d.rejectionReason) {
-      return label + '(' + st + ':' + d.rejectionReason + ')';
-    }
-    return label + '(' + st + ')';
-  }).join(', ');
-}
 
 /**
  * スタッフが希望休を提出。同一 (staff_id × target_year_month) は行ベースでマージ。
@@ -3732,6 +4179,18 @@ function handleSubmitShiftRequest(body) {
   }
   if (!/^\d{4}-\d{1,2}$/.test(targetYearMonth)) {
     return { success: false, error: '対象月の形式が不正です（YYYY-MM）' };
+  }
+  // 不正値での DoS / タイムアウト対策（1 ヶ月の希望休は最大 31 日）
+  if (incoming.length > 31) {
+    return { success: false, error: '希望休の日数が多すぎます（最大 31 日）' };
+  }
+  // 月の範囲チェック
+  const ymMatch = targetYearMonth.match(/^(\d{4})-(\d{1,2})$/);
+  if (ymMatch) {
+    const mm = parseInt(ymMatch[2], 10);
+    if (!(mm >= 1 && mm <= 12)) {
+      return { success: false, error: '対象月の月番号が不正です' };
+    }
   }
   if (!isShiftRequestOpen_(targetYearMonth)) {
     const deadline = shiftRequestDeadline_(targetYearMonth);
@@ -4053,32 +4512,27 @@ function ensureShiftRequestsRowBased_(sheet) {
     });
   });
 
-  // シートをクリア（ヘッダー以外を削除）
-  if (lastRow >= 2) {
-    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
-  }
-  // 新スキーマのヘッダーで上書き（days_json/days_summary は廃止）
+  // 新スキーマ
   const newSchema = ['id', 'staff_id', 'staff_name', 'target_year_month', 'date',
     'status', 'rejection_reason', 'reviewed_at', 'reviewed_by', 'submitted_at', 'remarks'];
-  // 列数が足りなければ拡張
+  const newLabels = localizeHeaders_(newSchema);
+
+  // 書込全データをメモリで構築（ここまでで失敗すれば既存シートは無傷）
+  const valuesRows = newRecords.map(function (r) {
+    return newSchema.map(function (key) {
+      if (ENUM_COLUMNS[key]) return localizeEnumValue_(r[key]);
+      return r[key] != null ? r[key] : '';
+    });
+  });
+
+  // 列数を先に確保
   if (sheet.getMaxColumns() < newSchema.length) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), newSchema.length - sheet.getMaxColumns());
   }
-  const newLabels = localizeHeaders_(newSchema);
-  // 既存ヘッダーは全クリア（余分な列ラベルを残さないため）
-  sheet.getRange(1, 1, 1, Math.max(lastCol, newSchema.length)).clearContent();
-  sheet.getRange(1, 1, 1, newLabels.length).setValues([newLabels]);
-
-  // データ書き込み
-  if (newRecords.length > 0) {
-    const values = newRecords.map(function (r) {
-      return newSchema.map(function (key) {
-        if (ENUM_COLUMNS[key]) return localizeEnumValue_(r[key]);
-        return r[key] != null ? r[key] : '';
-      });
-    });
-    sheet.getRange(2, 1, values.length, newSchema.length).setValues(values);
-  }
+  // 全行を一気にクリア → ヘッダー + データを 1 回の setValues で確定
+  sheet.getRange(1, 1, Math.max(1, lastRow), Math.max(lastCol, newSchema.length)).clearContent();
+  const allRows = [newLabels].concat(valuesRows);
+  sheet.getRange(1, 1, allRows.length, newSchema.length).setValues(allRows);
 
   return { converted: true, rowsCreated: newRecords.length };
 }
