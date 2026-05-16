@@ -33,6 +33,8 @@ function formatDayShort(dateStr: string): string {
 
 interface PendingReject {
   reqId: string;
+  staffId: string;
+  targetYearMonth: string;
   date: string;
   staffName: string;
 }
@@ -133,12 +135,16 @@ export function AdminShiftRequestsPage() {
     setFilterMonth(`${nY}-${String(nM).padStart(2, '0')}`);
   };
 
-  const approveDay = async (reqId: string, date: string) => {
-    setActionInFlight(`${reqId}|${date}|approve`);
+  const approveDay = async (req: ShiftRequest, date: string) => {
+    setActionInFlight(`${req.id}|${date}|approve`);
     setMessage(null);
     try {
       const res = await shiftRequestApi.reviewDay({
-        id: reqId, date, status: 'approved',
+        id: req.id,
+        staffId: req.staffId,
+        targetYearMonth: req.targetYearMonth,
+        date,
+        status: 'approved',
         reviewedBy: admin?.adminId,
       });
       if (res.success) {
@@ -165,6 +171,8 @@ export function AdminShiftRequestsPage() {
     try {
       const res = await shiftRequestApi.reviewDay({
         id: pendingReject.reqId,
+        staffId: pendingReject.staffId,
+        targetYearMonth: pendingReject.targetYearMonth,
         date: pendingReject.date,
         status: 'rejected',
         rejectionReason: rejectReason.trim(),
@@ -212,7 +220,7 @@ export function AdminShiftRequestsPage() {
         <button
           type="button"
           disabled={inFlight}
-          onClick={() => approveDay(req.id, day.date)}
+          onClick={() => approveDay(req, day.date)}
           className="ml-1 inline-flex items-center justify-center min-w-7 h-7 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors disabled:opacity-50"
           aria-label="承認"
           title="承認"
@@ -222,7 +230,7 @@ export function AdminShiftRequestsPage() {
         <button
           type="button"
           disabled={inFlight}
-          onClick={() => { setPendingReject({ reqId: req.id, date: day.date, staffName: req.staffName }); setRejectReason(''); }}
+          onClick={() => { setPendingReject({ reqId: req.id, staffId: req.staffId, targetYearMonth: req.targetYearMonth, date: day.date, staffName: req.staffName }); setRejectReason(''); }}
           className="inline-flex items-center justify-center min-w-7 h-7 rounded-full bg-red-100 text-red-700 hover:bg-red-200 transition-colors disabled:opacity-50"
           aria-label="却下"
           title="却下"

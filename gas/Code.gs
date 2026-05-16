@@ -526,8 +526,9 @@ function initializeSheet(sheet, sheetName) {
       'edited_by', 'editor_role', 'reason'
     ],
     [SHEETS.SHIFT_REQUESTS]: [
-      'id', 'staff_id', 'staff_name', 'target_year_month', 'days_json',
-      'days_summary', 'remarks', 'submitted_at'
+      'id', 'staff_id', 'staff_name', 'target_year_month', 'date',
+      'status', 'rejection_reason', 'reviewed_at', 'reviewed_by',
+      'submitted_at', 'remarks'
     ],
   };
 
@@ -3317,8 +3318,8 @@ function migrateSheetNames() {
     }
   }
 
-  // 希望休申請シートに「日付別状況」列が無ければ追加し、既存行に対しても要約を埋める
-  const summaryUpdated = ensureShiftRequestSummaryColumn_();
+  // 希望休申請シートを行ベース形式に変換（1 行 = 1 日）。idempotent。
+  const shiftRequestRebuilt = ensureShiftRequestsRowBased_(ss.getSheetByName(SHEETS.SHIFT_REQUESTS));
   const appSummaryUpdated = ensureApplicationSummaryColumn_();
   const enumLocalized = localizeExistingEnumValues_();
   // 勤怠シートの boolean 列をチェックボックス表示に変換
@@ -3328,7 +3329,7 @@ function migrateSheetNames() {
     success: true,
     renamed: renamed,
     headerMigrated: headerMigrated,
-    summaryUpdated: summaryUpdated,
+    shiftRequestRebuilt: shiftRequestRebuilt,
     appSummaryUpdated: appSummaryUpdated,
     checkboxApplied: checkboxApplied,
     enumLocalized: enumLocalized,
@@ -3557,16 +3558,10 @@ function menuMigrateSheetNames() {
     lines.push('【ヘッダー行の日本語化】');
     lines.push.apply(lines, result.headerMigrated);
   }
-  if (result.summaryUpdated) {
-    const su = result.summaryUpdated;
-    const parts = [];
-    if (su.added) parts.push('「日付別状況」列を追加');
-    if (su.rowsFilled > 0) parts.push(su.rowsFilled + '件の要約を更新');
-    if (parts.length > 0) {
-      if (lines.length > 0) lines.push('');
-      lines.push('【希望休申請シート】');
-      lines.push(parts.join(' / '));
-    }
+  if (result.shiftRequestRebuilt && result.shiftRequestRebuilt.converted) {
+    if (lines.length > 0) lines.push('');
+    lines.push('【希望休申請シート】');
+    lines.push('JSON 形式 → 1 行 1 日の行ベースに変換: ' + result.shiftRequestRebuilt.rowsCreated + '行を生成');
   }
   if (result.appSummaryUpdated) {
     const a = result.appSummaryUpdated;
@@ -3721,10 +3716,8 @@ function formatOffDaysSummary_(offDays) {
 }
 
 /**
- * スタッフが希望休を提出。同一 (staff_id × target_year_month) はマージ更新。
- *  - approved / rejected の日は保持
- *  - pending かつ送信に含まれない日 → 取り下げ（削除）
- *  - 送信にあって未登録の日 → pending として追加
+ * スタッフが希望休を提出。同一 (staff_id × target_year_month) は行ベースでマージ。
+ * 各「希望日」は 1 行ずつ保存される。
  *
  * body: { staffId, targetYearMonth, offDays: [{date, status?}], remarks? }
  */
@@ -3742,10 +3735,7 @@ function handleSubmitShiftRequest(body) {
   }
   if (!isShiftRequestOpen_(targetYearMonth)) {
     const deadline = shiftRequestDeadline_(targetYearMonth);
-    return {
-      success: false,
-      error: '提出期限を過ぎています（期限: ' + deadline + '）'
-    };
+    return { success: false, error: '提出期限を過ぎています（期限: ' + deadline + '）' };
   }
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -3753,25 +3743,29 @@ function handleSubmitShiftRequest(body) {
   if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
   const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
+  ensureShiftRequestsRowBased_(sheet);
   const data = sheet.getDataRange().getValues();
   const headers = (data && data[0]) ? data[0] : [];
+
+  // 既存行のうち、同一 (staff_id, target_year_month) のものを収集
   const sIdx = findHeaderIndex_(headers, 'staff_id');
   const ymIdx = findHeaderIndex_(headers, 'target_year_month');
-  const djIdx = findHeaderIndex_(headers, 'days_json');
+  const dIdx = findHeaderIndex_(headers, 'date');
+  const stIdx = findHeaderIndex_(headers, 'status');
+  if (sIdx === -1 || ymIdx === -1 || dIdx === -1 || stIdx === -1) {
+    return { success: false, error: '希望休申請シートの構造が不正です。setupSystem() を実行してください' };
+  }
 
-  let rowIndex = -1;
-  let existingOffDays = [];
-  if (sIdx !== -1 && ymIdx !== -1 && data.length > 1) {
-    for (let i = 1; i < data.length; i++) {
-      const rowYm = formatYearMonthValue_(data[i][ymIdx]);
-      if (data[i][sIdx] === staffId && rowYm === targetYearMonth) {
-        rowIndex = i + 1;
-        if (djIdx !== -1) {
-          existingOffDays = normalizeOffDays_(safeJsonParse_(data[i][djIdx]));
-        }
-        break;
-      }
-    }
+  // 既存日 → 行情報
+  const existingByDate = {};
+  for (let i = 1; i < data.length; i++) {
+    const rowYm = formatYearMonthValue_(data[i][ymIdx]);
+    if (data[i][sIdx] !== staffId || rowYm !== targetYearMonth) continue;
+    const dateKey = formatDateOnly_(data[i][dIdx]);
+    if (!dateKey) continue;
+    const rawStatus = data[i][stIdx];
+    const enStatus = REVERSE_ENUM_LABEL_MAP[rawStatus] || rawStatus;
+    existingByDate[dateKey] = { rowIndex: i + 1, status: enStatus };
   }
 
   // 受信側を希望休のみに正規化（kind='off' or status を持つ要素のみ採用）
@@ -3779,78 +3773,77 @@ function handleSubmitShiftRequest(body) {
   const newDateSet = {};
   for (let k = 0; k < incomingOff.length; k++) newDateSet[incomingOff[k].date] = true;
 
-  // マージ:
-  //  - approved の日 → 常に保持（スタッフは取り消せない）
-  //  - rejected の日 →
-  //      新セットに含まれる場合: 再申請として pending に戻す（reviewedAt/By/理由をクリア）
-  //      含まれない場合: rejected 状態のまま保持
-  //  - pending の日 →
-  //      新セットに含まれる場合: そのまま保持
-  //      含まれない場合: 取り下げ（削除）
-  const seen = {};
-  const merged = [];
-  for (let k = 0; k < existingOffDays.length; k++) {
-    const e = existingOffDays[k];
-    if (e.status === 'approved') {
-      merged.push(e);
-      seen[e.date] = true;
-    } else if (e.status === 'rejected') {
-      if (newDateSet[e.date]) {
-        // 再申請 → pending に戻す（理由・レビュアー情報はクリア）
-        merged.push({ date: e.date, status: 'pending' });
-      } else {
-        merged.push(e);
-      }
-      seen[e.date] = true;
-    } else if (newDateSet[e.date]) {
-      merged.push(e);
-      seen[e.date] = true;
+  // 削除対象（pending かつ新セットに無い）の行 index を集める（後で逆順削除）
+  const toDelete = [];
+  Object.keys(existingByDate).forEach(function (dateKey) {
+    const e = existingByDate[dateKey];
+    if (e.status === 'approved') return; // 保持
+    if (e.status === 'rejected') return; // 保持（再申請で個別に再活性化）
+    if (!newDateSet[dateKey]) {
+      // pending かつ新セットに無い → 取り下げ
+      toDelete.push(e.rowIndex);
     }
-    // pending かつ新セットに無い → 取り下げ
-  }
+  });
+
+  // 既存 rejected で新セットに含まれる日 → pending に戻す（reviewedAt/By/理由をクリア）
+  const now = new Date().toISOString();
+  Object.keys(existingByDate).forEach(function (dateKey) {
+    const e = existingByDate[dateKey];
+    if (e.status !== 'rejected' || !newDateSet[dateKey]) return;
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'status', 'pending');
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'rejection_reason', '');
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'reviewed_at', '');
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'reviewed_by', '');
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'submitted_at', now);
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'remarks', remarks);
+  });
+
+  // 既存 pending かつ新セットにある日 → 備考のみ更新（status はそのまま）
+  Object.keys(existingByDate).forEach(function (dateKey) {
+    const e = existingByDate[dateKey];
+    if (e.status !== 'pending' || !newDateSet[dateKey]) return;
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'remarks', remarks);
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'submitted_at', now);
+  });
+
+  // 新規日（既存に無い日）を行追加
+  const dataHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const colCount = Math.max(dataHeaders.length, 11);
   for (let k = 0; k < incomingOff.length; k++) {
     const d = incomingOff[k];
-    if (!seen[d.date]) merged.push({ date: d.date, status: 'pending' });
-  }
-  merged.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-
-  const id = (rowIndex === -1)
-    ? ('SR' + Date.now() + Math.random().toString(36).slice(2, 6))
-    : null;
-  const now = new Date().toISOString();
-  const daysJson = JSON.stringify(merged);
-  const daysSummary = formatOffDaysSummary_(merged);
-
-  if (rowIndex === -1) {
-    // appendRow は実シートのヘッダー順に従って値を並べる
-    const sheetHeaders = (data && data[0]) ? data[0] : headers;
-    const colCount = Math.max(sheetHeaders.length, 8);
+    if (existingByDate[d.date]) continue;
     const newRow = new Array(colCount).fill('');
+    const rowId = 'SR' + Date.now() + Math.random().toString(36).slice(2, 6);
     const setByKey = function (key, v) {
-      const i = findHeaderIndex_(sheetHeaders, key);
-      if (i !== -1 && i < newRow.length) newRow[i] = v;
+      const i = findHeaderIndex_(dataHeaders, key);
+      if (i === -1 || i >= newRow.length) return;
+      newRow[i] = ENUM_COLUMNS[key] ? localizeEnumValue_(v) : v;
     };
-    setByKey('id', id);
+    setByKey('id', rowId);
     setByKey('staff_id', staffId);
     setByKey('staff_name', staff.name);
     setByKey('target_year_month', targetYearMonth);
-    setByKey('days_json', daysJson);
-    setByKey('days_summary', daysSummary);
-    setByKey('remarks', remarks);
+    setByKey('date', d.date);
+    setByKey('status', 'pending');
+    setByKey('rejection_reason', '');
+    setByKey('reviewed_at', '');
+    setByKey('reviewed_by', '');
     setByKey('submitted_at', now);
+    setByKey('remarks', remarks);
     sheet.appendRow(newRow);
-  } else {
-    setCellByColumnName_(sheet, rowIndex, headers, 'days_json', daysJson);
-    setCellByColumnName_(sheet, rowIndex, headers, 'days_summary', daysSummary);
-    setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks);
-    setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
   }
+
+  // 取り下げ行を逆順で削除（行 index がズレないように）
+  toDelete.sort(function (a, b) { return b - a; });
+  toDelete.forEach(function (rowIndex) {
+    try { sheet.deleteRow(rowIndex); } catch (e) { Logger.log('deleteRow failed: ' + (e && e.message)); }
+  });
 
   // 管理者へメール通知（pending 件数のみ伝える）
   try {
     const admins = getAdminEmails_();
     if (admins.length > 0) {
-      const pendingCount = merged.filter(function (d) { return d.status === 'pending'; }).length;
+      const pendingCount = countShiftRequestPendingDays_(staffId, targetYearMonth);
       const subject = '【希望休 申請】' + staff.name + ' から ' + targetYearMonth + ' 分の希望が届きました';
       const bodyText = staff.name + 'さんから ' + targetYearMonth + ' 分の希望休が提出されました。\n\n'
         + '未承認の希望休: ' + pendingCount + '日\n'
@@ -3862,51 +3855,102 @@ function handleSubmitShiftRequest(body) {
     Logger.log('notify shift request failed: ' + (e && e.message));
   }
 
-  return { success: true, data: { id: id } };
+  return { success: true, data: { id: 'SR-' + staffId + '-' + targetYearMonth } };
+}
+
+// (staff × month) の pending 件数を数える
+function countShiftRequestPendingDays_(staffId, targetYearMonth) {
+  const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
+  const rows = sheetToObjects(sheet);
+  return rows.filter(function (r) {
+    return r.staff_id === staffId
+      && formatYearMonthValue_(r.target_year_month) === targetYearMonth
+      && r.status === 'pending';
+  }).length;
 }
 
 /**
- * 希望休 申請の一覧を返す（offDays 形式に正規化）。
+ * 希望休 申請の一覧を返す。
+ * 内部の行ベース格納を (staff × month) でグループ化して、従来の
+ * { id, staffId, ..., offDays: [...] } 形式で返す（API 互換）。
  * params: { staffId?, targetYearMonth? }
  */
 function handleListShiftRequests(params) {
   const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
+  ensureShiftRequestsRowBased_(sheet);
   const data = sheetToObjects(sheet);
-  const { staffId, targetYearMonth } = params;
+  const { staffId, targetYearMonth } = params || {};
   let filtered = data;
   if (staffId) filtered = filtered.filter(function (r) { return r.staff_id === staffId; });
   if (targetYearMonth) {
     const target = formatYearMonthValue_(targetYearMonth);
     filtered = filtered.filter(function (r) { return formatYearMonthValue_(r.target_year_month) === target; });
   }
-  return {
-    success: true,
-    data: filtered.map(function (r) {
-      return {
-        id: r.id,
+
+  // (staff × month) でグループ化
+  const groups = {};
+  filtered.forEach(function (r) {
+    const ym = formatYearMonthValue_(r.target_year_month);
+    const key = r.staff_id + '|' + ym;
+    if (!groups[key]) {
+      groups[key] = {
+        id: 'SR-' + r.staff_id + '-' + ym,
         staffId: r.staff_id,
-        staffName: r.staff_name,
-        targetYearMonth: formatYearMonthValue_(r.target_year_month),
-        offDays: normalizeOffDays_(safeJsonParse_(r.days_json)),
-        remarks: r.remarks || '',
-        submittedAt: toIsoString_(r.submitted_at),
+        staffName: r.staff_name || '',
+        targetYearMonth: ym,
+        offDays: [],
+        remarks: '',
+        submittedAt: '',
       };
-    })
-  };
+    }
+    const dateKey = formatDateOnly_(r.date);
+    if (!dateKey) return;
+    groups[key].offDays.push({
+      date: dateKey,
+      status: r.status || 'pending',
+      reviewedAt: toIsoString_(r.reviewed_at) || undefined,
+      reviewedBy: r.reviewed_by || undefined,
+      rejectionReason: r.rejection_reason || undefined,
+    });
+    if (r.remarks && !groups[key].remarks) groups[key].remarks = r.remarks;
+    const submitted = toIsoString_(r.submitted_at);
+    if (submitted && submitted > (groups[key].submittedAt || '')) {
+      groups[key].submittedAt = submitted;
+    }
+  });
+
+  // 日付昇順にソート
+  Object.keys(groups).forEach(function (k) {
+    groups[k].offDays.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  });
+
+  return { success: true, data: Object.keys(groups).map(function (k) { return groups[k]; }) };
 }
 
 /**
  * 管理者が希望休の1日を承認/却下する。
- * body: { id, date, status: 'approved'|'rejected', rejectionReason?, reviewedBy? }
+ * body: { id?, staffId?, targetYearMonth?, date, status, rejectionReason?, reviewedBy? }
+ * id は 'SR-<staffId>-<yearMonth>' 形式（後方互換）。staffId/targetYearMonth を
+ * 明示指定するパスを優先。
  */
 function handleReviewShiftRequestDay(body) {
-  const reqId = body && body.id ? String(body.id) : '';
+  let staffId = body && body.staffId ? String(body.staffId) : '';
+  let targetYearMonth = body && body.targetYearMonth ? String(body.targetYearMonth) : '';
   const date = body && body.date ? String(body.date) : '';
   const status = body && body.status ? String(body.status) : '';
   const rejectionReason = body && body.rejectionReason ? String(body.rejectionReason) : '';
   const reviewedBy = body && body.reviewedBy ? String(body.reviewedBy) : '';
 
-  if (!reqId || !date || (status !== 'approved' && status !== 'rejected')) {
+  if ((!staffId || !targetYearMonth) && body && body.id) {
+    // 後方互換: id = 'SR-<staffId>-<yearMonth>' を分解
+    const m = String(body.id).match(/^SR-(.+?)-(\d{4}-\d{1,2})$/);
+    if (m) {
+      staffId = staffId || m[1];
+      targetYearMonth = targetYearMonth || m[2];
+    }
+  }
+
+  if (!staffId || !targetYearMonth || !date || (status !== 'approved' && status !== 'rejected')) {
     return { success: false, error: '必須項目が不正です' };
   }
   if (status === 'rejected' && !rejectionReason) {
@@ -3914,43 +3958,39 @@ function handleReviewShiftRequestDay(body) {
   }
 
   const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
-  const rowIndex = findRowIndex(sheet, 'id', reqId);
-  if (rowIndex === -1) return { success: false, error: '希望シフト申請が見つかりません' };
-
-  const headers = getHeaderRow_(sheet);
-  const djIdx = findHeaderIndex_(headers, 'days_json');
-  if (djIdx === -1) return { success: false, error: 'days_json 列が見つかりません' };
-
-  const cellValue = sheet.getRange(rowIndex, djIdx + 1).getValue();
-  const offDays = normalizeOffDays_(safeJsonParse_(cellValue));
-  const target = offDays.find(function (d) { return d.date === date; });
-  if (!target) return { success: false, error: '対象日が見つかりません' };
-
-  target.status = status;
-  target.reviewedAt = new Date().toISOString();
-  target.reviewedBy = reviewedBy;
-  if (status === 'rejected') {
-    target.rejectionReason = rejectionReason;
-  } else {
-    target.rejectionReason = undefined;
+  ensureShiftRequestsRowBased_(sheet);
+  const data = sheet.getDataRange().getValues();
+  const headers = (data && data[0]) ? data[0] : [];
+  const sIdx = findHeaderIndex_(headers, 'staff_id');
+  const ymIdx = findHeaderIndex_(headers, 'target_year_month');
+  const dIdx = findHeaderIndex_(headers, 'date');
+  if (sIdx === -1 || ymIdx === -1 || dIdx === -1) {
+    return { success: false, error: '希望休申請シートの構造が不正です' };
   }
+  let rowIndex = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][sIdx] !== staffId) continue;
+    if (formatYearMonthValue_(data[i][ymIdx]) !== targetYearMonth) continue;
+    if (formatDateOnly_(data[i][dIdx]) !== date) continue;
+    rowIndex = i + 1;
+    break;
+  }
+  if (rowIndex === -1) return { success: false, error: '対象日が見つかりません' };
 
-  setCellByColumnName_(sheet, rowIndex, headers, 'days_json', JSON.stringify(offDays));
-  setCellByColumnName_(sheet, rowIndex, headers, 'days_summary', formatOffDaysSummary_(offDays));
+  setCellByColumnName_(sheet, rowIndex, headers, 'status', status);
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', new Date().toISOString());
+  setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', reviewedBy);
+  setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', status === 'rejected' ? rejectionReason : '');
 
   // スタッフへメール通知
   try {
-    const sIdx = findHeaderIndex_(headers, 'staff_id');
-    const staffId = sIdx !== -1 ? sheet.getRange(rowIndex, sIdx + 1).getValue() : '';
     const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
     const staff = sheetToObjects(staffSheet).find(function (s) { return s.staff_id === staffId; });
     if (staff && staff.email) {
       const verb = status === 'approved' ? '承認' : '却下';
       const subject = '【希望休】' + date + ' の希望が ' + verb + ' されました';
       let bodyText = staff.name + 'さん\n\n' + date + ' の希望休が ' + verb + ' されました。\n';
-      if (status === 'rejected') {
-        bodyText += '\n却下理由: ' + rejectionReason + '\n';
-      }
+      if (status === 'rejected') bodyText += '\n却下理由: ' + rejectionReason + '\n';
       safeSendEmail_(staff.email, subject, bodyText);
     }
   } catch (e) {
@@ -3958,4 +3998,87 @@ function handleReviewShiftRequestDay(body) {
   }
 
   return { success: true };
+}
+
+/**
+ * 旧 (JSON) 形式のままになっている 希望休申請 シートを、新しい行ベース形式に
+ * 変換する。1 行に複数日を JSON で持っていた行を、1 日 = 1 行に展開する。
+ * idempotent: 既に行ベースなら何もしない。
+ * 戻り値: { converted: bool, rowsCreated: number }
+ */
+function ensureShiftRequestsRowBased_(sheet) {
+  if (!sheet) return { converted: false, rowsCreated: 0 };
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return { converted: false, rowsCreated: 0 };
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const djIdx = findHeaderIndex_(headers, 'days_json');
+  // days_json 列が無ければ既に新形式
+  if (djIdx === -1) return { converted: false, rowsCreated: 0 };
+
+  const lastRow = sheet.getLastRow();
+  let oldRows = [];
+  if (lastRow >= 2) {
+    oldRows = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  }
+  const sIdx = findHeaderIndex_(headers, 'staff_id');
+  const snIdx = findHeaderIndex_(headers, 'staff_name');
+  const ymIdx = findHeaderIndex_(headers, 'target_year_month');
+  const rmIdx = findHeaderIndex_(headers, 'remarks');
+  const subIdx = findHeaderIndex_(headers, 'submitted_at');
+
+  // 各既存行を 1 日 = 1 行へ展開
+  const newRecords = [];
+  oldRows.forEach(function (row) {
+    const days = normalizeOffDays_(safeJsonParse_(row[djIdx]));
+    if (!days || days.length === 0) return;
+    const staffId = sIdx !== -1 ? String(row[sIdx] || '') : '';
+    const staffName = snIdx !== -1 ? String(row[snIdx] || '') : '';
+    const ym = ymIdx !== -1 ? formatYearMonthValue_(row[ymIdx]) : '';
+    const remarks = rmIdx !== -1 ? String(row[rmIdx] || '') : '';
+    const submittedAt = subIdx !== -1 ? toIsoString_(row[subIdx]) : '';
+    days.forEach(function (d) {
+      newRecords.push({
+        id: 'SR' + Date.now() + Math.random().toString(36).slice(2, 6),
+        staff_id: staffId,
+        staff_name: staffName,
+        target_year_month: ym,
+        date: d.date,
+        status: d.status || 'pending',
+        rejection_reason: d.rejectionReason || '',
+        reviewed_at: d.reviewedAt || '',
+        reviewed_by: d.reviewedBy || '',
+        submitted_at: submittedAt,
+        remarks: remarks,
+      });
+    });
+  });
+
+  // シートをクリア（ヘッダー以外を削除）
+  if (lastRow >= 2) {
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  }
+  // 新スキーマのヘッダーで上書き（days_json/days_summary は廃止）
+  const newSchema = ['id', 'staff_id', 'staff_name', 'target_year_month', 'date',
+    'status', 'rejection_reason', 'reviewed_at', 'reviewed_by', 'submitted_at', 'remarks'];
+  // 列数が足りなければ拡張
+  if (sheet.getMaxColumns() < newSchema.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), newSchema.length - sheet.getMaxColumns());
+  }
+  const newLabels = localizeHeaders_(newSchema);
+  // 既存ヘッダーは全クリア（余分な列ラベルを残さないため）
+  sheet.getRange(1, 1, 1, Math.max(lastCol, newSchema.length)).clearContent();
+  sheet.getRange(1, 1, 1, newLabels.length).setValues([newLabels]);
+
+  // データ書き込み
+  if (newRecords.length > 0) {
+    const values = newRecords.map(function (r) {
+      return newSchema.map(function (key) {
+        if (ENUM_COLUMNS[key]) return localizeEnumValue_(r[key]);
+        return r[key] != null ? r[key] : '';
+      });
+    });
+    sheet.getRange(2, 1, values.length, newSchema.length).setValues(values);
+  }
+
+  return { converted: true, rowsCreated: newRecords.length };
 }
