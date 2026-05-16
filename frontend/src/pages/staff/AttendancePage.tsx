@@ -30,6 +30,7 @@ import type {
   ApplicationType,
   MonthlySubmission,
   ShiftDiff,
+  ShiftDiffKind,
   StaffInfo,
 } from '../../types';
 import { Header, Loading, Modal, ApplicationModal, SubmissionStatusBadge, ShiftDiffKindBadge, ApplicationStatusBadge } from '../../components/common';
@@ -60,6 +61,7 @@ export function AttendancePage() {
 
   const [appModalDate, setAppModalDate] = useState<string | null>(null);
   const [appModalDiff, setAppModalDiff] = useState<ShiftDiff | null>(null);
+  const [appModalKind, setAppModalKind] = useState<ShiftDiffKind | null>(null);
 
   // Admin mode: staff selector
   const [staffList, setStaffList] = useState<StaffInfo[]>([]);
@@ -767,6 +769,7 @@ export function AttendancePage() {
                                       onClick={() => {
                                         setAppModalDate(row.date);
                                         setAppModalDiff(diff);
+                                        setAppModalKind(kind);
                                       }}
                                       disabled={cellDisabled}
                                       className="inline-flex items-center gap-1 h-9 px-3 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
@@ -938,6 +941,7 @@ export function AttendancePage() {
                                         onClick={() => {
                                           setAppModalDate(row.date);
                                           setAppModalDiff(diff);
+                                          setAppModalKind(kind);
                                         }}
                                         disabled={cellDisabled}
                                         className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
@@ -1052,9 +1056,10 @@ export function AttendancePage() {
       {/* Application Modal */}
       <ApplicationModal
         isOpen={!!appModalDate}
-        onClose={() => { setAppModalDate(null); setAppModalDiff(null); }}
+        onClose={() => { setAppModalDate(null); setAppModalDiff(null); setAppModalKind(null); }}
         date={appModalDate || ''}
         diff={appModalDiff}
+        preselectedType={appModalKind || undefined}
         onSubmit={handleSubmitApplication}
       />
 
