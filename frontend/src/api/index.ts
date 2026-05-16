@@ -892,11 +892,18 @@ async function handleDemoRequest<T>(
 
   if (action === 'shift-requests/review-day') {
     const reqId = String(body?.id || '');
+    const staffIdParam = body?.staffId ? String(body.staffId) : '';
+    const targetYearMonth = body?.targetYearMonth ? String(body.targetYearMonth) : '';
     const date = String(body?.date || '');
     const status = String(body?.status || '') as 'approved' | 'rejected';
     const rejectionReason = body?.rejectionReason ? String(body.rejectionReason) : undefined;
     const reviewedBy = body?.reviewedBy ? String(body.reviewedBy) : undefined;
-    const req = mockShiftRequests.find(r => r.id === reqId);
+    // staffId + targetYearMonth で特定（行ベース格納の代理）
+    const req = mockShiftRequests.find(r =>
+      (staffIdParam && targetYearMonth)
+        ? (r.staffId === staffIdParam && r.targetYearMonth === targetYearMonth)
+        : r.id === reqId
+    );
     if (!req) return { success: false, error: '希望シフト申請が見つかりません' };
     const day = req.offDays.find(d => d.date === date);
     if (!day) return { success: false, error: '対象日が見つかりません' };
@@ -1212,8 +1219,12 @@ export const shiftRequestApi = {
     }),
 
   // 管理者が日単位で承認/却下。
+  // 行ベース格納のため staffId + targetYearMonth + date で行を特定する。
+  // id ('SR-<staffId>-<yearMonth>' 形式) も後方互換のため送る。
   reviewDay: (params: {
     id: string;
+    staffId: string;
+    targetYearMonth: string;
     date: string;
     status: 'approved' | 'rejected';
     rejectionReason?: string;
