@@ -3548,8 +3548,11 @@ function formatMinutesAsHHMM_(mins) {
 function nightWorkMinutesForRow_(clockIn, clockOut) {
   // 22:00-05:00 を深夜帯として、与えられた打刻時刻範囲のうち深夜帯と重なる分数を返す。
   if (!clockIn || !clockOut) return 0;
-  const ts = String(clockIn).match(/^(\d{1,2}):(\d{2})/);
-  const te = String(clockOut).match(/^(\d{1,2}):(\d{2})/);
+  // Date 型なら formatTimeOnly_ で 'HH:mm' 文字列に正規化（String(Date) は '[object Date]' になり失敗するため）
+  const ci = (clockIn instanceof Date) ? formatTimeOnly_(clockIn) : String(clockIn);
+  const co = (clockOut instanceof Date) ? formatTimeOnly_(clockOut) : String(clockOut);
+  const ts = ci.match(/^(\d{1,2}):(\d{2})/);
+  const te = co.match(/^(\d{1,2}):(\d{2})/);
   if (!ts || !te) return 0;
   const startMin = Number(ts[1]) * 60 + Number(ts[2]);
   let endMin = Number(te[1]) * 60 + Number(te[2]);
@@ -3694,13 +3697,12 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
   return sheet;
 }
 
-// 月の所定労働分数（設定の WEEKLY_HOURS から月換算）
+// 月の所定労働分数（週 44 時間 × 月の所定労働日数 / 5.5 日基準）
+// 美容業特例 (週 44h) を 1 日 8h × 5.5 日と按分し、所定日数 × 8h 換算で返す。
 function getStandardWorkMinutesForMonth_(year, month) {
-  // 既定: 週 44h × (月の所定日数 / 7) を分換算
-  const daysInMonth = new Date(year, month, 0).getDate();
-  // 簡易換算: 週 44h => 1 日約 7.33h(440min). 月の労働日数を使う
   const workDays = getStandardWorkDaysForMonth_(year, month);
-  return Math.round((44 * 60 / 7) * 7 * (workDays / 30) * (daysInMonth / 30));
+  // 1 日所定 = 44h ÷ 5.5d = 8h = 480 分
+  return Math.round((44 * 60 / 5.5) * workDays);
 }
 
 // 月の所定労働日数（簡易: 月の日数 - 法定休日相当としてざっくり 4 を引く）
@@ -3718,7 +3720,10 @@ function getStandardWorkDaysForMonth_(year, month) {
 function formatTimeOnly_(v) {
   if (!v) return '';
   if (v instanceof Date) {
-    return String(v.getHours()).padStart(2, '0') + ':' + String(v.getMinutes()).padStart(2, '0');
+    // スクリプトのタイムゾーン (既定 Asia/Tokyo) で 'HH:mm' を取得する。
+    // 単純な v.getHours() は実行環境次第で UTC ベースになり時刻がズレる。
+    const tz = (typeof Session !== 'undefined' && Session.getScriptTimeZone) ? (Session.getScriptTimeZone() || 'Asia/Tokyo') : 'Asia/Tokyo';
+    try { return Utilities.formatDate(v, tz, 'HH:mm'); } catch (e) { /* fall through */ }
   }
   const m = String(v).match(/(\d{1,2}):(\d{2})/);
   return m ? (String(Number(m[1])).padStart(2, '0') + ':' + m[2]) : String(v);
