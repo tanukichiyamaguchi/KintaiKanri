@@ -3787,20 +3787,16 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
     sheet.getRange(sumRow, 1, 1, COL_TOTAL)
       .setFontWeight('bold').setBackground('#fff7e6').setHorizontalAlignment('center');
 
-    // 土日の背景色と「出勤無し」行の文字色をまとめて 1 回の API 呼び出しで反映
+    // 「出勤無し」行のみ文字色をグレーに（土日色付けは行わない）
     if (rowFlags.length > 0) {
-      const bgRows = [];
       const fgRows = [];
       for (let i = 0; i < rowFlags.length; i++) {
-        const flag = rowFlags[i];
-        const bg = (flag.wkday === 0) ? '#ffe5e5' : (flag.wkday === 6 ? '#e5f1ff' : null);
-        const fg = flag.hasWork ? null : '#bbbbbb';
-        const bgRow = []; const fgRow = [];
-        for (let c = 0; c < COL_TOTAL; c++) { bgRow.push(bg); fgRow.push(fg); }
-        bgRows.push(bgRow); fgRows.push(fgRow);
+        const fg = rowFlags[i].hasWork ? null : '#bbbbbb';
+        const fgRow = [];
+        for (let c = 0; c < COL_TOTAL; c++) fgRow.push(fg);
+        fgRows.push(fgRow);
       }
       const dataRange = sheet.getRange(DATA_START, 1, rowFlags.length, COL_TOTAL);
-      try { dataRange.setBackgrounds(bgRows); } catch (e) { /* ignore */ }
       try { dataRange.setFontColors(fgRows); } catch (e) { /* ignore */ }
     }
 
