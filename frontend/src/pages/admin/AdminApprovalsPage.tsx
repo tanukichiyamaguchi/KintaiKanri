@@ -169,6 +169,16 @@ export function AdminApprovalsPage() {
 
   useEffect(() => {
     reloadApplications();
+    // 30 秒ごとに自動再フェッチ + タブ復帰時に即時更新
+    const intervalId = setInterval(reloadApplications, 30 * 1000);
+    const onVisible = () => { if (document.visibilityState === 'visible') reloadApplications(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', reloadApplications);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', reloadApplications);
+    };
   }, [reloadApplications]);
 
   // 月次提出はダッシュボードのカウントと整合させるため、未承認は全月を対象に取得する。
