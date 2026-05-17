@@ -257,11 +257,11 @@ export function LoginPage() {
             {isLoginMode ? 'ログイン' : '登録してログイン'}
           </button>
 
-          <p className="mt-4 sm:mt-5 text-xs text-center text-secondary-500">
-            {isLoginMode
-              ? '管理者・スタッフ共通のログイン画面です'
-              : '管理者アカウントは別途、管理者にて作成されます'}
-          </p>
+          {!isLoginMode && (
+            <p className="mt-4 sm:mt-5 text-xs text-center text-secondary-500">
+              管理者アカウントは別途、管理者にて作成されます
+            </p>
+          )}
         </form>
       </div>
     </div>
