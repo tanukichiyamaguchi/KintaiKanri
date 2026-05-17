@@ -103,6 +103,17 @@ export function AdminDashboard() {
     }
 
     fetchApprovals();
+    // 30 秒ごとに自動再フェッチ（スタッフ申請がリアルタイムで反映される）
+    const intervalId = setInterval(fetchApprovals, 30 * 1000);
+    // タブに戻ってきた時 / ウィンドウフォーカス時に即時更新
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchApprovals(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', fetchApprovals);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', fetchApprovals);
+    };
   }, []);
 
   const getStatusInfo = (status?: WorkStatus): { bg: string; text: string; label: string; dot: string } => {

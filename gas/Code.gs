@@ -2726,6 +2726,8 @@ function handleCreateApplication(body) {
   setByKey('status', localizeEnumValue_('pending'));
   setByKey('submitted_at', now);
   sheet.appendRow(newRow);
+  // 次回 list/読込で確実に新行が見えるよう Spreadsheet 書込キャッシュを強制フラッシュ
+  try { SpreadsheetApp.flush(); } catch (e) { /* ignore */ }
 
   // notify all admins
   notifyAdminsApplicationSubmitted_(staff, date, type, reason);
