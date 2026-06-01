@@ -12,9 +12,9 @@ import {
   CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { attendanceApi } from '../../api';
-import type { ClockType, WorkStatus, ClockRecord } from '../../types';
-import { Header, Clock, Loading, Modal } from '../../components/common';
+import { attendanceApi, submissionApi } from '../../api';
+import type { ClockType, WorkStatus, ClockRecord, ClockGate } from '../../types';
+import { Header, Clock, Loading, Modal, SubmissionDeadlineBanner } from '../../components/common';
 
 export function ClockPage() {
   const navigate = useNavigate();
@@ -26,6 +26,7 @@ export function ClockPage() {
   const [isClocking, setIsClocking] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [gate, setGate] = useState<ClockGate | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !staff) {
@@ -36,10 +37,16 @@ export function ClockPage() {
   const fetchTodayAttendance = useCallback(async () => {
     if (!staff) return;
     try {
-      const response = await attendanceApi.getToday(staff.staffId);
-      if (response.success && response.data) {
-        setStatus(response.data.status || 'not_started');
-        setRecords(response.data.records || []);
+      const [todayRes, gateRes] = await Promise.all([
+        attendanceApi.getToday(staff.staffId),
+        submissionApi.clockGate(staff.staffId),
+      ]);
+      if (todayRes.success && todayRes.data) {
+        setStatus(todayRes.data.status || 'not_started');
+        setRecords(todayRes.data.records || []);
+      }
+      if (gateRes.success && gateRes.data) {
+        setGate(gateRes.data);
       }
     } catch {
       setMessage({ type: 'error', text: '勤怠情報の取得に失敗しました' });
@@ -87,8 +94,10 @@ export function ClockPage() {
   const isFinished = status === 'finished';
   const hasClockIn = records.some(r => r.type === 'clock_in');
   const hasClockOut = records.some(r => r.type === 'clock_out');
-  const clockInDisabled = isWorking || isFinished || hasClockIn;
-  const clockOutDisabled = !isWorking || isFinished || hasClockOut;
+  // 前月出勤簿が未提出（4日以降）の場合は打刻ブロック
+  const blockedByGate = !!gate?.clockBlocked;
+  const clockInDisabled = isWorking || isFinished || hasClockIn || blockedByGate;
+  const clockOutDisabled = !isWorking || isFinished || hasClockOut || blockedByGate;
 
   const formatTime = (isoString: string): string => {
     const date = new Date(isoString);
@@ -139,6 +148,9 @@ export function ClockPage() {
             </div>
           </div>
         </div>
+
+        {/* 出勤簿 提出期限アラート / 打刻ブロック通知 */}
+        <SubmissionDeadlineBanner gate={gate} />
 
         {/* Message */}
         {message && (

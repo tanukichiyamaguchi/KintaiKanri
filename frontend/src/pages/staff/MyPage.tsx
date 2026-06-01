@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi, paidLeaveApi, salaryApi, submissionApi } from '../../api';
-import type { AttendanceRecord, PaidLeaveBalance, MonthlySubmission } from '../../types';
-import { Header, Loading, Modal, SubmissionStatusBadge } from '../../components/common';
+import type { AttendanceRecord, PaidLeaveBalance, MonthlySubmission, ClockGate } from '../../types';
+import { Header, Loading, Modal, SubmissionStatusBadge, SubmissionDeadlineBanner } from '../../components/common';
 import { formatMinutesAsTime } from '../../utils/calculations';
 
 type Tab = 'attendance' | 'paidLeave' | 'salary';
@@ -30,6 +30,7 @@ export function MyPage() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [paidLeave, setPaidLeave] = useState<PaidLeaveBalance | null>(null);
   const [submission, setSubmission] = useState<MonthlySubmission | null>(null);
+  const [gate, setGate] = useState<ClockGate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -45,6 +46,20 @@ export function MyPage() {
       navigate('/');
     }
   }, [isAuthenticated, staff, navigate]);
+
+  // 前月出勤簿の提出期限アラート / 打刻ブロック状態を取得（タブや月に依存しない）
+  useEffect(() => {
+    if (!staff) return;
+    const staffId = staff.staffId;
+    (async () => {
+      try {
+        const res = await submissionApi.clockGate(staffId);
+        if (res.success && res.data) setGate(res.data);
+      } catch {
+        // 非クリティカル: バナーが出ないだけ
+      }
+    })();
+  }, [staff]);
 
   // Fetch attendance data
   useEffect(() => {
@@ -194,6 +209,9 @@ export function MyPage() {
       <Header title="マイページ" />
 
       <main className="max-w-2xl mx-auto p-3 sm:p-6">
+        {/* 出勤簿 提出期限アラート / 打刻ブロック通知 */}
+        <SubmissionDeadlineBanner gate={gate} />
+
         {/* Back Link + Attendance + Applications */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-5 gap-3">
           <Link
