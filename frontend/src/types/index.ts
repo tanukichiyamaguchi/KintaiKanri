@@ -210,6 +210,21 @@ export interface MonthlySubmission {
   rejectionReason?: string;
 }
 
+// 月次出勤簿の提出期限ゲート（打刻ブロック / 期限アラートの状態）
+export interface ClockGate {
+  today: string;             // 'YYYY-MM-DD'
+  dayOfMonth: number;
+  currentYearMonth: string;  // 'YYYY-MM'
+  prevYearMonth: string;     // 'YYYY-MM'（出勤簿の対象＝前月）
+  prevStatus: SubmissionStatus;
+  hasPrevAttendance: boolean;
+  deadlineDay: number;       // 7
+  blockDay: number;          // 4
+  deadlineDate: string;      // 'YYYY-MM-07'
+  alertActive: boolean;      // 1〜7日かつ前月未提出 → アラート表示
+  clockBlocked: boolean;     // 4日以降かつ前月未提出 → 打刻ブロック
+}
+
 export interface SubmissionGateResult {
   canSubmit: boolean;
   blockingReasons: string[];     // 「3/15に未申請の遅刻があります」等

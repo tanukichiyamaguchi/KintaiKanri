@@ -14,6 +14,12 @@
 const SPREADSHEET_ID = '1cQJf5tgTwRIpNUU-rtQMeSCn9DKti4qyzTm-1j2DXC0'; // KintaiKanri spreadsheet
 const WEEKLY_HOURS = 44; // Beauty industry special measure
 
+// 月次出勤簿の提出ルール
+// - 提出期限: 毎月 7 日（前月分の出勤簿）
+// - 打刻ブロック開始日: 毎月 4 日（この日以降、前月未提出だと打刻不可）
+const MONTHLY_SUBMISSION_DEADLINE_DAY = 7;
+const MONTHLY_SUBMISSION_BLOCK_DAY = 4;
+
 // PBKDF2 iteration count for password hashing
 const PBKDF2_ITERATIONS = 10000;
 
@@ -972,6 +978,9 @@ function handleRequest(e, method) {
       case 'submissions/status':
         result = handleGetSubmissionStatus(params);
         break;
+      case 'submissions/clock-gate':
+        result = handleGetClockGate(params);
+        break;
       case 'submissions/list':
         result = handleListSubmissions(params);
         break;
@@ -1227,6 +1236,16 @@ function handleClock(body) {
   const submissionStatus = getSubmissionStatus_(staffId, yearMonth);
   if (submissionStatus === 'submitted' || submissionStatus === 'approved') {
     return { success: false, error: 'この月は提出済みのため打刻できません' };
+  }
+
+  // 前月出勤簿の未提出ゲート: 毎月 4 日以降、前月分が未提出だと打刻不可
+  const gate = computeClockGate_(staffId, now);
+  if (gate.clockBlocked) {
+    return {
+      success: false,
+      error: gate.prevYearMonth + ' 分の出勤簿が未提出です。' + gate.deadlineDate
+        + ' までに提出が必要です。出勤簿を提出してから打刻してください。'
+    };
   }
 
   const sheet = getAttendanceSheet(year, month);
@@ -2849,6 +2868,76 @@ function getSubmissionStatus_(staffId, yearMonth) {
   return rec ? rec.status : 'draft';
 }
 
+// "YYYY-MM" の前月を "YYYY-MM" で返す。
+function previousYearMonth_(yearMonth) {
+  const m = String(yearMonth || '').match(/^(\d{4})-(\d{1,2})$/);
+  if (!m) return '';
+  let y = parseInt(m[1], 10);
+  let mo = parseInt(m[2], 10) - 1;
+  if (mo < 1) { mo = 12; y -= 1; }
+  return y + '-' + String(mo).padStart(2, '0');
+}
+
+// 指定スタッフが対象月（YYYY-MM）に 1 件でも出勤打刻のある勤怠を持つか。
+// 出勤実績が無い月（新入社・休職など）は「提出すべきものが無い」とみなすための判定。
+function hasAttendanceInMonth_(staffId, yearMonth) {
+  const m = String(yearMonth || '').match(/^(\d{4})-(\d{1,2})$/);
+  if (!m) return false;
+  const year = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  const sheet = getAttendanceSheet(year, month);
+  const rows = sheetToObjects(sheet);
+  return rows.some(function (r) {
+    return r.staff_id === staffId && r.clock_in !== '' && r.clock_in != null;
+  });
+}
+
+/**
+ * 打刻ゲート / 提出期限アラートの状態を算出する。
+ * - 毎月 1〜7 日: 前月分 出勤簿の提出期限アラートを表示（alertActive）
+ * - 毎月 4 日以降: 前月分が未提出（submitted/approved 以外）かつ前月に出勤実績あり
+ *                 → 打刻ブロック（clockBlocked）
+ * now を省略すると現在時刻を使う。
+ */
+function computeClockGate_(staffId, now) {
+  const d = (now && isValidDate_(now)) ? now : new Date();
+  const dayOfMonth = parseInt(Utilities.formatDate(d, scriptTimeZone_(), 'd'), 10);
+  const curYm = Utilities.formatDate(d, scriptTimeZone_(), 'yyyy-MM');
+  const prevYm = previousYearMonth_(curYm);
+  const deadlineDate = curYm + '-' + String(MONTHLY_SUBMISSION_DEADLINE_DAY).padStart(2, '0');
+
+  let prevStatus = 'draft';
+  let hasPrevAttendance = false;
+  if (staffId && prevYm) {
+    prevStatus = getSubmissionStatus_(staffId, prevYm);
+    hasPrevAttendance = hasAttendanceInMonth_(staffId, prevYm);
+  }
+  const prevSubmitted = (prevStatus === 'submitted' || prevStatus === 'approved');
+  const alertActive = dayOfMonth >= 1 && dayOfMonth <= MONTHLY_SUBMISSION_DEADLINE_DAY && !prevSubmitted && hasPrevAttendance;
+  const clockBlocked = dayOfMonth >= MONTHLY_SUBMISSION_BLOCK_DAY && !prevSubmitted && hasPrevAttendance;
+
+  return {
+    today: Utilities.formatDate(d, scriptTimeZone_(), 'yyyy-MM-dd'),
+    dayOfMonth: dayOfMonth,
+    currentYearMonth: curYm,
+    prevYearMonth: prevYm,
+    prevStatus: prevStatus,
+    hasPrevAttendance: hasPrevAttendance,
+    deadlineDay: MONTHLY_SUBMISSION_DEADLINE_DAY,
+    blockDay: MONTHLY_SUBMISSION_BLOCK_DAY,
+    deadlineDate: deadlineDate,
+    alertActive: alertActive,
+    clockBlocked: clockBlocked,
+  };
+}
+
+// API: 打刻ゲート / 提出アラートの状態を返す。params: { staffId }
+function handleGetClockGate(params) {
+  const staffId = params && params.staffId ? String(params.staffId) : '';
+  if (!staffId) return { success: false, error: 'スタッフIDが指定されていません' };
+  return { success: true, data: computeClockGate_(staffId, new Date()) };
+}
+
 function handleGetSubmissionStatus(params) {
   const { staffId, yearMonth } = params;
   if (!staffId || !yearMonth) return { success: false, error: '必須パラメータが指定されていません' };
@@ -3341,6 +3430,115 @@ function applicationTypeLabel_(type) {
 }
 
 // ============================================================
+// 月初の提出期限リマインドメール（出勤簿・希望休）
+// ============================================================
+
+/**
+ * 在籍スタッフ全員に、その月の提出期限を案内するメールを送る。
+ *  - 出勤簿: 前月分を当月 7 日までに提出
+ *  - 希望休: 翌々月分を当月 7 日までに提出
+ * 毎月 1 日のトリガーから呼ばれる想定だが、メニューから手動実行も可能。
+ * 戻り値: { sent: number, skipped: number }
+ */
+function sendMonthlyDeadlineReminders_() {
+  const now = new Date();
+  const curYm = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM');
+  const ymMatch = curYm.match(/^(\d{4})-(\d{2})$/);
+  const curYear = parseInt(ymMatch[1], 10);
+  const curMonth = parseInt(ymMatch[2], 10);
+
+  const prevYm = previousYearMonth_(curYm); // 出勤簿の対象（前月）
+  // 希望休の対象（翌々月）: shiftRequestDeadline_(対象月) が当月 7 日になる対象月
+  let nnY = curYear;
+  let nnM = curMonth + 2;
+  while (nnM > 12) { nnM -= 12; nnY += 1; }
+  const shiftTargetYm = nnY + '-' + String(nnM).padStart(2, '0');
+
+  const deadlineDay = MONTHLY_SUBMISSION_DEADLINE_DAY;
+  const attendanceDeadline = curYm + '-' + String(deadlineDay).padStart(2, '0');
+  const shiftDeadline = shiftRequestDeadline_(shiftTargetYm); // = 当月 7 日
+
+  const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+  const staffList = sheetToObjects(staffSheet).filter(function (s) {
+    return s.status !== 'inactive' && !!s.email;
+  });
+
+  const subject = '【提出期限のお知らせ】出勤簿・希望休（' + curMonth + '月）';
+  let sent = 0;
+  let skipped = 0;
+  staffList.forEach(function (staff) {
+    const body = staff.name + 'さん\n\n'
+      + '今月の提出期限をお知らせします。\n\n'
+      + '■ 出勤簿（' + prevYm + ' 分）\n'
+      + '　提出期限: ' + attendanceDeadline + ' まで\n'
+      + '　※ ' + MONTHLY_SUBMISSION_BLOCK_DAY + ' 日以降、前月分の出勤簿が未提出だと打刻ができなくなります。\n\n'
+      + '■ 希望休（' + shiftTargetYm + ' 分）\n'
+      + '　提出期限: ' + shiftDeadline + ' まで\n\n'
+      + 'アプリにログインして、期限までにご提出をお願いします。';
+    const ok = safeSendEmail_(staff.email, subject, body);
+    if (ok) sent++; else skipped++;
+  });
+
+  Logger.log('sendMonthlyDeadlineReminders_: sent=' + sent + ' skipped=' + skipped);
+  return { sent: sent, skipped: skipped };
+}
+
+/**
+ * 毎月 1 日 8 時台に sendMonthlyDeadlineReminders_ を実行する
+ * 時刻ベーストリガーを登録する（重複登録は防止）。
+ */
+function installMonthlyReminderTrigger_() {
+  const handler = 'monthlyDeadlineReminderTrigger';
+  const existing = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < existing.length; i++) {
+    if (existing[i].getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(existing[i]); // 重複を避けるため一旦削除して作り直す
+    }
+  }
+  ScriptApp.newTrigger(handler)
+    .timeBased()
+    .onMonthDay(1)
+    .atHour(8)
+    .create();
+  return true;
+}
+
+// トリガーから呼ばれるエントリポイント
+function monthlyDeadlineReminderTrigger() {
+  try {
+    sendMonthlyDeadlineReminders_();
+  } catch (e) {
+    Logger.log('monthlyDeadlineReminderTrigger failed: ' + (e && e.message ? e.message : e));
+  }
+}
+
+// メニュー: 月初リマインドトリガーを登録
+function menuInstallMonthlyReminder() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    installMonthlyReminderTrigger_();
+    ui.alert('提出期限リマインド設定',
+      '毎月 1 日 朝 8 時台に、在籍スタッフ全員へ出勤簿・希望休の提出期限メールを送る設定を登録しました。',
+      ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('設定に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+  }
+}
+
+// メニュー: 今すぐ提出期限リマインドメールを送る（テスト/手動用）
+function menuSendDeadlineRemindersNow() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const res = sendMonthlyDeadlineReminders_();
+    ui.alert('リマインドメール送信完了',
+      '送信: ' + res.sent + ' 件 / スキップ: ' + res.skipped + ' 件',
+      ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('送信に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+  }
+}
+
+// ============================================================
 // Misc helpers
 // ============================================================
 
@@ -3358,6 +3556,9 @@ function onOpen() {
     .addItem('翌月のシフト雛形を作成', 'menuGenerateNextMonthShift')
     .addItem('出勤簿を再生成', 'menuRebuildAttendanceLogs')
     .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
+    .addSeparator()
+    .addItem('提出期限リマインドを毎月1日に自動送信する設定', 'menuInstallMonthlyReminder')
+    .addItem('提出期限リマインドを今すぐ送信', 'menuSendDeadlineRemindersNow')
     .addSeparator()
     .addItem('テストスタッフ追加', 'addTestStaff')
     .addItem('テスト管理者追加', 'addTestAdmin')

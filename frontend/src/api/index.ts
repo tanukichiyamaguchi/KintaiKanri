@@ -21,6 +21,7 @@ import type {
   ApplicationStatus,
   MonthlySubmission,
   SubmissionStatus,
+  ClockGate,
 } from '../types';
 
 // Base URL for the Google Apps Script Web App
@@ -735,6 +736,34 @@ async function handleDemoRequest<T>(
     };
   }
 
+  if (action === 'submissions/clock-gate') {
+    const staffId = queryParams?.staffId || '';
+    const now = new Date();
+    const dayOfMonth = now.getDate();
+    const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevYm = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    const prevSub = mockSubmissions.find(s => s.staffId === staffId && s.yearMonth === prevYm);
+    const prevStatus = (prevSub?.status || 'draft') as SubmissionStatus;
+    // デモではモックに前月勤怠があるか不明なので、提出済み以外は「実績あり」とみなす
+    const hasPrevAttendance = !(prevStatus === 'submitted' || prevStatus === 'approved');
+    const prevSubmitted = prevStatus === 'submitted' || prevStatus === 'approved';
+    const gate: ClockGate = {
+      today: `${curYm}-${String(dayOfMonth).padStart(2, '0')}`,
+      dayOfMonth,
+      currentYearMonth: curYm,
+      prevYearMonth: prevYm,
+      prevStatus,
+      hasPrevAttendance,
+      deadlineDay: 7,
+      blockDay: 4,
+      deadlineDate: `${curYm}-07`,
+      alertActive: dayOfMonth >= 1 && dayOfMonth <= 7 && !prevSubmitted && hasPrevAttendance,
+      clockBlocked: dayOfMonth >= 4 && !prevSubmitted && hasPrevAttendance,
+    };
+    return { success: true, data: gate as unknown as T };
+  }
+
   if (action === 'submissions/list') {
     const yearMonth = queryParams?.yearMonth;
     const status = queryParams?.status as SubmissionStatus | undefined;
@@ -1146,6 +1175,10 @@ export const submissionApi = {
 
   getStatus: (staffId: string, yearMonth: string): Promise<ApiResponse<MonthlySubmission>> =>
     apiRequest('submissions/status', undefined, { staffId, yearMonth }),
+
+  // 打刻ゲート / 提出期限アラートの状態を取得
+  clockGate: (staffId: string): Promise<ApiResponse<ClockGate>> =>
+    apiRequest('submissions/clock-gate', undefined, { staffId }),
 
   list: (params?: {
     yearMonth?: string;
