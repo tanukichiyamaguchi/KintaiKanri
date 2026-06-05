@@ -57,6 +57,14 @@ export function ClockPage() {
 
   useEffect(() => {
     fetchTodayAttendance();
+    // タブに戻ってきた時 / フォーカス時に即時更新（出勤簿提出直後の古いゲート状態を解消）
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchTodayAttendance(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', fetchTodayAttendance);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', fetchTodayAttendance);
+    };
   }, [fetchTodayAttendance]);
 
   const handleClockIn = async () => {

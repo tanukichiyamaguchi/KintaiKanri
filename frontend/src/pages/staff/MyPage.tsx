@@ -48,17 +48,26 @@ export function MyPage() {
   }, [isAuthenticated, staff, navigate]);
 
   // 前月出勤簿の提出期限アラート / 打刻ブロック状態を取得（タブや月に依存しない）
+  // 出勤簿の提出直後にバナーが消えるよう、フォーカス・タブ復帰でも再取得する
   useEffect(() => {
     if (!staff) return;
     const staffId = staff.staffId;
-    (async () => {
+    const fetchGate = async () => {
       try {
         const res = await submissionApi.clockGate(staffId);
         if (res.success && res.data) setGate(res.data);
       } catch {
         // 非クリティカル: バナーが出ないだけ
       }
-    })();
+    };
+    fetchGate();
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchGate(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', fetchGate);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', fetchGate);
+    };
   }, [staff]);
 
   // Fetch attendance data
