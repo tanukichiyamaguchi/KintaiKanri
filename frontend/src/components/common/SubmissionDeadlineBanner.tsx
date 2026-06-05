@@ -25,13 +25,13 @@ export function SubmissionDeadlineBanner({ gate }: { gate: ClockGate | null }) {
   const isRejected = gate.prevStatus === 'rejected';
   const headline = isRejected
     ? `${formatYm(gate.prevYearMonth)}分の出勤簿が差し戻されました`
-    : `${formatYm(gate.prevYearMonth)}分の出勤簿が未提出です`;
+    : `${formatYm(gate.prevYearMonth)}分の出勤簿のご提出をお願いします`;
   const blockedDetail = isRejected
-    ? <>差戻し内容を修正のうえ再提出してください。再提出が完了するまで<strong>打刻ができません</strong>。</>
-    : <>提出期限（{formatDeadline(gate.deadlineDate)}）を過ぎると勤怠管理に支障が出ます。提出が完了するまで<strong>打刻ができません</strong>。出勤簿を提出してください。</>;
+    ? <>差戻し内容をご確認のうえ、再提出をお願いいたします。再提出いただきますと、引き続き打刻をご利用いただけます。</>
+    : <>お手数ですが、{formatDeadline(gate.deadlineDate)} までに出勤簿をご提出ください。ご提出いただきますと、引き続き打刻をご利用いただけます。</>;
   const alertDetail = isRejected
-    ? `差戻し内容を修正のうえ ${formatDeadline(gate.deadlineDate)} までに再提出してください。`
-    : `${gate.blockDay}日以降、前月分が未提出だと打刻ができなくなります。お早めにご提出ください。`;
+    ? `差戻し内容をご確認のうえ、${formatDeadline(gate.deadlineDate)} までに再提出をお願いいたします。`
+    : `${formatDeadline(gate.deadlineDate)} が提出期限です。お早めにご提出いただけますと安心です。`;
 
   if (gate.clockBlocked) {
     return (

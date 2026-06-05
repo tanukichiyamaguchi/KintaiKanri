@@ -1243,8 +1243,8 @@ function handleClock(body) {
   if (gate.clockBlocked) {
     return {
       success: false,
-      error: gate.prevYearMonth + ' 分の出勤簿が未提出です。' + gate.deadlineDate
-        + ' までに提出が必要です。出勤簿を提出してから打刻してください。'
+      error: 'お手数ですが、' + gate.prevYearMonth + ' 分の出勤簿のご提出をお願いいたします（期限: '
+        + gate.deadlineDate + '）。ご提出いただきますと、引き続き打刻をご利用いただけます。'
     };
   }
 
@@ -3468,13 +3468,13 @@ function sendMonthlyDeadlineReminders_() {
   let skipped = 0;
   staffList.forEach(function (staff) {
     const body = staff.name + 'さん\n\n'
-      + '今月の提出期限をお知らせします。\n\n'
+      + 'いつもお疲れさまです。\n今月の提出期限をお知らせします。\n\n'
       + '■ 出勤簿（' + prevYm + ' 分）\n'
       + '　提出期限: ' + attendanceDeadline + ' まで\n'
-      + '　※ ' + MONTHLY_SUBMISSION_BLOCK_DAY + ' 日以降、前月分の出勤簿が未提出だと打刻ができなくなります。\n\n'
+      + '　※ ' + MONTHLY_SUBMISSION_BLOCK_DAY + ' 日までにご提出いただけますと、引き続きスムーズに打刻をご利用いただけます。\n\n'
       + '■ 希望休（' + shiftTargetYm + ' 分）\n'
       + '　提出期限: ' + shiftDeadline + ' まで\n\n'
-      + 'アプリにログインして、期限までにご提出をお願いします。';
+      + 'お時間あるときに、アプリからご提出いただけますと幸いです。';
     const ok = safeSendEmail_(staff.email, subject, body);
     if (ok) sent++; else skipped++;
   });
