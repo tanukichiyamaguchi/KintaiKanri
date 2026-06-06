@@ -2886,7 +2886,11 @@ function hasAttendanceInMonth_(staffId, yearMonth) {
   if (!m) return false;
   const year = parseInt(m[1], 10);
   const month = parseInt(m[2], 10);
-  const sheet = getAttendanceSheet(year, month);
+  // getAttendanceSheet は存在しなければ空シートを新規作成してしまう副作用がある。
+  // ゲート判定では「過去月の実績有無を確認するだけ」なので、既存シートの存在チェックに留める。
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(attendanceSheetName_(year, month));
+  if (!sheet) return false;
   const rows = sheetToObjects(sheet);
   return rows.some(function (r) {
     return r.staff_id === staffId && r.clock_in !== '' && r.clock_in != null;
@@ -3009,17 +3013,20 @@ function handleSubmitMonthly(body) {
   }
 
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
-  const rowIndex = findSubmissionRowIndex_(sheet, staffId, yearMonth);
+  // 過去の重複行があっても全てに同じ更新を適用してデデュープ整合を保つ
+  const rowIndices = findAllSubmissionRows_(sheet, staffId, yearMonth);
   const now = new Date().toISOString();
 
-  if (rowIndex === -1) {
+  if (rowIndices.length === 0) {
     sheet.appendRow([staffId, staff.name, yearMonth, localizeEnumValue_('submitted'), now, '', '', remarks || '', '']);
   } else {
     const headers = getHeaderRow_(sheet);
-    setCellByColumnName_(sheet, rowIndex, headers, 'status', 'submitted');
-    setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
-    setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks || '');
-    setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', '');
+    rowIndices.forEach(function (rowIndex) {
+      setCellByColumnName_(sheet, rowIndex, headers, 'status', 'submitted');
+      setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
+      setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks || '');
+      setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', '');
+    });
   }
   // 直後の list/読込で確実に新行が見えるよう Spreadsheet 書込キャッシュを強制フラッシュ
   try { SpreadsheetApp.flush(); } catch (e) { /* ignore */ }
