@@ -1238,14 +1238,15 @@ function handleClock(body) {
     return { success: false, error: 'この月は提出済みのため打刻できません' };
   }
 
-  // 前月出勤簿の未提出ゲート: 毎月 4 日以降、前月分が未提出だと打刻不可
+  // 前月出勤簿の未提出ゲート:
+  // - draft の場合: 毎月 4 日以降に打刻不可
+  // - rejected の場合: いつでも打刻不可（再提出を促す）
   const gate = computeClockGate_(staffId, now);
   if (gate.clockBlocked) {
-    return {
-      success: false,
-      error: 'お手数ですが、' + gate.prevYearMonth + ' 分の出勤簿のご提出をお願いいたします（期限: '
-        + gate.deadlineDate + '）。ご提出いただきますと、引き続き打刻をご利用いただけます。'
-    };
+    const errMsg = gate.prevStatus === 'rejected'
+      ? 'お手数ですが、' + gate.prevYearMonth + ' 分の出勤簿が差し戻されておりますので、再提出をお願いいたします。再提出いただきますと、引き続き打刻をご利用いただけます。'
+      : 'お手数ですが、' + gate.prevYearMonth + ' 分の出勤簿のご提出をお願いいたします（期限: ' + gate.deadlineDate + '）。ご提出いただきますと、引き続き打刻をご利用いただけます。';
+    return { success: false, error: errMsg };
   }
 
   const sheet = getAttendanceSheet(year, month);
@@ -2895,8 +2896,9 @@ function hasAttendanceInMonth_(staffId, yearMonth) {
 /**
  * 打刻ゲート / 提出期限アラートの状態を算出する。
  * - 毎月 1〜7 日: 前月分 出勤簿の提出期限アラートを表示（alertActive）
- * - 毎月 4 日以降: 前月分が未提出（submitted/approved 以外）かつ前月に出勤実績あり
- *                 → 打刻ブロック（clockBlocked）
+ * - 毎月 4 日以降: 前月分が未提出（draft）かつ前月に出勤実績あり → 打刻ブロック（clockBlocked）
+ * - 差戻し（rejected）の場合: 日付に関係なく常に打刻ブロック（再提出を促す）
+ * - 提出済み（submitted/approved）の場合: ブロック解除
  * now を省略すると現在時刻を使う。
  */
 function computeClockGate_(staffId, now) {
@@ -2913,8 +2915,10 @@ function computeClockGate_(staffId, now) {
     hasPrevAttendance = hasAttendanceInMonth_(staffId, prevYm);
   }
   const prevSubmitted = (prevStatus === 'submitted' || prevStatus === 'approved');
+  const isRejected = (prevStatus === 'rejected');
   const alertActive = dayOfMonth >= 1 && dayOfMonth <= MONTHLY_SUBMISSION_DEADLINE_DAY && !prevSubmitted && hasPrevAttendance;
-  const clockBlocked = dayOfMonth >= MONTHLY_SUBMISSION_BLOCK_DAY && !prevSubmitted && hasPrevAttendance;
+  // 差戻しは日付に関係なく即時ブロック / draft は 4 日以降にブロック
+  const clockBlocked = !prevSubmitted && hasPrevAttendance && (dayOfMonth >= MONTHLY_SUBMISSION_BLOCK_DAY || isRejected);
 
   return {
     today: Utilities.formatDate(d, scriptTimeZone_(), 'yyyy-MM-dd'),
