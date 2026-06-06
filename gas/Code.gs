@@ -2009,21 +2009,38 @@ function handleCalculateSalary(body) {
     const monthlySalary = safeNumber_(staff.monthly_salary, 0);
     const transportation = safeNumber_(staff.transportation, 0);
 
-    // Calculate work hours
-    const totalWorkMinutes = staffAttendance.reduce((sum, a) => sum + safeNumber_(a.work_minutes, 0), 0);
-    const totalWorkHours = totalWorkMinutes / 60;
+    // 勤怠を「通常日 / 法定休日」に分けて集計し、深夜時間（22:00-05:00）も日別に合算する。
+    // 法定休日労働の労働時間は通常時間に含めず、別途 holidayPay として 135% で精算する。
+    let regularWorkMinutes = 0;
+    let holidayWorkMinutes = 0;
+    let nightWorkMinutes = 0;
+    staffAttendance.forEach(function (a) {
+      const wm = safeNumber_(a.work_minutes, 0);
+      const isHoliday = (a.is_holiday === true || a.is_holiday === 'TRUE');
+      if (isHoliday) holidayWorkMinutes += wm; else regularWorkMinutes += wm;
+      // 打刻時刻から 22:00-05:00 帯の重なり分（分）を加算
+      const ci = formatTimeOnly_(a.clock_in);
+      const co = formatTimeOnly_(a.clock_out);
+      if (ci && co) nightWorkMinutes += nightWorkMinutesForRow_(ci, co);
+    });
+    const regularHours = regularWorkMinutes / 60;
+    const holidayHours = holidayWorkMinutes / 60;
+    const nightHours = nightWorkMinutes / 60;
+    const totalWorkHours = regularHours + holidayHours;
 
-    // Calculate overtime (simplified - would need week-by-week calculation for accuracy)
+    // 残業: 通常日のうち月所定（週44h×52/12 ≈ 190.67h）を超えた分
     const monthlyWorkingHours = (WEEKLY_HOURS * 52) / 12;
-    const overtimeHours = Math.max(0, totalWorkHours - monthlyWorkingHours);
+    const overtimeHours = Math.max(0, regularHours - monthlyWorkingHours);
 
     // 会社都合の遅刻・早退申請（承認済み）がある日を控除対象から除外する
+    // 新スキーマでは reason_type 列、旧スキーマでは details_json.reasonType を参照（後方互換）
     const companyLateDates = {};
     const companyEarlyDates = {};
     monthApplications.forEach(function (a) {
       if (a.staff_id !== staff.staff_id) return;
-      const details = safeJsonParse_(a.details_json) || {};
-      if (details.reasonType !== 'company') return;
+      const fromJson = safeJsonParse_(a.details_json) || {};
+      const reasonType = a.reason_type || fromJson.reasonType || '';
+      if (reasonType !== 'company') return;
       const dateKey = formatDateOnly_(a.date);
       if (a.type === 'late_arrival') companyLateDates[dateKey] = true;
       else if (a.type === 'early_leave') companyEarlyDates[dateKey] = true;
@@ -2045,9 +2062,13 @@ function handleCalculateSalary(body) {
     const hourlyRate = monthlyWorkingHours > 0 ? monthlySalary / monthlyWorkingHours : 0;
     const minuteRate = hourlyRate / 60;
 
+    // 割増手当（CLAUDE.md のビジネスルールに従う）:
+    //   残業 = 通常日の所定超 × 時給 × 125%（基本＋25% premium）
+    //   深夜 = 22:00-05:00 帯の労働 × 時給 × 25%（premium のみ。月給に含まれる base 部分には加算しない）
+    //   休日 = 法定休日労働 × 時給 × 135%（基本＋35% premium。通常時間とは別計上）
     const overtimePay = Math.floor(overtimeHours * hourlyRate * 1.25);
-    const nightPay = 0; // Would need hour-by-hour calculation
-    const holidayPay = 0; // Would need to check holiday flags
+    const nightPay = Math.floor(nightHours * hourlyRate * 0.25);
+    const holidayPay = Math.floor(holidayHours * hourlyRate * 1.35);
 
     const incentiveTotal = staffIncentives.reduce((sum, i) => sum + safeNumber_(i.amount, 0), 0);
 
@@ -2058,15 +2079,20 @@ function handleCalculateSalary(body) {
     const lateDeduction = Math.floor(lateMinutes * minuteRate);
     const earlyLeaveDeduction = Math.floor(earlyLeaveMinutes * minuteRate);
 
-    // Insurance (simplified - would use standard remuneration table)
+    // 社会保険料: 健康・厚生年金・介護保険は「標準報酬月額」ベースで計算
+    //   - STANDARD_REMUNERATION テーブルから monthlySalary+transportation に対応する 等級を引く
+    //   - テーブル未設定の場合は (monthlySalary + transportation) を fallback として使う
+    // 雇用保険は実際の総支給額ベースが法定（変更なし）
+    const asOfMonthStart = new Date(yNum, mNum - 1, 1);
+    const standardBase = getStandardRemuneration_(monthlySalary + transportation) || (monthlySalary + transportation);
     const healthRate = safeNumber_(rates.healthInsuranceRate, 0);
     const nursingRate = safeNumber_(rates.nursingInsuranceRate, 0);
     const pensionRate = safeNumber_(rates.pensionRate, 0);
     const empInsRate = safeNumber_(rates.employmentInsuranceRate, 0);
-    const healthInsurance = Math.floor(grossPay * healthRate / 100);
-    const nursingInsurance = isNursingInsuranceTarget(staff.birth_date) ?
-                            Math.floor(grossPay * nursingRate / 100) : 0;
-    const pension = Math.floor(grossPay * pensionRate / 100);
+    const healthInsurance = Math.floor(standardBase * healthRate / 100);
+    const nursingInsurance = isNursingInsuranceTarget(staff.birth_date, asOfMonthStart) ?
+                            Math.floor(standardBase * nursingRate / 100) : 0;
+    const pension = Math.floor(standardBase * pensionRate / 100);
     const employmentInsurance = Math.floor(grossPay * empInsRate / 100);
 
     // Tax
@@ -2085,8 +2111,8 @@ function handleCalculateSalary(body) {
       baseSalary: monthlySalary,
       totalWorkHours: Math.round(totalWorkHours * 100) / 100,
       overtimeHours: Math.round(overtimeHours * 100) / 100,
-      nightHours: 0,
-      holidayHours: 0,
+      nightHours: Math.round(nightHours * 100) / 100,
+      holidayHours: Math.round(holidayHours * 100) / 100,
       overtimePay,
       nightPay,
       holidayPay,
@@ -2458,21 +2484,54 @@ function appendAttendanceHistory_(date, staffId, field, oldValue, newValue, edit
 }
 
 // Helper function to check nursing insurance eligibility
-function isNursingInsuranceTarget(birthDate) {
+// asOf: 判定基準日（未指定の場合は今日）。給与計算では「対象月の初日」を渡すことで、
+// 月内の計算タイミングや実行日に依存せず安定した判定結果を得る。
+function isNursingInsuranceTarget(birthDate, asOf) {
   if (!birthDate) return false;
 
   const birth = toDateOrNull_(birthDate);
   if (!birth) return false;
-  const today = new Date();
+  const ref = (asOf instanceof Date && !isNaN(asOf.getTime())) ? asOf : new Date();
 
-  let age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
+  let age = ref.getFullYear() - birth.getFullYear();
+  const monthDiff = ref.getMonth() - birth.getMonth();
 
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+  if (monthDiff < 0 || (monthDiff === 0 && ref.getDate() < birth.getDate())) {
     age--;
   }
 
   return age >= 40 && age < 65;
+}
+
+/**
+ * 月額（月給+交通費 等）から標準報酬月額テーブル（STANDARD_REMUNERATION シート）を引き、
+ * 該当する 等級の standard_monthly を返す。
+ * テーブルが空 / 一致するレンジが無い場合は null を返す（呼び出し側で fallback）。
+ */
+function getStandardRemuneration_(monthlyAmount) {
+  const sheet = getOrCreateSheet(SHEETS.STANDARD_REMUNERATION);
+  const data = sheetToObjects(sheet);
+  if (!data || data.length === 0) return null;
+  const amt = safeNumber_(monthlyAmount, 0);
+  // 範囲一致を優先
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const min = safeNumber_(row.monthly_min, 0);
+    const max = safeNumber_(row.monthly_max, 0);
+    const std = safeNumber_(row.standard_monthly, 0);
+    if (amt >= min && amt <= max && std > 0) return std;
+  }
+  // 範囲外（上限超 / 下限未満）の場合は最も近い等級を返す
+  let bestStd = null;
+  let bestDist = Infinity;
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const std = safeNumber_(row.standard_monthly, 0);
+    if (std <= 0) continue;
+    const dist = Math.abs(std - amt);
+    if (dist < bestDist) { bestDist = dist; bestStd = std; }
+  }
+  return bestStd;
 }
 
 // ============================================================
