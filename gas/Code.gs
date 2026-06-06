@@ -3017,6 +3017,8 @@ function handleSubmitMonthly(body) {
     setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks || '');
     setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', '');
   }
+  // 直後の list/読込で確実に新行が見えるよう Spreadsheet 書込キャッシュを強制フラッシュ
+  try { SpreadsheetApp.flush(); } catch (e) { /* ignore */ }
 
   try { notifyAdminsMonthlySubmitted_(staff, yearMonth); }
   catch (e) { Logger.log('notifyAdminsMonthlySubmitted_ failed: ' + (e && e.message)); }
