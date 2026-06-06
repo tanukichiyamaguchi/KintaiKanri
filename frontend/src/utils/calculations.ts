@@ -69,13 +69,18 @@ export function calculateEarlyLeaveDeduction(earlyLeaveMinutes: number, minuteRa
 
 /**
  * Check if person is nursing insurance target (40-65 years old)
+ * asOf: 判定基準日（YYYY-MM-DD 形式の文字列または Date）。未指定なら今日。
+ * 給与計算では「対象月の初日」を渡すことで、月内の表示タイミングや日付ロールオーバーで
+ * 結果が反転しない安定した判定を実現する。
  */
-export function isNursingInsuranceTarget(birthDate: string): boolean {
+export function isNursingInsuranceTarget(birthDate: string, asOf?: string | Date): boolean {
   const birth = new Date(birthDate);
-  const today = new Date();
-  const age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
-  const adjustedAge = monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())
+  if (Number.isNaN(birth.getTime())) return false;
+  const ref = asOf ? new Date(asOf) : new Date();
+  if (Number.isNaN(ref.getTime())) return false;
+  const age = ref.getFullYear() - birth.getFullYear();
+  const monthDiff = ref.getMonth() - birth.getMonth();
+  const adjustedAge = monthDiff < 0 || (monthDiff === 0 && ref.getDate() < birth.getDate())
     ? age - 1
     : age;
   return adjustedAge >= 40 && adjustedAge < 65;
