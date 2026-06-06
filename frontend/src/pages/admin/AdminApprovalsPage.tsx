@@ -201,6 +201,17 @@ export function AdminApprovalsPage() {
 
   useEffect(() => {
     reloadSubmissions();
+    // 30 秒ごとに自動再フェッチ + タブ復帰 / フォーカス時に即時更新
+    // （スタッフの新規月次提出が管理者画面にリアルタイム反映されるよう）
+    const intervalId = setInterval(reloadSubmissions, 30 * 1000);
+    const onVisible = () => { if (document.visibilityState === 'visible') reloadSubmissions(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', reloadSubmissions);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', reloadSubmissions);
+    };
   }, [reloadSubmissions]);
 
   // Month navigation
