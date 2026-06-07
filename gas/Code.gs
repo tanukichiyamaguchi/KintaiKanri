@@ -4122,6 +4122,10 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
 
     const allValues = [metaRow, groupHeader, subHeader]
       .concat(dataValues).concat([sumLabels]);
+    // ★書式を先に '@'（文字列）に固定してから setValues。
+    // 「176:00」のような 24h を超える HH:MM 文字列を Sheets が時刻型に自動変換すると
+    // 内部で 7.333... 日として保持され、24h ロールオーバーした「8:00」として表示されてしまう。
+    sheet.getRange(1, 1, allValues.length, COL_TOTAL).setNumberFormat('@');
     sheet.getRange(1, 1, allValues.length, COL_TOTAL).setValues(allValues);
 
     // ── 書式 ──
@@ -4156,8 +4160,11 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
     }
 
     // 集計行
+    // 数値書式は '@'（文字列）に固定。Sheets が "176:00" を時刻型に自動変換すると
+    // 24h でロールオーバーして "8:00" 等として表示されてしまうため。
     sheet.getRange(sumRow, 1, 1, COL_TOTAL)
-      .setFontWeight('bold').setBackground('#fff7e6').setHorizontalAlignment('center');
+      .setFontWeight('bold').setBackground('#fff7e6').setHorizontalAlignment('center')
+      .setNumberFormat('@');
 
     // 「出勤無し」行のみ文字色をグレーに（土日色付けは行わない）
     if (rowFlags.length > 0) {
