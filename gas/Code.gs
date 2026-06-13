@@ -2990,12 +2990,54 @@ function handleRejectApplication(body) {
 // Monthly submission handlers
 // ============================================================
 
-function getSubmissionStatus_(staffId, yearMonth) {
+// 月次提出ステータス優先度（新しい状態ほど大きい数値）。
+// approve/reject 済み(reviewed) > 提出済み(submitted) > 下書き(draft)。
+const SUBMISSION_STATUS_ORDER = { approved: 4, rejected: 3, submitted: 2, draft: 1 };
+
+// 指定スタッフ×年月に一致する月次提出行のうち「最も確からしい1行」を返す（無ければ null）。
+//
+// 重要: 同一 (staffId, yearMonth) に複数行が存在しうる（過去の Date 比較バグ等で生まれた重複）。
+// 単純な find() で先頭行を返すと、古い draft 行が新しい submitted 行より前にあった場合に
+// 「提出済みなのに draft と判定 → 打刻ゲートで誤ブロック」が起きる。
+// handleListSubmissions と同じ優先順位（reviewed_at → submitted_at → status 優先度）で
+// 重複を解決し、常に正しい最新のステータスを返す。
+// staff_id は数値・文字列が混在しうるため String 化して比較する。
+function getBestSubmissionRecord_(staffId, yearMonth) {
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
   const data = sheetToObjects(sheet);
   const targetYm = formatYearMonthValue_(yearMonth);
-  const rec = data.find(r => r.staff_id === staffId && formatYearMonthValue_(r.year_month) === targetYm);
-  return rec ? rec.status : 'draft';
+  const sid = String(staffId);
+
+  let best = null;
+  for (let i = 0; i < data.length; i++) {
+    const r = data[i];
+    if (String(r.staff_id) !== sid) continue;
+    if (formatYearMonthValue_(r.year_month) !== targetYm) continue;
+    if (!best) { best = r; continue; }
+
+    const newReviewed = toIsoString_(r.reviewed_at) || '';
+    const oldReviewed = toIsoString_(best.reviewed_at) || '';
+    if (newReviewed !== oldReviewed) {
+      if (newReviewed > oldReviewed) best = r;
+      continue;
+    }
+    const newSubmitted = toIsoString_(r.submitted_at) || '';
+    const oldSubmitted = toIsoString_(best.submitted_at) || '';
+    if (newSubmitted !== oldSubmitted) {
+      if (newSubmitted > oldSubmitted) best = r;
+      continue;
+    }
+    const newRank = SUBMISSION_STATUS_ORDER[r.status] || 0;
+    const oldRank = SUBMISSION_STATUS_ORDER[best.status] || 0;
+    if (newRank > oldRank) best = r;
+  }
+  return best;
+}
+
+// 指定スタッフ×年月の月次提出ステータスを返す（無ければ 'draft'）。重複行は dedupe 済み。
+function getSubmissionStatus_(staffId, yearMonth) {
+  const best = getBestSubmissionRecord_(staffId, yearMonth);
+  return best ? best.status : 'draft';
 }
 
 // "YYYY-MM" の前月を "YYYY-MM" で返す。
@@ -3078,11 +3120,8 @@ function handleGetClockGate(params) {
 function handleGetSubmissionStatus(params) {
   const { staffId, yearMonth } = params;
   if (!staffId || !yearMonth) return { success: false, error: '必須パラメータが指定されていません' };
-  const targetYm = formatYearMonthValue_(yearMonth);
-  const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
-  const rec = sheetToObjects(sheet).find(
-    r => r.staff_id === staffId && formatYearMonthValue_(r.year_month) === targetYm
-  );
+  // 重複行があっても最新の確定ステータスを返す（getSubmissionStatus_ と同じ dedupe ロジック）
+  const rec = getBestSubmissionRecord_(staffId, yearMonth);
   if (!rec) {
     return { success: true, data: { staffId, yearMonth, status: 'draft' } };
   }
@@ -3217,7 +3256,7 @@ function handleListSubmissions(params) {
   //   3) status の優先順位 approved > rejected > submitted > draft
   //      （approve/reject 系で全行に同じ更新を入れるためどれを残しても結果は同等だが、
   //       UI 上の見え方が安定するように決定論的に選ぶ）
-  const STATUS_ORDER = { approved: 4, rejected: 3, submitted: 2, draft: 1 };
+  const STATUS_ORDER = SUBMISSION_STATUS_ORDER;
   const dedupedMap = {};
   for (let i = 0; i < data.length; i++) {
     const r = data[i];
