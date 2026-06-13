@@ -14,6 +14,11 @@
 const SPREADSHEET_ID = '1cQJf5tgTwRIpNUU-rtQMeSCn9DKti4qyzTm-1j2DXC0'; // KintaiKanri spreadsheet
 const WEEKLY_HOURS = 44; // Beauty industry special measure
 
+// このコードのバージョン。Apps Script に最新コードが反映されているかを
+// メニュー「コードのバージョンを確認」で確認するための目印。
+// 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
+const CODE_VERSION = '2026-06-13c (kintai-format-gate-fix)';
+
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
 // - 打刻ブロック開始日: 毎月 4 日（この日以降、前月未提出だと打刻不可）
@@ -3734,6 +3739,7 @@ function safeJsonParse_(s) {
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('勤怠管理')
+    .addItem('コードのバージョンを確認', 'menuShowCodeVersion')
     .addItem('翌月のシフト雛形を作成', 'menuGenerateNextMonthShift')
     .addItem('出勤簿を再生成', 'menuRebuildAttendanceLogs')
     .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
@@ -3745,6 +3751,21 @@ function onOpen() {
     .addItem('テスト管理者追加', 'addTestAdmin')
     .addItem('システム初期化', 'setupSystem')
     .addToUi();
+}
+
+/**
+ * メニュー: いま Apps Script に反映されているコードのバージョンを表示する。
+ * このダイアログに最新版（CODE_VERSION）が出れば、コードは正しく反映済み。
+ * メニュー項目自体が出てこない場合は、コードを貼り付けて保存→ページ再読込が必要。
+ */
+function menuShowCodeVersion() {
+  SpreadsheetApp.getUi().alert(
+    'コードのバージョン',
+    '現在反映されているコード: ' + CODE_VERSION +
+    '\n\nこの表示が出ていれば、最新コードは正しく保存されています。' +
+    '\n「出勤簿を再生成」を実行すると、総労働時間などが [h]:mm 表示（24h を超えても正しく）になります。',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 /**
@@ -4141,12 +4162,16 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
   const isNew = !sheet;
   if (isNew) sheet = ss.insertSheet(sheetName);
 
-  // 既存セル/書式/Merge を完全リセット（途中失敗時の中間状態を最小化するため
-  // ヘッダー〜集計行を「1 回の setValues」で一気に確定させる）
   try {
-    // 既存の merge を解除（再 merge する前に必須）
+    // 既存セル/書式/Merge を完全リセット。
+    // 重要: 旧コードが文字列 "208:00" 等を書いた際に Sheets が自動付与した期間書式
+    //       （[h]:mm:ss など）がセルに残ると、後から setNumberFormat('[h]:mm') をかけても
+    //       上書きされず 24h ロールオーバー表示（67:44→19:44）が直らないことがある。
+    //       clearContents だけでなく clearFormats も明示的に呼んで残留書式を確実に消す。
     if (!isNew) {
       try { sheet.getRange(1, 1, Math.max(1, sheet.getMaxRows()), Math.max(1, sheet.getMaxColumns())).breakApart(); } catch (e) { /* ignore */ }
+      try { sheet.clearContents(); } catch (e) { /* ignore */ }
+      try { sheet.clearFormats(); } catch (e) { /* ignore */ }
       sheet.clear();
     }
     if (sheet.getMaxColumns() < COL_TOTAL) {
@@ -4289,6 +4314,14 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
 
     // タブ色（出勤簿シートと元データを視覚的に区別）
     try { sheet.setTabColor('#4285f4'); } catch (e) { /* ignore */ }
+
+    // ── 最終防御: 所要時間列の [h]:mm を「最後に」もう一度確定 ──
+    // 上の装飾処理（merge / border 等）で書式が触られても、ここで必ず [h]:mm に戻す。
+    // これが当関数で所要時間列に対する最後の書式操作になるよう、return 直前に置く。
+    DURATION_COLS_DATA.forEach(function (c) {
+      sheet.getRange(1, c, allValues.length, 1).setNumberFormat(FMT_HHMM);
+    });
+    SpreadsheetApp.flush();
 
   } catch (e) {
     // 書込中に致命エラーが出てもユーザーには「失敗を明示」して中間状態を残さないようログに残す
