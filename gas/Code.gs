@@ -4205,6 +4205,12 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
     // 書式を先に確定 → 値を書き込み（順序を逆にすると Sheets の自動型推論が先行する）
     sheet.getRange(1, 1, allValues.length, COL_TOTAL).setNumberFormats(formats);
     sheet.getRange(1, 1, allValues.length, COL_TOTAL).setValues(allValues);
+    // 二重防御: setValues 後にも所要時間列へ [h]:mm を再適用する。
+    // 既存シートの書式残留や Sheets の自動再推論で h:mm（24h ロールオーバー）に
+    // 戻ってしまうケースを確実に防ぐ。各 1 列ぶんを縦に [h]:mm で固定。
+    DURATION_COLS_DATA.forEach(function (c) {
+      sheet.getRange(1, c, allValues.length, 1).setNumberFormat(FMT_HHMM);
+    });
 
     // ── 書式 ──
     // メタ行: ラベル太字
