@@ -4007,7 +4007,14 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
   const workDaysInMonth = getStandardWorkDaysForMonth_(year, month);
   const standardPerDayMin = 480; // 1 日 8h = 480 分
   const standardMonthMin = standardPerDayMin * workDaysInMonth;
-  const standardHHMM = formatMinutesAsHHMM_(standardMonthMin);
+  // 「176:00」など 24h を超える所要時間を文字列で setValues すると、Sheets が時刻型に勝手に
+  // 変換して 24h でロールオーバーした「8:00」として表示されてしまう。
+  // → 値は数値（= 分 / 1440 = 「1日 = 1.0」スケール）で書き込み、セル書式を [h]:mm にして
+  // 24h を超える時間も正しく表示するように統一する。
+  function minutesToDayFraction_(mins) {
+    const n = Number(mins);
+    return isNaN(n) ? 0 : n / 1440; // 1440 = 60 * 24
+  }
 
   const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -4071,14 +4078,16 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
     const nightMin = nightWorkMinutesForRow_(clockIn, clockOut);
     if (nightMin > 0) totalNightMin += nightMin;
 
+    // 所要時間（時間量）は数値（日数換算）として書き込み、
+    // 時刻（出勤/退勤など壁時計時刻）は文字列のまま保持する。
     dataValues.push([
       month + '/' + d, WEEKDAYS[wkday],
-      amIn, amOut, hasWork ? formatMinutesAsHHMM_(amMin) : '0:00',
-      pmIn, pmOut, hasWork ? formatMinutesAsHHMM_(pmMin) : '0:00',
-      hasWork ? formatMinutesAsHHMM_(workMin) : '0:00',
-      hasWork ? formatMinutesAsHHMM_(standardForDay) : '0:00',
-      formatMinutesAsHHMM_(overtimeForDay),
-      formatMinutesAsHHMM_(nightMin),
+      amIn, amOut, hasWork ? minutesToDayFraction_(amMin) : 0,
+      pmIn, pmOut, hasWork ? minutesToDayFraction_(pmMin) : 0,
+      hasWork ? minutesToDayFraction_(workMin) : 0,
+      hasWork ? minutesToDayFraction_(standardForDay) : 0,
+      minutesToDayFraction_(overtimeForDay),
+      minutesToDayFraction_(nightMin),
     ]);
     rowFlags.push({ wkday: wkday, hasWork: hasWork });
   }
@@ -4105,27 +4114,57 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
       sheet.insertColumnsAfter(sheet.getMaxColumns(), COL_TOTAL - sheet.getMaxColumns());
     }
 
-    // 行 1: メタ
-    const metaRow = ['年', year, '月', month, '氏名', staff.name, '所定労働時間', standardHHMM, '', '', '', ''];
+    // 行 1: メタ（所定労働時間は数値で書き込み、[h]:mm 表示する）
+    const metaRow = ['年', year, '月', month, '氏名', staff.name, '所定労働時間', minutesToDayFraction_(standardMonthMin), '', '', '', ''];
     // 行 2: グループ見出し
     const groupHeader = ['', '', '勤怠時間入力', '', '', '', '', '', '総労働時間', '所定労働時間', '残業時間', '深夜時間'];
     // 行 3: サブ見出し
     const subHeader = ['日付', '曜日', '午前', '', '', '午後', '', '', '', '', '', ''];
     // 行 sumRow: 集計行
+    // 「総労働時間」合計は workMin の総和（= totalStandardMin + totalOvertimeMin）。
+    // 旧コードは totalAmMin + totalPmMin を使っていたが、出勤/退勤時刻が空のまま work_minutes だけ
+    // 入った日があると 0 扱いされ、日次行の総労働時間と合わなくなるため。
     const sumLabels = ['合計', workDays + '日',
-      '', '', formatMinutesAsHHMM_(totalAmMin),
-      '', '', formatMinutesAsHHMM_(totalPmMin),
-      formatMinutesAsHHMM_(totalAmMin + totalPmMin),
-      formatMinutesAsHHMM_(totalStandardMin),
-      formatMinutesAsHHMM_(totalOvertimeMin),
-      formatMinutesAsHHMM_(totalNightMin)];
+      '', '', minutesToDayFraction_(totalAmMin),
+      '', '', minutesToDayFraction_(totalPmMin),
+      minutesToDayFraction_(totalStandardMin + totalOvertimeMin),
+      minutesToDayFraction_(totalStandardMin),
+      minutesToDayFraction_(totalOvertimeMin),
+      minutesToDayFraction_(totalNightMin)];
 
     const allValues = [metaRow, groupHeader, subHeader]
       .concat(dataValues).concat([sumLabels]);
-    // ★書式を先に '@'（文字列）に固定してから setValues。
-    // 「176:00」のような 24h を超える HH:MM 文字列を Sheets が時刻型に自動変換すると
-    // 内部で 7.333... 日として保持され、24h ロールオーバーした「8:00」として表示されてしまう。
-    sheet.getRange(1, 1, allValues.length, COL_TOTAL).setNumberFormat('@');
+
+    // ── 数値書式 ──
+    // 時間量セル（24h を超え得る所要時間）は [h]:mm でフォーマット、それ以外は文字列扱い。
+    // 「176:00」のような文字列を直接 setValues すると Sheets が時刻型に自動変換して
+    // 24h でロールオーバー（→ "8:00" 等）してしまうため、値は数値（= 分/1440）で書き込み、
+    // セル書式で [h]:mm 表示させる方式に統一した。
+    const FMT_HHMM = '[h]:mm';
+    const FMT_TEXT = '@';
+    // 1-indexed の "所要時間列"（午前-時間, 午後-時間, 総労働時間, 所定労働時間, 残業時間, 深夜時間）
+    const DURATION_COLS_DATA = [5, 8, 9, 10, 11, 12];
+    const DURATION_COLS_SUM = [5, 8, 9, 10, 11, 12];
+    function makeFormatRow_(durationCols) {
+      const r = new Array(COL_TOTAL).fill(FMT_TEXT);
+      durationCols.forEach(function (c) { r[c - 1] = FMT_HHMM; });
+      return r;
+    }
+    const formats = [];
+    // メタ行: H 列（所定労働時間）のみ [h]:mm
+    formats.push(makeFormatRow_([8]));
+    // ヘッダー 2 行はすべて文字列
+    formats.push(new Array(COL_TOTAL).fill(FMT_TEXT));
+    formats.push(new Array(COL_TOTAL).fill(FMT_TEXT));
+    // 日次データ行: 所要時間列のみ [h]:mm
+    for (let i = 0; i < dataValues.length; i++) {
+      formats.push(makeFormatRow_(DURATION_COLS_DATA));
+    }
+    // 集計行
+    formats.push(makeFormatRow_(DURATION_COLS_SUM));
+
+    // 書式を先に確定 → 値を書き込み（順序を逆にすると Sheets の自動型推論が先行する）
+    sheet.getRange(1, 1, allValues.length, COL_TOTAL).setNumberFormats(formats);
     sheet.getRange(1, 1, allValues.length, COL_TOTAL).setValues(allValues);
 
     // ── 書式 ──
@@ -4152,19 +4191,16 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
     try { sheet.getRange(2, 2, 2, 1).merge(); } catch (e) { /* ignore */ }
 
     // データ行のアラインメント
+    // ※ 数値書式は上の setNumberFormats で 1 回にまとめて適用済みなので
+    //   ここで '@' をかけ直さない（所要時間列の [h]:mm を上書きしてしまうため）
     if (dataValues.length > 0) {
       const dataRange = sheet.getRange(DATA_START, 1, dataValues.length, COL_TOTAL);
       dataRange.setHorizontalAlignment('center').setVerticalAlignment('middle');
-      // 文字列セルとして固定（"9:00" が時刻型に変換されないように）
-      dataRange.setNumberFormat('@');
     }
 
-    // 集計行
-    // 数値書式は '@'（文字列）に固定。Sheets が "176:00" を時刻型に自動変換すると
-    // 24h でロールオーバーして "8:00" 等として表示されてしまうため。
+    // 集計行（数値書式は setNumberFormats で適用済み）
     sheet.getRange(sumRow, 1, 1, COL_TOTAL)
-      .setFontWeight('bold').setBackground('#fff7e6').setHorizontalAlignment('center')
-      .setNumberFormat('@');
+      .setFontWeight('bold').setBackground('#fff7e6').setHorizontalAlignment('center');
 
     // 「出勤無し」行のみ文字色をグレーに（土日色付けは行わない）
     if (rowFlags.length > 0) {
