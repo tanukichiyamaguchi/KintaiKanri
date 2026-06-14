@@ -14,6 +14,11 @@
 const SPREADSHEET_ID = '1cQJf5tgTwRIpNUU-rtQMeSCn9DKti4qyzTm-1j2DXC0'; // KintaiKanri spreadsheet
 const WEEKLY_HOURS = 44; // Beauty industry special measure
 
+// このコードのバージョン。Apps Script に最新コードが反映されているかを
+// メニュー「コードのバージョンを確認」で確認するための目印。
+// 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
+const CODE_VERSION = '2026-06-13c (kintai-format-gate-fix)';
+
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
 // - 打刻ブロック開始日: 毎月 4 日（この日以降、前月未提出だと打刻不可）
@@ -2990,12 +2995,54 @@ function handleRejectApplication(body) {
 // Monthly submission handlers
 // ============================================================
 
-function getSubmissionStatus_(staffId, yearMonth) {
+// 月次提出ステータス優先度（新しい状態ほど大きい数値）。
+// approve/reject 済み(reviewed) > 提出済み(submitted) > 下書き(draft)。
+const SUBMISSION_STATUS_ORDER = { approved: 4, rejected: 3, submitted: 2, draft: 1 };
+
+// 指定スタッフ×年月に一致する月次提出行のうち「最も確からしい1行」を返す（無ければ null）。
+//
+// 重要: 同一 (staffId, yearMonth) に複数行が存在しうる（過去の Date 比較バグ等で生まれた重複）。
+// 単純な find() で先頭行を返すと、古い draft 行が新しい submitted 行より前にあった場合に
+// 「提出済みなのに draft と判定 → 打刻ゲートで誤ブロック」が起きる。
+// handleListSubmissions と同じ優先順位（reviewed_at → submitted_at → status 優先度）で
+// 重複を解決し、常に正しい最新のステータスを返す。
+// staff_id は数値・文字列が混在しうるため String 化して比較する。
+function getBestSubmissionRecord_(staffId, yearMonth) {
   const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
   const data = sheetToObjects(sheet);
   const targetYm = formatYearMonthValue_(yearMonth);
-  const rec = data.find(r => r.staff_id === staffId && formatYearMonthValue_(r.year_month) === targetYm);
-  return rec ? rec.status : 'draft';
+  const sid = String(staffId);
+
+  let best = null;
+  for (let i = 0; i < data.length; i++) {
+    const r = data[i];
+    if (String(r.staff_id) !== sid) continue;
+    if (formatYearMonthValue_(r.year_month) !== targetYm) continue;
+    if (!best) { best = r; continue; }
+
+    const newReviewed = toIsoString_(r.reviewed_at) || '';
+    const oldReviewed = toIsoString_(best.reviewed_at) || '';
+    if (newReviewed !== oldReviewed) {
+      if (newReviewed > oldReviewed) best = r;
+      continue;
+    }
+    const newSubmitted = toIsoString_(r.submitted_at) || '';
+    const oldSubmitted = toIsoString_(best.submitted_at) || '';
+    if (newSubmitted !== oldSubmitted) {
+      if (newSubmitted > oldSubmitted) best = r;
+      continue;
+    }
+    const newRank = SUBMISSION_STATUS_ORDER[r.status] || 0;
+    const oldRank = SUBMISSION_STATUS_ORDER[best.status] || 0;
+    if (newRank > oldRank) best = r;
+  }
+  return best;
+}
+
+// 指定スタッフ×年月の月次提出ステータスを返す（無ければ 'draft'）。重複行は dedupe 済み。
+function getSubmissionStatus_(staffId, yearMonth) {
+  const best = getBestSubmissionRecord_(staffId, yearMonth);
+  return best ? best.status : 'draft';
 }
 
 // "YYYY-MM" の前月を "YYYY-MM" で返す。
@@ -3078,11 +3125,8 @@ function handleGetClockGate(params) {
 function handleGetSubmissionStatus(params) {
   const { staffId, yearMonth } = params;
   if (!staffId || !yearMonth) return { success: false, error: '必須パラメータが指定されていません' };
-  const targetYm = formatYearMonthValue_(yearMonth);
-  const sheet = getOrCreateSheet(SHEETS.SUBMISSIONS);
-  const rec = sheetToObjects(sheet).find(
-    r => r.staff_id === staffId && formatYearMonthValue_(r.year_month) === targetYm
-  );
+  // 重複行があっても最新の確定ステータスを返す（getSubmissionStatus_ と同じ dedupe ロジック）
+  const rec = getBestSubmissionRecord_(staffId, yearMonth);
   if (!rec) {
     return { success: true, data: { staffId, yearMonth, status: 'draft' } };
   }
@@ -3217,7 +3261,7 @@ function handleListSubmissions(params) {
   //   3) status の優先順位 approved > rejected > submitted > draft
   //      （approve/reject 系で全行に同じ更新を入れるためどれを残しても結果は同等だが、
   //       UI 上の見え方が安定するように決定論的に選ぶ）
-  const STATUS_ORDER = { approved: 4, rejected: 3, submitted: 2, draft: 1 };
+  const STATUS_ORDER = SUBMISSION_STATUS_ORDER;
   const dedupedMap = {};
   for (let i = 0; i < data.length; i++) {
     const r = data[i];
@@ -3695,6 +3739,7 @@ function safeJsonParse_(s) {
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('勤怠管理')
+    .addItem('コードのバージョンを確認', 'menuShowCodeVersion')
     .addItem('翌月のシフト雛形を作成', 'menuGenerateNextMonthShift')
     .addItem('出勤簿を再生成', 'menuRebuildAttendanceLogs')
     .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
@@ -3706,6 +3751,21 @@ function onOpen() {
     .addItem('テスト管理者追加', 'addTestAdmin')
     .addItem('システム初期化', 'setupSystem')
     .addToUi();
+}
+
+/**
+ * メニュー: いま Apps Script に反映されているコードのバージョンを表示する。
+ * このダイアログに最新版（CODE_VERSION）が出れば、コードは正しく反映済み。
+ * メニュー項目自体が出てこない場合は、コードを貼り付けて保存→ページ再読込が必要。
+ */
+function menuShowCodeVersion() {
+  SpreadsheetApp.getUi().alert(
+    'コードのバージョン',
+    '現在反映されているコード: ' + CODE_VERSION +
+    '\n\nこの表示が出ていれば、最新コードは正しく保存されています。' +
+    '\n「出勤簿を再生成」を実行すると、総労働時間などが [h]:mm 表示（24h を超えても正しく）になります。',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 /**
@@ -4007,7 +4067,14 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
   const workDaysInMonth = getStandardWorkDaysForMonth_(year, month);
   const standardPerDayMin = 480; // 1 日 8h = 480 分
   const standardMonthMin = standardPerDayMin * workDaysInMonth;
-  const standardHHMM = formatMinutesAsHHMM_(standardMonthMin);
+  // 「176:00」など 24h を超える所要時間を文字列で setValues すると、Sheets が時刻型に勝手に
+  // 変換して 24h でロールオーバーした「8:00」として表示されてしまう。
+  // → 値は数値（= 分 / 1440 = 「1日 = 1.0」スケール）で書き込み、セル書式を [h]:mm にして
+  // 24h を超える時間も正しく表示するように統一する。
+  function minutesToDayFraction_(mins) {
+    const n = Number(mins);
+    return isNaN(n) ? 0 : n / 1440; // 1440 = 60 * 24
+  }
 
   const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -4071,14 +4138,16 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
     const nightMin = nightWorkMinutesForRow_(clockIn, clockOut);
     if (nightMin > 0) totalNightMin += nightMin;
 
+    // 所要時間（時間量）は数値（日数換算）として書き込み、
+    // 時刻（出勤/退勤など壁時計時刻）は文字列のまま保持する。
     dataValues.push([
       month + '/' + d, WEEKDAYS[wkday],
-      amIn, amOut, hasWork ? formatMinutesAsHHMM_(amMin) : '0:00',
-      pmIn, pmOut, hasWork ? formatMinutesAsHHMM_(pmMin) : '0:00',
-      hasWork ? formatMinutesAsHHMM_(workMin) : '0:00',
-      hasWork ? formatMinutesAsHHMM_(standardForDay) : '0:00',
-      formatMinutesAsHHMM_(overtimeForDay),
-      formatMinutesAsHHMM_(nightMin),
+      amIn, amOut, hasWork ? minutesToDayFraction_(amMin) : 0,
+      pmIn, pmOut, hasWork ? minutesToDayFraction_(pmMin) : 0,
+      hasWork ? minutesToDayFraction_(workMin) : 0,
+      hasWork ? minutesToDayFraction_(standardForDay) : 0,
+      minutesToDayFraction_(overtimeForDay),
+      minutesToDayFraction_(nightMin),
     ]);
     rowFlags.push({ wkday: wkday, hasWork: hasWork });
   }
@@ -4093,36 +4162,80 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
   const isNew = !sheet;
   if (isNew) sheet = ss.insertSheet(sheetName);
 
-  // 既存セル/書式/Merge を完全リセット（途中失敗時の中間状態を最小化するため
-  // ヘッダー〜集計行を「1 回の setValues」で一気に確定させる）
   try {
-    // 既存の merge を解除（再 merge する前に必須）
+    // 既存セル/書式/Merge を完全リセット。
+    // 重要: 旧コードが文字列 "208:00" 等を書いた際に Sheets が自動付与した期間書式
+    //       （[h]:mm:ss など）がセルに残ると、後から setNumberFormat('[h]:mm') をかけても
+    //       上書きされず 24h ロールオーバー表示（67:44→19:44）が直らないことがある。
+    //       clearContents だけでなく clearFormats も明示的に呼んで残留書式を確実に消す。
     if (!isNew) {
       try { sheet.getRange(1, 1, Math.max(1, sheet.getMaxRows()), Math.max(1, sheet.getMaxColumns())).breakApart(); } catch (e) { /* ignore */ }
+      try { sheet.clearContents(); } catch (e) { /* ignore */ }
+      try { sheet.clearFormats(); } catch (e) { /* ignore */ }
       sheet.clear();
     }
     if (sheet.getMaxColumns() < COL_TOTAL) {
       sheet.insertColumnsAfter(sheet.getMaxColumns(), COL_TOTAL - sheet.getMaxColumns());
     }
 
-    // 行 1: メタ
-    const metaRow = ['年', year, '月', month, '氏名', staff.name, '所定労働時間', standardHHMM, '', '', '', ''];
+    // 行 1: メタ（所定労働時間は数値で書き込み、[h]:mm 表示する）
+    const metaRow = ['年', year, '月', month, '氏名', staff.name, '所定労働時間', minutesToDayFraction_(standardMonthMin), '', '', '', ''];
     // 行 2: グループ見出し
     const groupHeader = ['', '', '勤怠時間入力', '', '', '', '', '', '総労働時間', '所定労働時間', '残業時間', '深夜時間'];
     // 行 3: サブ見出し
     const subHeader = ['日付', '曜日', '午前', '', '', '午後', '', '', '', '', '', ''];
     // 行 sumRow: 集計行
+    // 「総労働時間」合計は workMin の総和（= totalStandardMin + totalOvertimeMin）。
+    // 旧コードは totalAmMin + totalPmMin を使っていたが、出勤/退勤時刻が空のまま work_minutes だけ
+    // 入った日があると 0 扱いされ、日次行の総労働時間と合わなくなるため。
     const sumLabels = ['合計', workDays + '日',
-      '', '', formatMinutesAsHHMM_(totalAmMin),
-      '', '', formatMinutesAsHHMM_(totalPmMin),
-      formatMinutesAsHHMM_(totalAmMin + totalPmMin),
-      formatMinutesAsHHMM_(totalStandardMin),
-      formatMinutesAsHHMM_(totalOvertimeMin),
-      formatMinutesAsHHMM_(totalNightMin)];
+      '', '', minutesToDayFraction_(totalAmMin),
+      '', '', minutesToDayFraction_(totalPmMin),
+      minutesToDayFraction_(totalStandardMin + totalOvertimeMin),
+      minutesToDayFraction_(totalStandardMin),
+      minutesToDayFraction_(totalOvertimeMin),
+      minutesToDayFraction_(totalNightMin)];
 
     const allValues = [metaRow, groupHeader, subHeader]
       .concat(dataValues).concat([sumLabels]);
+
+    // ── 数値書式 ──
+    // 時間量セル（24h を超え得る所要時間）は [h]:mm でフォーマット、それ以外は文字列扱い。
+    // 「176:00」のような文字列を直接 setValues すると Sheets が時刻型に自動変換して
+    // 24h でロールオーバー（→ "8:00" 等）してしまうため、値は数値（= 分/1440）で書き込み、
+    // セル書式で [h]:mm 表示させる方式に統一した。
+    const FMT_HHMM = '[h]:mm';
+    const FMT_TEXT = '@';
+    // 1-indexed の "所要時間列"（午前-時間, 午後-時間, 総労働時間, 所定労働時間, 残業時間, 深夜時間）
+    const DURATION_COLS_DATA = [5, 8, 9, 10, 11, 12];
+    const DURATION_COLS_SUM = [5, 8, 9, 10, 11, 12];
+    function makeFormatRow_(durationCols) {
+      const r = new Array(COL_TOTAL).fill(FMT_TEXT);
+      durationCols.forEach(function (c) { r[c - 1] = FMT_HHMM; });
+      return r;
+    }
+    const formats = [];
+    // メタ行: H 列（所定労働時間）のみ [h]:mm
+    formats.push(makeFormatRow_([8]));
+    // ヘッダー 2 行はすべて文字列
+    formats.push(new Array(COL_TOTAL).fill(FMT_TEXT));
+    formats.push(new Array(COL_TOTAL).fill(FMT_TEXT));
+    // 日次データ行: 所要時間列のみ [h]:mm
+    for (let i = 0; i < dataValues.length; i++) {
+      formats.push(makeFormatRow_(DURATION_COLS_DATA));
+    }
+    // 集計行
+    formats.push(makeFormatRow_(DURATION_COLS_SUM));
+
+    // 書式を先に確定 → 値を書き込み（順序を逆にすると Sheets の自動型推論が先行する）
+    sheet.getRange(1, 1, allValues.length, COL_TOTAL).setNumberFormats(formats);
     sheet.getRange(1, 1, allValues.length, COL_TOTAL).setValues(allValues);
+    // 二重防御: setValues 後にも所要時間列へ [h]:mm を再適用する。
+    // 既存シートの書式残留や Sheets の自動再推論で h:mm（24h ロールオーバー）に
+    // 戻ってしまうケースを確実に防ぐ。各 1 列ぶんを縦に [h]:mm で固定。
+    DURATION_COLS_DATA.forEach(function (c) {
+      sheet.getRange(1, c, allValues.length, 1).setNumberFormat(FMT_HHMM);
+    });
 
     // ── 書式 ──
     // メタ行: ラベル太字
@@ -4148,14 +4261,14 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
     try { sheet.getRange(2, 2, 2, 1).merge(); } catch (e) { /* ignore */ }
 
     // データ行のアラインメント
+    // ※ 数値書式は上の setNumberFormats で 1 回にまとめて適用済みなので
+    //   ここで '@' をかけ直さない（所要時間列の [h]:mm を上書きしてしまうため）
     if (dataValues.length > 0) {
       const dataRange = sheet.getRange(DATA_START, 1, dataValues.length, COL_TOTAL);
       dataRange.setHorizontalAlignment('center').setVerticalAlignment('middle');
-      // 文字列セルとして固定（"9:00" が時刻型に変換されないように）
-      dataRange.setNumberFormat('@');
     }
 
-    // 集計行
+    // 集計行（数値書式は setNumberFormats で適用済み）
     sheet.getRange(sumRow, 1, 1, COL_TOTAL)
       .setFontWeight('bold').setBackground('#fff7e6').setHorizontalAlignment('center');
 
@@ -4201,6 +4314,14 @@ function rebuildAttendanceLogSheet_(staffId, yearMonth) {
 
     // タブ色（出勤簿シートと元データを視覚的に区別）
     try { sheet.setTabColor('#4285f4'); } catch (e) { /* ignore */ }
+
+    // ── 最終防御: 所要時間列の [h]:mm を「最後に」もう一度確定 ──
+    // 上の装飾処理（merge / border 等）で書式が触られても、ここで必ず [h]:mm に戻す。
+    // これが当関数で所要時間列に対する最後の書式操作になるよう、return 直前に置く。
+    DURATION_COLS_DATA.forEach(function (c) {
+      sheet.getRange(1, c, allValues.length, 1).setNumberFormat(FMT_HHMM);
+    });
+    SpreadsheetApp.flush();
 
   } catch (e) {
     // 書込中に致命エラーが出てもユーザーには「失敗を明示」して中間状態を残さないようログに残す
