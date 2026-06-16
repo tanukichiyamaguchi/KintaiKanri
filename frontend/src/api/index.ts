@@ -27,8 +27,16 @@ import type {
 // Base URL for the Google Apps Script Web App
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
-// Demo mode flag - when true, uses mock data instead of real API
-const DEMO_MODE = !API_BASE_URL || import.meta.env.VITE_DEMO_MODE === 'true';
+// Demo mode は **明示指定された場合のみ** 有効。
+// 旧実装は !API_BASE_URL でも自動的に DEMO_MODE=true としていたが、
+// その結果「環境変数の設定忘れで本番ビルドが無言でデモモード化し、
+// 打刻はメモリ上の mockTodayRecords にだけ push されてリロードで消える」
+// という致命的な事故が起きていた（=「打刻できない」と見える症状の主犯）。
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
+// API_BASE_URL も DEMO_MODE も指定されていない＝設定ミスの状態。
+// UI 側で目立つ警告バナーを出し、API 呼び出しは明示エラーで失敗させる。
+export const MISCONFIGURED_NO_API_BASE_URL = !API_BASE_URL && !DEMO_MODE;
+export const IS_DEMO_MODE = DEMO_MODE;
 
 // --- Helper: format date as YYYY-MM-DD in local timezone ---
 function fmtDate(d: Date): string {
@@ -230,6 +238,15 @@ async function apiRequest<T>(
 ): Promise<ApiResponse<T>> {
   if (DEMO_MODE) {
     return handleDemoRequest<T>(action, body, queryParams);
+  }
+
+  if (MISCONFIGURED_NO_API_BASE_URL) {
+    // 設定ミス。デモモードに無言で落とすのではなく、明示エラーで失敗させる。
+    // UI 側で警告バナーも出るので、原因が一目でわかる。
+    return {
+      success: false,
+      error: 'サーバー接続先（VITE_API_BASE_URL）が設定されていません。管理者にお問い合わせください。',
+    };
   }
 
   try {

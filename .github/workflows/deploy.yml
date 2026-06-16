@@ -2,7 +2,11 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, claude/attendance-tracking-app-PquFH, claude/attendance-app-agent-team-qHNS3]
+    branches:
+      - main
+      - claude/attendance-tracking-app-PquFH
+      - claude/attendance-app-agent-team-qHNS3
+      - claude/attendance-app-agent-team-3Fgln
   workflow_dispatch:
 
 permissions:
