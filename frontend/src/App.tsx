@@ -16,7 +16,7 @@ import {
   PaidLeaveManagement,
   SettingsPage,
 } from './pages';
-import { Loading } from './components/common';
+import { Loading, EnvironmentBanner } from './components/common';
 
 function StaffRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isAdmin, isLoading } = useAuth();
@@ -70,6 +70,7 @@ function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <AuthProvider>
+        <EnvironmentBanner />
         <AppRoutes />
       </AuthProvider>
     </BrowserRouter>
