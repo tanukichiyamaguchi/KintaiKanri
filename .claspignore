@@ -1,0 +1,7 @@
+# clasp は rootDir からの相対で評価する。
+# gas/ 配下の *.gs と appsscript.json だけを push 対象にする。
+**/**
+!appsscript.json
+!**/*.gs
+!**/*.html
+!**/*.js

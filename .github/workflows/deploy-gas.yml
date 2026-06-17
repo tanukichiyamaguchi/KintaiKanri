@@ -1,0 +1,91 @@
+name: Deploy GAS (Apps Script)
+
+# gas/ 以下が変わった push でだけ自動デプロイする。
+# 安全のため本番運用ブランチのみを対象にする（フィーチャーブランチで誤って本番GASを
+# 書き換えないように）。手動実行も可能。
+on:
+  push:
+    branches:
+      - main
+      - claude/attendance-tracking-app-PquFH
+    paths:
+      - 'gas/**'
+      - '.clasp.json'
+      - '.claspignore'
+      - '.github/workflows/deploy-gas.yml'
+  workflow_dispatch:
+    inputs:
+      skip_deploy:
+        description: 'true なら clasp push のみで deploy をスキップ（メニュー関数の更新のみ）'
+        required: false
+        default: 'false'
+
+# 同時実行を1つに絞る（複数 push が連続したとき、最後のものだけが残るように）
+concurrency:
+  group: 'gas-deploy'
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clasp
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Write clasp credentials from secret
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::error::Secret CLASPRC_JSON is not set. See docs/GAS_DEPLOYMENT.md for setup."
+            exit 1
+          fi
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+          echo "Wrote ~/.clasprc.json ($(wc -c < $HOME/.clasprc.json) bytes)"
+
+      - name: Verify clasp can see the project
+        run: |
+          clasp --version
+          clasp status || (echo "::error::clasp status failed. Credentials may be invalid or expired. Re-run 'clasp login' locally and update CLASPRC_JSON secret."; exit 1)
+
+      - name: Push source to Apps Script
+        run: clasp push --force
+
+      - name: Deploy as Web App (update existing deployment in place)
+        if: ${{ github.event.inputs.skip_deploy != 'true' }}
+        env:
+          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
+        run: |
+          if [ -z "$GAS_DEPLOYMENT_ID" ]; then
+            echo "::warning::Secret GAS_DEPLOYMENT_ID is not set. Skipping web app deployment (menu-driven functions still updated via clasp push)."
+            echo "To enable automatic web app deployment, see docs/GAS_DEPLOYMENT.md."
+            exit 0
+          fi
+          DESC="auto-deploy: ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"
+          clasp deploy --deploymentId "$GAS_DEPLOYMENT_ID" --description "$DESC"
+          echo "Deployed: $DESC"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### GAS Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${GITHUB_SHA::7}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Trigger: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.GAS_DEPLOYMENT_ID }}" ]; then
+            echo "- Web App: 更新済み（既存 URL を維持）" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Web App: ⚠️ GAS_DEPLOYMENT_ID 未設定のためスキップ" >> $GITHUB_STEP_SUMMARY
+          fi

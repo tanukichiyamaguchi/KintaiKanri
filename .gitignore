@@ -1,0 +1,10 @@
+# clasp の OAuth 資格情報。アクセストークンを含むため絶対にコミットしない。
+.clasprc.json
+**/.clasprc.json
+
+# clasp デプロイのキャッシュ
+.claspignore.local
+
+# OS
+.DS_Store
+Thumbs.db
