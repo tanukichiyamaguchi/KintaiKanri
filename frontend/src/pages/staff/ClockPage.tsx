@@ -102,10 +102,9 @@ export function ClockPage() {
   const isFinished = status === 'finished';
   const hasClockIn = records.some(r => r.type === 'clock_in');
   const hasClockOut = records.some(r => r.type === 'clock_out');
-  // 前月出勤簿が未提出（4日以降）の場合は打刻ブロック
-  const blockedByGate = !!gate?.clockBlocked;
-  const clockInDisabled = isWorking || isFinished || hasClockIn || blockedByGate;
-  const clockOutDisabled = !isWorking || isFinished || hasClockOut || blockedByGate;
+  // 【撤去】前月出勤簿の未提出による打刻ブロックは廃止。打刻の可否はゲートに依存しない。
+  const clockInDisabled = isWorking || isFinished || hasClockIn;
+  const clockOutDisabled = !isWorking || isFinished || hasClockOut;
 
   const formatTime = (isoString: string): string => {
     const date = new Date(isoString);
