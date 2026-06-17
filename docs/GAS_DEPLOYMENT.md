@@ -2,34 +2,35 @@
 
 これを一度だけ設定すると、以後は `main` / `claude/attendance-tracking-app-PquFH`
 への push で `gas/` 配下が変更されるたびに、GitHub Actions が自動で
-Apps Script へ反映＋ウェブアプリのデプロイを更新します（Web App URL は維持）。
+Apps Script へ反映＋全ウェブアプリのデプロイを更新します（Web App URL は維持）。
 
 設定後は **「Apps Script エディタに Code.gs を貼り付けて保存して再デプロイ」**
 という手作業が完全に不要になります。
 
+> 必要な GitHub Secret は **`CLASPRC_JSON` の 1 個だけ** です。
+> デプロイ ID の特定は不要（CI が既存の versioned デプロイを全件自動更新します）。
+
 ---
 
-## 一度だけ必要な準備（3 ステップ）
+## 一度だけ必要な準備
 
-### Step 1. clasp の OAuth 資格情報を作る（ローカル PC で 1 回）
+### clasp の OAuth 資格情報を作る → GitHub Secret に登録
 
-ローカルの PC（macOS / Windows / Linux いずれか）で:
+ローカル PC があるなら:
 
 ```bash
 npm install -g @google/clasp@2.4.2
 clasp login
 ```
 
-ブラウザが開いて Google アカウントの認可を求めます。**スプレッドシートを
-所有しているアカウント**（普段 Apps Script を編集しているアカウント）で
-ログインしてください。
+ブラウザで **スプレッドシートを所有しているアカウント**で認可すると、
+`~/.clasprc.json`（Windows は `%USERPROFILE%\.clasprc.json`）が作成されます。
 
-完了すると `~/.clasprc.json`（Windows は `%USERPROFILE%\.clasprc.json`）が
-作成されます。中身は OAuth トークンです。
+ローカル環境が無い（クラウド開発等）の場合は、loopback リダイレクト方式の
+OAuth フローで取得できます（このリポジトリのアシスタントが代行可能）。
+得られる JSON は同じ形式です。
 
-### Step 2. その資格情報を GitHub Secret に登録する
-
-`~/.clasprc.json` の **中身を全文** コピーして、
+その `~/.clasprc.json` の **中身を全文** コピーし、
 
 GitHub の本リポジトリ → **Settings → Secrets and variables → Actions → New repository secret**
 
@@ -37,29 +38,15 @@ GitHub の本リポジトリ → **Settings → Secrets and variables → Action
 | --- | --- |
 | `CLASPRC_JSON` | `~/.clasprc.json` の中身（JSON 全文） |
 
-⚠️ このファイルにはアクセストークンが含まれます。**絶対に Git にコミットしないでください**（`.gitignore` 推奨）。
+⚠️ これは **パスワード相当の機密**です。GitHub Secret 以外に貼らないでください
+（コード・Slack 等も NG）。`.gitignore` で `.clasprc.json` の誤コミットは防止済み。
+失効させたい場合は <https://myaccount.google.com/permissions> から «clasp» を取り消し。
 
-### Step 3. 既存のウェブアプリのデプロイ ID を Secret に登録する（URL を変えないため）
+### 前提: Apps Script API を ON にしておく（1 回）
 
-1. スプレッドシート → 拡張機能 → Apps Script
-2. 右上「デプロイ」→「デプロイを管理」
-3. 既存の「ウェブアプリ」デプロイの **デプロイ ID** をコピー
-   （`AKfycbx...` で始まる長い文字列）
-
-GitHub の Secrets に登録:
-
-| Name | Value |
-| --- | --- |
-| `GAS_DEPLOYMENT_ID` | コピーしたデプロイ ID |
-
-> もし既存のデプロイがまだ無い場合は、Apps Script の「デプロイ → 新しいデプロイ
-> → ウェブアプリ」で:
-> - **次のユーザーとして実行**: 自分
-> - **アクセスできるユーザー**: 全員
->
-> を選んで一度デプロイし、その後に出るデプロイ ID を Secret に入れてください。
-> その時点で発行されたウェブアプリ URL を、フロント側の Repository Variables
-> `VITE_API_BASE_URL` にも設定します。
+スプレッドシート所有者でログインした状態で
+<https://script.google.com/home/usersettings> を開き、
+**「Google Apps Script API」を ON** にする（clasp の push/deploy に必須）。
 
 ---
 
@@ -69,8 +56,8 @@ GitHub の Secrets に登録:
 
 1. `clasp push` でスクリプトが Apps Script に反映される
    （メニュー関数「出勤簿を再生成」等は即座に最新コードを使用）
-2. `clasp deploy --deploymentId $GAS_DEPLOYMENT_ID` でウェブアプリの
-   デプロイが既存 ID を使って更新される（**URL は変わらない**）
+2. CI が `clasp deployments` を読み、**@HEAD を除く全 versioned デプロイ**を
+   既存 ID のまま再デプロイ（**URL は変わらない**）
 3. フロント側からの POST（打刻 等）は次回呼び出しから最新コードで動作する
 
 ---
@@ -91,13 +78,10 @@ push 後、GitHub Actions の `Deploy GAS (Apps Script)` ワークフローが�
 - そもそも `.clasp.json` の `scriptId` が違う → Apps Script URL の
   `/d/<scriptId>/edit` の部分が `scriptId`。
 
-### `clasp deploy` で「Deployment not found」
-- `GAS_DEPLOYMENT_ID` が無効。Apps Script の「デプロイを管理」から
-  正しい ID をコピーし直して Secret を更新。
-
 ### Web App URL が変わってしまった
-- `GAS_DEPLOYMENT_ID` を指定せずにデプロイすると新規 ID が発行されて URL が
-  変わる。Secret に必ず既存 ID を入れてから次回 push する。
+- CI は既存デプロイを `--deploymentId` で in-place 更新するため URL は不変。
+  もし手動で `clasp deploy`（ID 指定なし）を実行すると新規 ID＝新 URL が
+  発行されるので注意。手動デプロイ時も必ず既存の deploymentId を指定する。
 
 ### マニフェスト（appsscript.json）の設定を変えたくない
 - このリポジトリにコミットされた `gas/appsscript.json` が **そのまま** Apps

@@ -63,19 +63,29 @@ jobs:
       - name: Push source to Apps Script
         run: clasp push --force
 
-      - name: Deploy as Web App (update existing deployment in place)
+      - name: Redeploy all versioned web app deployments (URLs preserved)
         if: ${{ github.event.inputs.skip_deploy != 'true' }}
-        env:
-          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
         run: |
-          if [ -z "$GAS_DEPLOYMENT_ID" ]; then
-            echo "::warning::Secret GAS_DEPLOYMENT_ID is not set. Skipping web app deployment (menu-driven functions still updated via clasp push)."
-            echo "To enable automatic web app deployment, see docs/GAS_DEPLOYMENT.md."
+          DESC="auto-deploy: ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"
+          # @HEAD は常に最新コードを配信するので除外し、@<番号> の
+          # versioned デプロイのみ既存IDのまま再デプロイする（URL は不変）。
+          # フロントがどのデプロイURLを使っていても確実に更新されるよう全件対象にする。
+          IDS=$(clasp deployments | awk '/^- AKfycb/ && $3 ~ /^@[0-9]/ {print $2}')
+          if [ -z "$IDS" ]; then
+            echo "::warning::versioned なウェブアプリのデプロイが見つかりませんでした。clasp push のみ実施済み（@HEAD 配信は最新化）。"
             exit 0
           fi
-          DESC="auto-deploy: ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"
-          clasp deploy --deploymentId "$GAS_DEPLOYMENT_ID" --description "$DESC"
-          echo "Deployed: $DESC"
+          FAIL=0
+          for DID in $IDS; do
+            echo "--- Deploying $DID ---"
+            if clasp deploy --deploymentId "$DID" --description "$DESC"; then
+              echo "OK: $DID"
+            else
+              echo "::error::deploy failed for $DID"
+              FAIL=1
+            fi
+          done
+          exit $FAIL
 
       - name: Summary
         if: always()
@@ -84,8 +94,4 @@ jobs:
           echo "- Commit: \`${GITHUB_SHA::7}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Branch: \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Trigger: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ secrets.GAS_DEPLOYMENT_ID }}" ]; then
-            echo "- Web App: 更新済み（既存 URL を維持）" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- Web App: ⚠️ GAS_DEPLOYMENT_ID 未設定のためスキップ" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "- 方式: clasp push + 全 versioned デプロイを再デプロイ（URL 維持）" >> $GITHUB_STEP_SUMMARY
