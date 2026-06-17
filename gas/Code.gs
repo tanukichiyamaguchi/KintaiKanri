@@ -1313,16 +1313,10 @@ function handleClock(body) {
     return { success: false, error: 'この月は提出済みのため打刻できません' };
   }
 
-  // 前月出勤簿の未提出ゲート:
-  // - draft の場合: 毎月 4 日以降に打刻不可
-  // - rejected の場合: いつでも打刻不可（再提出を促す）
-  const gate = computeClockGate_(staffId, now);
-  if (gate.clockBlocked) {
-    const errMsg = gate.prevStatus === 'rejected'
-      ? 'お手数ですが、' + gate.prevYearMonth + ' 分の出勤簿が差し戻されておりますので、再提出をお願いいたします。再提出いただきますと、引き続き打刻をご利用いただけます。'
-      : 'お手数ですが、' + gate.prevYearMonth + ' 分の出勤簿のご提出をお願いいたします（期限: ' + gate.deadlineDate + '）。ご提出いただきますと、引き続き打刻をご利用いただけます。';
-    return { success: false, error: errMsg };
-  }
+  // 【撤去】前月出勤簿の未提出による打刻ブロックは廃止した。
+  // 以前は「前月分が未提出（draft）かつ毎月4日以降」または「差戻し(rejected)」のとき
+  // 打刻を拒否していたが、業務上「提出しないと打刻できない」運用を無くす要望により撤去。
+  // 提出のリマインド自体は computeClockGate_ の alertActive（非ブロックの通知）で継続する。
 
   const sheet = getAttendanceSheet(year, month);
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -3095,10 +3089,10 @@ function computeClockGate_(staffId, now) {
     hasPrevAttendance = hasAttendanceInMonth_(staffId, prevYm);
   }
   const prevSubmitted = (prevStatus === 'submitted' || prevStatus === 'approved');
-  const isRejected = (prevStatus === 'rejected');
   const alertActive = dayOfMonth >= 1 && dayOfMonth <= MONTHLY_SUBMISSION_DEADLINE_DAY && !prevSubmitted && hasPrevAttendance;
-  // 差戻しは日付に関係なく即時ブロック / draft は 4 日以降にブロック
-  const clockBlocked = !prevSubmitted && hasPrevAttendance && (dayOfMonth >= MONTHLY_SUBMISSION_BLOCK_DAY || isRejected);
+  // 【撤去】未提出による打刻ブロックは廃止。clockBlocked は常に false を返す。
+  // 提出のリマインドは alertActive（非ブロックの通知）のみで行う。
+  const clockBlocked = false;
 
   return {
     today: Utilities.formatDate(d, scriptTimeZone_(), 'yyyy-MM-dd'),

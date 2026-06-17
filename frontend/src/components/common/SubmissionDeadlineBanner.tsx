@@ -1,13 +1,15 @@
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CalendarClock, CheckCircle, ChevronRight } from 'lucide-react';
+import { CalendarClock, CheckCircle, ChevronRight } from 'lucide-react';
 import type { ClockGate } from '../../types';
 
 /**
- * 月次出勤簿の提出期限アラート / 打刻ブロック通知バナー。
- * - clockBlocked: 赤バナー（打刻不可。draft+4日以降 or rejected ならいつでも）
- * - alertActive:  橙バナー（1〜7日・前月未提出 → 期限リマインド）
- * - submitted:    青バナー（承認待ち中、引き続き打刻可能）
+ * 月次出勤簿の提出リマインドバナー（いずれも打刻はブロックしない非ブロック通知）。
+ * - alertActive: 橙バナー（1〜7日・前月未提出 → 期限リマインド / 差戻し時は再提出のお願い）
+ * - submitted:   青バナー（承認待ち中）
  * いずれにも該当しない場合は何も描画しない。
+ *
+ * 注: 以前は clockBlocked による赤い「打刻不可」バナーがあったが、
+ *     「提出しないと打刻できない」運用を廃止したため撤去した。
  */
 export function SubmissionDeadlineBanner({ gate }: { gate: ClockGate | null }) {
   if (!gate) return null;
@@ -24,28 +26,6 @@ export function SubmissionDeadlineBanner({ gate }: { gate: ClockGate | null }) {
   };
 
   const isRejected = gate.prevStatus === 'rejected';
-
-  if (gate.clockBlocked) {
-    const headline = isRejected
-      ? `${formatYm(gate.prevYearMonth)}分の出勤簿が差し戻されました`
-      : `${formatYm(gate.prevYearMonth)}分の出勤簿のご提出をお願いします`;
-    const detail = isRejected
-      ? <>差戻し内容をご確認のうえ、再提出をお願いいたします。再提出いただきますと、引き続き打刻をご利用いただけます。</>
-      : <>お手数ですが、{formatDeadline(gate.deadlineDate)} までに出勤簿をご提出ください。ご提出いただきますと、引き続き打刻をご利用いただけます。</>;
-    return (
-      <Link
-        to="/attendance"
-        className="flex items-start gap-3 px-4 py-3.5 rounded-xl mb-4 border bg-red-50 border-red-200 text-red-700 hover:bg-red-100 transition-colors"
-      >
-        <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm sm:text-base">{headline}</p>
-          <p className="text-xs sm:text-sm mt-0.5 leading-relaxed">{detail}</p>
-        </div>
-        <ChevronRight className="w-5 h-5 flex-shrink-0 mt-0.5" />
-      </Link>
-    );
-  }
 
   if (gate.alertActive) {
     const headline = isRejected
