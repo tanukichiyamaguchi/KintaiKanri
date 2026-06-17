@@ -2,6 +2,13 @@
 
 眉毛まつげサロン「KATEstageLASH」のスタッフ向けシンプル勤怠管理アプリケーションです。
 
+> **デプロイについて**
+> - フロントエンドは `main` / `claude/attendance-tracking-app-PquFH` への push で
+>   GitHub Pages に自動デプロイされます。
+> - GAS（バックエンド）も `gas/` 配下の変更で自動デプロイされます。
+>   初回は **[docs/GAS_DEPLOYMENT.md](docs/GAS_DEPLOYMENT.md)** に従い、
+>   GitHub Secrets `CLASPRC_JSON` と `GAS_DEPLOYMENT_ID` を 1 度だけ設定してください。
+
 ## 機能
 
 ### スタッフ用機能
