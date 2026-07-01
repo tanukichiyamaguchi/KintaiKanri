@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-06-17c (submit-gate fix + attendance reassign tool)';
+const CODE_VERSION = '2026-06-17d (re-submit gate fix; reassign tool removed)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -3743,9 +3743,6 @@ function onOpen() {
     .addItem('出勤簿を再生成', 'menuRebuildAttendanceLogs')
     .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
     .addSeparator()
-    .addItem('① 勤怠IDズレを点検（変更なし）', 'menuPreviewAttendanceReassign')
-    .addItem('② 勤怠IDズレを修正（ぽめ→松村）', 'menuRunAttendanceReassign')
-    .addSeparator()
     .addItem('提出期限リマインドを毎月1日に自動送信する設定', 'menuInstallMonthlyReminder')
     .addItem('提出期限リマインドを今すぐ送信', 'menuSendDeadlineRemindersNow')
     .addSeparator()
@@ -3753,133 +3750,6 @@ function onOpen() {
     .addItem('テスト管理者追加', 'addTestAdmin')
     .addItem('システム初期化', 'setupSystem')
     .addToUi();
-}
-
-// ============================================================
-// 一度きりのデータ修正:
-// テスト用アカウント「ぽめ(S105946)」名義で誤登録された松村さんの勤怠を、
-// 正しい「松村 百恵(S599635)」に付け替える。
-// ぽめはオーナーのテスト用でぽめ自身の勤怠は存在しない（オーナー確認済み）。
-// 手順: ①点検(menuPreviewAttendanceReassign, 変更なし) → ②修正(menuRunAttendanceReassign)
-// ============================================================
-var MISFILE_FROM_STAFF_ID = 'S105946'; // ぽめ（テスト用）
-var MISFILE_TO_STAFF_ID = 'S599635';   // 松村 百恵
-
-function menuPreviewAttendanceReassign() {
-  const ui = SpreadsheetApp.getUi();
-  try {
-    const r = reassignMisfiledAttendance_(true);
-    ui.alert('① 勤怠IDズレ 点検（変更なし）', r.report, ui.ButtonSet.OK);
-  } catch (e) {
-    ui.alert('点検に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
-  }
-}
-
-function menuRunAttendanceReassign() {
-  const ui = SpreadsheetApp.getUi();
-  const confirm = ui.alert(
-    '② 勤怠IDズレ 修正の実行',
-    'ぽめ(' + MISFILE_FROM_STAFF_ID + ') 名義の勤怠を 松村 百恵(' + MISFILE_TO_STAFF_ID + ') に付け替えます。\n' +
-    '・変更前の内容は「勤怠ID修正ログ」シートにバックアップします\n' +
-    '・松村さんの出勤簿を再生成します\n' +
-    '・松村側に既に同じ日付がある場合は上書きせずスキップします\n\n' +
-    '実行してよろしいですか？',
-    ui.ButtonSet.OK_CANCEL);
-  if (confirm !== ui.Button.OK) return;
-  try {
-    const r = reassignMisfiledAttendance_(false);
-    ui.alert('② 勤怠IDズレ 修正 完了', r.report, ui.ButtonSet.OK);
-  } catch (e) {
-    ui.alert('修正に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
-  }
-}
-
-/**
- * 誤登録勤怠を付け替える中核処理。
- * @param {boolean} dryRun true なら一切書き込まず、対象件数のレポートだけ返す。
- */
-function reassignMisfiledAttendance_(dryRun) {
-  const ss = getSpreadsheet();
-  const master = sheetToObjects(getOrCreateSheet(SHEETS.STAFF_MASTER));
-  const toStaff = master.find(function (s) { return String(s.staff_id) === MISFILE_TO_STAFF_ID; });
-  if (!toStaff) throw new Error('付け替え先スタッフ(' + MISFILE_TO_STAFF_ID + ')がマスターに見つかりません');
-  const toName = toStaff.name;
-
-  const sheets = ss.getSheets().filter(function (sh) { return /^勤怠_\d{6}$/.test(sh.getName()); });
-  const perMonth = {};      // 'YYYYMM' -> 件数
-  const conflicts = [];     // 'YYYYMM YYYY-MM-DD'
-  const affected = {};      // 'YYYYMM' -> true
-  const backup = [];        // ログ行
-  const nowIso = new Date().toISOString();
-  let moved = 0;
-
-  sheets.forEach(function (sh) {
-    const data = sh.getDataRange().getValues();
-    if (!data || data.length < 2) return;
-    const headers = data[0];
-    const sIdx = findHeaderIndex_(headers, 'staff_id');
-    const nIdx = findHeaderIndex_(headers, 'name');
-    const dIdx = findHeaderIndex_(headers, 'date');
-    if (sIdx === -1 || dIdx === -1) return;
-    const ymRaw = sh.getName().replace('勤怠_', '');
-
-    // 既に付け替え先(松村)が持っている日付集合（衝突検知）
-    const toDates = {};
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][sIdx]) === MISFILE_TO_STAFF_ID) {
-        const dk = formatDateOnly_(data[i][dIdx]);
-        if (dk) toDates[dk] = true;
-      }
-    }
-
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][sIdx]) !== MISFILE_FROM_STAFF_ID) continue;
-      const dateStr = formatDateOnly_(data[i][dIdx]);
-      if (toDates[dateStr]) { conflicts.push(ymRaw + ' ' + dateStr); continue; }
-      perMonth[ymRaw] = (perMonth[ymRaw] || 0) + 1;
-      affected[ymRaw] = true;
-      moved++;
-      backup.push([nowIso, sh.getName(), dateStr, MISFILE_FROM_STAFF_ID,
-        (nIdx !== -1 ? data[i][nIdx] : ''), MISFILE_TO_STAFF_ID, toName]);
-      if (!dryRun) {
-        const rowIndex = i + 1;
-        sh.getRange(rowIndex, sIdx + 1).setValue(MISFILE_TO_STAFF_ID);
-        if (nIdx !== -1) sh.getRange(rowIndex, nIdx + 1).setValue(toName);
-      }
-    }
-  });
-
-  if (!dryRun) {
-    if (backup.length > 0) {
-      const log = getOrCreateSheet('勤怠ID修正ログ');
-      if (log.getLastRow() === 0) {
-        log.appendRow(['実行日時', 'シート', '日付', '旧staff_id', '旧名義', '新staff_id', '新名義']);
-      }
-      log.getRange(log.getLastRow() + 1, 1, backup.length, 7).setValues(backup);
-    }
-    // 影響月の松村の出勤簿を再生成（YYYYMM -> YYYY-MM）
-    Object.keys(affected).forEach(function (ymRaw) {
-      const ym = ymRaw.slice(0, 4) + '-' + ymRaw.slice(4);
-      try { rebuildAttendanceLogSheet_(MISFILE_TO_STAFF_ID, ym); }
-      catch (e) { Logger.log('rebuild failed ' + ym + ': ' + (e && e.message)); }
-    });
-    try { SpreadsheetApp.flush(); } catch (e) { /* ignore */ }
-  }
-
-  const monthsStr = Object.keys(perMonth).sort().map(function (k) { return k + '(' + perMonth[k] + '件)'; }).join(', ') || 'なし';
-  let report = (dryRun ? '【点検のみ・データは変更していません】\n\n' : '【修正を実行しました】\n\n')
-    + 'ぽめ(' + MISFILE_FROM_STAFF_ID + ') → 松村 百恵(' + MISFILE_TO_STAFF_ID + ')\n'
-    + '対象合計: ' + moved + ' 件\n'
-    + '対象月: ' + monthsStr + '\n';
-  if (conflicts.length > 0) {
-    report += '\n⚠️ 松村側に既に同じ日付があるためスキップ（要手動確認）: ' + conflicts.length + ' 件\n  ' + conflicts.join(', ') + '\n';
-  }
-  if (dryRun) {
-    report += '\nこの内容でよければ「② 勤怠IDズレを修正」を実行してください。';
-  } else {
-    report += '\n出勤簿を再生成しました。該当月の給与は「給与計算」を再実行して更新してください。\n変更前の値は「勤怠ID修正ログ」シートに保存済みです。';
-  }
-  return { report: report, moved: moved, conflicts: conflicts, months: Object.keys(perMonth) };
 }
 
 /**
