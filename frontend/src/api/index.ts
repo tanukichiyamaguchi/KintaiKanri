@@ -715,11 +715,13 @@ async function handleDemoRequest<T>(
         latestByKey.set(key, a);
       }
     });
-    const blocked = [...latestByKey.values()].filter(a => a.status !== 'approved');
+    // 審査待ち(pending)のみブロック。却下(rejected)・取消(cancelled)は解決済みなので通す
+    // （GAS handleSubmitMonthly と同じロジック。却下申請での提出デッドロックを防ぐ）
+    const blocked = [...latestByKey.values()].filter(a => a.status === 'pending');
     if (blocked.length > 0) {
       return {
         success: false,
-        error: '未承認の申請があります（' + blocked.length + '件）。承認後に再度提出してください。'
+        error: '審査待ちの申請が' + blocked.length + '件あります。管理者の承認後に再度提出してください。'
       };
     }
     const staff = mockStaff.find(s => s.staffId === staffId);

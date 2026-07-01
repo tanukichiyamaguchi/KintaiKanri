@@ -3141,7 +3141,8 @@ function handleGetSubmissionStatus(params) {
 }
 
 /**
- * 月次提出。提出ゲートチェック: 全申請が approved であること（pending/rejected があると失敗）。
+ * 月次提出。提出ゲートチェック: 当月に「審査待ち(pending)」の申請が残っていないこと。
+ * 却下(rejected)・取消(cancelled)は解決済みの状態なので提出をブロックしない。
  * 差異検出（未申請の差異）はクライアント側で行う想定（GAS側では申請ステータスのみ確認）。
  */
 function handleSubmitMonthly(body) {
@@ -3168,14 +3169,18 @@ function handleSubmitMonthly(body) {
     };
   }
 
-  // ゲート: 当月の全申請が approved か
+  // ゲート: 当月に「審査待ち(pending)」の申請が残っていないか。
+  // ★以前は status !== 'approved' で判定しており、却下(rejected)・取消(cancelled)も
+  //   ブロック対象に含めていた。却下された申請は二度と 'approved' にならないため、
+  //   一度差戻し（申請却下）されると「未承認の申請があります」で提出が永久に不可になる
+  //   デッドロックが発生していた。審査待ちのみをブロック対象にする。
   const apps = sheetToObjects(getOrCreateSheet(SHEETS.APPLICATIONS))
     .filter(a => a.staff_id === staffId && formatDateOnly_(a.date).startsWith(yearMonth));
-  const blocked = apps.filter(a => a.status !== 'approved');
+  const blocked = apps.filter(a => a.status === 'pending');
   if (blocked.length > 0) {
     return {
       success: false,
-      error: '未承認の申請があります（' + blocked.length + '件）。承認後に再度提出してください。'
+      error: '審査待ちの申請が' + blocked.length + '件あります。管理者の承認後に再度提出してください。'
     };
   }
 
