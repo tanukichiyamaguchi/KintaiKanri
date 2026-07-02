@@ -894,13 +894,26 @@ async function handleDemoRequest<T>(
     );
     const existingOffDays = existingIdx !== -1 ? mockShiftRequests[existingIdx].offDays : [];
 
-    // マージ: approved/rejected は保持、pending は新セットの有無で残すかどうか決める
+    // マージ（GAS handleSubmitShiftRequest と同一仕様）:
+    //  - approved: 常に保持
+    //  - rejected かつ新セットに含まれる（＝再選択=再申請）: pending に戻す
+    //  - rejected かつ新セットに無い: 却下のまま保持
+    //  - pending: 新セットの有無で残すかどうか決める
+    // 旧実装は rejected を無条件に保持していたため、却下日を再選択しても
+    // pending化されず「再申請がサイレントに失敗する」不具合があった。
     const newDateSet = new Set(incomingOffDays.map(d => d.date));
     const merged: import('../types').ShiftRequestOffDay[] = [];
     const seen = new Set<string>();
     for (const e of existingOffDays) {
-      if (e.status === 'approved' || e.status === 'rejected') {
+      if (e.status === 'approved') {
         merged.push(e);
+        seen.add(e.date);
+      } else if (e.status === 'rejected') {
+        if (newDateSet.has(e.date)) {
+          merged.push({ date: e.date, status: 'pending' });
+        } else {
+          merged.push(e);
+        }
         seen.add(e.date);
       } else if (newDateSet.has(e.date)) {
         merged.push(e);

@@ -312,8 +312,15 @@ function setupSystem() {
       headers: ['grade', 'monthly_min', 'monthly_max', 'standard_monthly']
     },
     {
+      // handleCreateApplication が書き込むフラットスキーマと一致させる。
+      // 旧 details_json ベースの定義のまま setupSystem でシート作成すると、
+      // reason_type/planned_start 等がヘッダー無しの列にずれて書かれ、
+      // 残業分・会社都合区分などが読み取れず給与控除が誤る不具合があった。
       name: SHEETS.APPLICATIONS,
-      headers: ['id', 'staff_id', 'staff_name', 'date', 'type', 'reason', 'details_json', 'status', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason']
+      headers: ['id', 'staff_id', 'staff_name', 'date', 'type', 'reason',
+        'reason_type', 'planned_start', 'planned_end', 'actual_start', 'actual_end',
+        'planned_break_min', 'actual_break_min', 'overtime_min',
+        'status', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason']
     },
     {
       name: SHEETS.SUBMISSIONS,
@@ -1295,17 +1302,24 @@ function handleClock(body) {
     return { success: false, error: '不正な打刻種別です' };
   }
 
-  // 不正な timestamp が渡された場合は現在時刻にフォールバックして処理続行。
-  // Invalid Date のまま Utilities.formatDate を呼ぶと例外になるためここで弾く。
-  let now = timestamp ? new Date(timestamp) : new Date();
+  // 「どの日の記録として書き込むか」は必ずサーバ時刻(Asia/Tokyo)基準で決める。
+  // handleGetTodayAttendance 等の「今日」判定も同じくサーバ時刻基準のため、
+  // ここをクライアントのローカル時刻基準にすると、両者の日付境界がズレたときに
+  // 「打刻したのに今日の記録に出てこない/前日の記録に紛れる」不具合になる。
+  const serverNow = new Date();
+  const year = serverNow.getFullYear();
+  const month = serverNow.getMonth() + 1;
+  const dateStr = Utilities.formatDate(serverNow, scriptTimeZone_(), 'yyyy-MM-dd');
+  const yearMonth = year + '-' + String(month).padStart(2, '0');
+
+  // 打刻の「実時刻」はクライアント timestamp を尊重する（打刻ボタンを押した
+  // その瞬間の時刻の方がネットワーク遅延の影響を受けず正確なため）。
+  // ただし不正な値ならサーバ時刻にフォールバックする。
+  let now = timestamp ? new Date(timestamp) : serverNow;
   if (!isValidDate_(now)) {
     Logger.log('handleClock: invalid timestamp received, falling back to server time. timestamp=' + timestamp);
-    now = new Date();
+    now = serverNow;
   }
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const dateStr = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM-dd');
-  const yearMonth = year + '-' + String(month).padStart(2, '0');
 
   // 月次提出ステータスチェック (submitted/approved の月は打刻不可)
   const submissionStatus = getSubmissionStatus_(staffId, yearMonth);
@@ -1407,10 +1421,11 @@ function handleClock(body) {
     }
   }
 
-  // 出勤簿シートを軽量に再生成（失敗しても打刻成功は維持）
+  // 出勤簿シートを軽量に再生成（失敗しても打刻成功は維持）。
+  // 対象月は行を書き込んだのと同じサーバ基準の yearMonth を使う
+  // （now=クライアント時刻から再計算すると書込先の月と食い違う恐れがある）。
   try {
-    const ym = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM');
-    rebuildAttendanceLogSheet_(staffId, ym);
+    rebuildAttendanceLogSheet_(staffId, yearMonth);
   } catch (e) { Logger.log('rebuildAttendanceLogSheet failed: ' + (e && e.message)); }
 
   return { success: true };
@@ -2487,8 +2502,12 @@ function handleBulkSaveAttendance(body) {
     const breakMinutesIsManual = row.breakMinutesIsManual === true || row.breakMinutesIsManual === 'TRUE';
     const remarks = row.remarks ? String(row.remarks) : '';
 
-    // 全フィールドが空ならスキップ
-    if (!clockIn && !clockOut && breakMinutes === 0 && !remarks && !isHoliday) {
+    // 全フィールドが空の行の扱い:
+    //  - 既存行が無い → 新規の空行を作らないためスキップ
+    //  - 既存行が有る → スタッフが時刻等を消して「クリア」した操作なので、
+    //    スキップせず下の更新分岐で空に上書きする（消したのに残るバグを防ぐ）
+    const allEmpty = !clockIn && !clockOut && breakMinutes === 0 && !remarks && !isHoliday;
+    if (allEmpty && !dateToRowIndex[date]) {
       continue;
     }
 
@@ -2517,7 +2536,7 @@ function handleBulkSaveAttendance(body) {
       // 既存行を更新（カラム名指定で安全に書き込み）
       setCellByColumnName_(sheet, rowIndex, headers, 'clock_in', clockInVal);
       setCellByColumnName_(sheet, rowIndex, headers, 'clock_out', clockOutVal);
-      if (hasClockOut) setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', 'normal');
+      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', hasClockOut ? 'normal' : '');
       setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes', breakMinutes);
       setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes_is_manual', breakMinutesIsManual);
       setCellByColumnName_(sheet, rowIndex, headers, 'work_minutes', workMinutes);
@@ -3198,6 +3217,10 @@ function handleSubmitMonthly(body) {
       setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
       setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks || '');
       setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', '');
+      // 再提出時は前回の審査情報もクリア。残すと getBestSubmissionRecord_ の
+      // reviewed_at 優先の重複解決や画面表示が古い審査結果を引きずるため。
+      setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', '');
+      setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', '');
     });
   }
   // 直後の list/読込で確実に新行が見えるよう Spreadsheet 書込キャッシュを強制フラッシュ
@@ -4751,6 +4774,15 @@ function handleSubmitShiftRequest(body) {
     if (e.status !== 'pending' || !newDateSet[dateKey]) return;
     setCellByColumnName_(sheet, e.rowIndex, headers, 'remarks', remarks);
     setCellByColumnName_(sheet, e.rowIndex, headers, 'submitted_at', now);
+  });
+
+  // 既存 approved 行にも備考を反映する。
+  // 承認済みのみ／新規追加なしのケースでは上記どの分岐にも該当せず、
+  // remarks の書き込み先が存在しないまま備考がサイレントに破棄されていた。
+  Object.keys(existingByDate).forEach(function (dateKey) {
+    const e = existingByDate[dateKey];
+    if (e.status !== 'approved') return;
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'remarks', remarks);
   });
 
   // 新規日（既存に無い日）を行追加
