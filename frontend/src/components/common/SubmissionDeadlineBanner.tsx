@@ -26,6 +26,10 @@ export function SubmissionDeadlineBanner({ gate }: { gate: ClockGate | null }) {
   };
 
   const isRejected = gate.prevStatus === 'rejected';
+  // リマインド対象は「前月」なので、出勤簿もその月で開くようにする。
+  // これが無いと出勤簿は当月で開き、スタッフが当月を提出→前月は未提出のまま
+  // 「提出したのにリマインドが消えない」混乱を招く。
+  const attendanceLink = `/attendance?ym=${gate.prevYearMonth}`;
 
   if (gate.alertActive) {
     const headline = isRejected
@@ -36,7 +40,7 @@ export function SubmissionDeadlineBanner({ gate }: { gate: ClockGate | null }) {
       : `${formatDeadline(gate.deadlineDate)} が提出期限です。お早めにご提出いただけますと安心です。`;
     return (
       <Link
-        to="/attendance"
+        to={attendanceLink}
         className="flex items-start gap-3 px-4 py-3.5 rounded-xl mb-4 border bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 transition-colors"
       >
         <CalendarClock className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -53,7 +57,7 @@ export function SubmissionDeadlineBanner({ gate }: { gate: ClockGate | null }) {
   if (gate.prevStatus === 'submitted') {
     return (
       <Link
-        to="/attendance"
+        to={attendanceLink}
         className="flex items-start gap-3 px-4 py-3.5 rounded-xl mb-4 border bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors"
       >
         <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
