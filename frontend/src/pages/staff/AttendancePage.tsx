@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -45,9 +45,23 @@ import { detectShiftDiff, estimatedPlannedBreak, APPLICATION_TYPE_LABEL } from '
 export function AttendancePage() {
   const navigate = useNavigate();
   const { staff, isAuthenticated, isAdmin } = useAuth();
+  const [searchParams] = useSearchParams();
 
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  // 初期表示月: URL の ?ym=YYYY-MM があればその月で開く（提出リマインドから来た場合は
+  // 前月を指定して来るため、当月ではなく提出すべき月が開く）。無ければ当月。
+  const initialYm = (() => {
+    const ym = searchParams.get('ym');
+    const m = ym && /^(\d{4})-(\d{1,2})$/.exec(ym);
+    if (m) {
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      if (mo >= 1 && mo <= 12) return { year: y, month: mo };
+    }
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  })();
+  const [selectedYear, setSelectedYear] = useState(initialYm.year);
+  const [selectedMonth, setSelectedMonth] = useState(initialYm.month);
   const [rows, setRows] = useState<BulkAttendanceRow[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [submission, setSubmission] = useState<MonthlySubmission | null>(null);
