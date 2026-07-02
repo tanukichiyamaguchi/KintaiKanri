@@ -27,6 +27,10 @@ export function ClockPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [gate, setGate] = useState<ClockGate | null>(null);
+  // 初回読込が一度でも成功したか / 失敗中か。失敗中は「状態不明」としてボタンを無効化し、
+  // 既定値(未出勤)を正しい状態として見せない（サイレント失敗＋誤操作を防ぐ）。
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated || !staff) {
@@ -41,19 +45,28 @@ export function ClockPage() {
         attendanceApi.getToday(staff.staffId),
         submissionApi.clockGate(staff.staffId),
       ]);
+      // apiRequest は失敗時も reject せず {success:false} を返すため、catch ではなく
+      // success フラグで判定する（catch は防御的フォールバックとしてのみ残す）。
       if (todayRes.success && todayRes.data) {
         setStatus(todayRes.data.status || 'not_started');
         setRecords(todayRes.data.records || []);
+        setLoaded(true);
+        setLoadError(false);
+      } else if (!loaded) {
+        // 一度も正しく取得できていない＝状態不明。既定値(未出勤)を正解として見せない。
+        setLoadError(true);
+        setMessage({ type: 'error', text: todayRes.error || '勤怠情報の取得に失敗しました。通信状況をご確認のうえ画面を更新してください。' });
       }
       if (gateRes.success && gateRes.data) {
         setGate(gateRes.data);
       }
     } catch {
-      setMessage({ type: 'error', text: '勤怠情報の取得に失敗しました' });
+      if (!loaded) setLoadError(true);
+      setMessage({ type: 'error', text: '勤怠情報の取得に失敗しました。通信状況をご確認のうえ画面を更新してください。' });
     } finally {
       setIsLoading(false);
     }
-  }, [staff]);
+  }, [staff, loaded]);
 
   useEffect(() => {
     fetchTodayAttendance();
@@ -96,9 +109,13 @@ export function ClockPage() {
         await fetchTodayAttendance();
       } else {
         setMessage({ type: 'error', text: response.error || '打刻に失敗しました' });
+        // クライアント状態がサーバとズレて拒否された場合に備え、最新状態へ再同期。
+        // （「既に出勤済み」等の拒否時にボタン可否を正しく再計算しソフトロックを防ぐ）
+        await fetchTodayAttendance();
       }
     } catch {
       setMessage({ type: 'error', text: '打刻に失敗しました' });
+      await fetchTodayAttendance();
     } finally {
       setIsClocking(false);
     }
@@ -109,8 +126,10 @@ export function ClockPage() {
   const hasClockIn = records.some(r => r.type === 'clock_in');
   const hasClockOut = records.some(r => r.type === 'clock_out');
   // 【撤去】前月出勤簿の未提出による打刻ブロックは廃止。打刻の可否はゲートに依存しない。
-  const clockInDisabled = isWorking || isFinished || hasClockIn;
-  const clockOutDisabled = !isWorking || isFinished || hasClockOut;
+  // 状態不明（初回読込に失敗）のときは、古い既定値で誤操作させないよう両ボタンを無効化する。
+  const stateUnknown = loadError && !loaded;
+  const clockInDisabled = stateUnknown || isWorking || isFinished || hasClockIn;
+  const clockOutDisabled = stateUnknown || !isWorking || isFinished || hasClockOut;
 
   const formatTime = (isoString: string): string => {
     const date = new Date(isoString);

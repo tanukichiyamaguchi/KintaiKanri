@@ -2487,8 +2487,12 @@ function handleBulkSaveAttendance(body) {
     const breakMinutesIsManual = row.breakMinutesIsManual === true || row.breakMinutesIsManual === 'TRUE';
     const remarks = row.remarks ? String(row.remarks) : '';
 
-    // 全フィールドが空ならスキップ
-    if (!clockIn && !clockOut && breakMinutes === 0 && !remarks && !isHoliday) {
+    // 全フィールドが空の行の扱い:
+    //  - 既存行が無い → 新規の空行を作らないためスキップ
+    //  - 既存行が有る → スタッフが時刻等を消して「クリア」した操作なので、
+    //    スキップせず下の更新分岐で空に上書きする（消したのに残るバグを防ぐ）
+    const allEmpty = !clockIn && !clockOut && breakMinutes === 0 && !remarks && !isHoliday;
+    if (allEmpty && !dateToRowIndex[date]) {
       continue;
     }
 
@@ -2517,7 +2521,7 @@ function handleBulkSaveAttendance(body) {
       // 既存行を更新（カラム名指定で安全に書き込み）
       setCellByColumnName_(sheet, rowIndex, headers, 'clock_in', clockInVal);
       setCellByColumnName_(sheet, rowIndex, headers, 'clock_out', clockOutVal);
-      if (hasClockOut) setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', 'normal');
+      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', hasClockOut ? 'normal' : '');
       setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes', breakMinutes);
       setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes_is_manual', breakMinutesIsManual);
       setCellByColumnName_(sheet, rowIndex, headers, 'work_minutes', workMinutes);
@@ -3198,6 +3202,10 @@ function handleSubmitMonthly(body) {
       setCellByColumnName_(sheet, rowIndex, headers, 'submitted_at', now);
       setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks || '');
       setCellByColumnName_(sheet, rowIndex, headers, 'rejection_reason', '');
+      // 再提出時は前回の審査情報もクリア。残すと getBestSubmissionRecord_ の
+      // reviewed_at 優先の重複解決や画面表示が古い審査結果を引きずるため。
+      setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_at', '');
+      setCellByColumnName_(sheet, rowIndex, headers, 'reviewed_by', '');
     });
   }
   // 直後の list/読込で確実に新行が見えるよう Spreadsheet 書込キャッシュを強制フラッシュ
