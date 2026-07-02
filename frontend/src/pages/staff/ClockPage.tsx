@@ -59,11 +59,17 @@ export function ClockPage() {
     fetchTodayAttendance();
     // タブに戻ってきた時 / フォーカス時に即時更新（出勤簿提出直後の古いゲート状態を解消）
     const onVisible = () => { if (document.visibilityState === 'visible') fetchTodayAttendance(); };
+    // ブラウザの「戻る」等で bfcache から復元された場合は focus/visibilitychange が
+    // 発火しないため、pageshow(persisted) でも必ず再取得する。
+    // （出勤簿を提出→戻る で古い「未提出」リマインドが残るのを防ぐ）
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) fetchTodayAttendance(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', fetchTodayAttendance);
+    window.addEventListener('pageshow', onPageShow);
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', fetchTodayAttendance);
+      window.removeEventListener('pageshow', onPageShow);
     };
   }, [fetchTodayAttendance]);
 
