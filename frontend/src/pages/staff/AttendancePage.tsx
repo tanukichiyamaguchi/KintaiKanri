@@ -134,12 +134,14 @@ export function AttendancePage() {
         const isHoliday = dateObj.getDay() === 0 || dateObj.getDay() === 6;
         const shift = shiftList.find(s => s.date === date);
 
-        if (ex && ex.clockIn && ex.clockOut) {
+        if (ex && (ex.clockIn || ex.clockOut)) {
+          // 片方だけ入力済み（出勤のみ等）の行も復元する。両方必須にすると、
+          // 片側入力のデータが画面上は空に見え（＝サイレント消失）、detectShiftDiff が
+          // 欠勤と誤判定して提出がブロックされるため。
           // Parse via Date when ISO so UTC strings (from /clock punches) are
-          // shown as the user's local time. Naive .split('T') would surface
-          // raw UTC HH:MM and silently corrupt the displayed value.
-          const clockIn = extractLocalTimeHHMM(ex.clockIn);
-          const clockOut = extractLocalTimeHHMM(ex.clockOut);
+          // shown as the user's local time.
+          const clockIn = ex.clockIn ? extractLocalTimeHHMM(ex.clockIn) : '';
+          const clockOut = ex.clockOut ? extractLocalTimeHHMM(ex.clockOut) : '';
           const elapsed = calcElapsedMinutes(clockIn, clockOut);
           // 手動修正フラグが立っている場合のみ保存値を尊重する。
           // 立っていなければ常に最新の法定値を再計算（閾値の改訂・古い保存値の自動補正のため）。
@@ -309,6 +311,7 @@ export function AttendancePage() {
   // Submission gate calculation
   const submissionGate = useMemo(() => {
     const blockingReasons: string[] = [];
+    const flagged = new Set<string>(); // `${date}|${type}` を重複計上しない
     rows.forEach((row, idx) => {
       const diff = rowDiffs[idx];
       const apps = applicationsByDate[row.date] || [];
@@ -320,17 +323,29 @@ export function AttendancePage() {
             blockingReasons.push(`${row.date}: ${label}の申請が必要です`);
           } else if (matched.status === 'pending') {
             blockingReasons.push(`${row.date}: ${label}の申請が承認待ちです`);
+            flagged.add(`${row.date}|${kind}`);
           } else if (matched.status === 'rejected') {
             blockingReasons.push(`${row.date}: ${label}の申請が却下されています（再申請が必要）`);
+            flagged.add(`${row.date}|${kind}`);
           }
         });
       }
+    });
+    // GAS 側は「当月に審査待ち(pending)の申請が1件でもあれば提出不可」。
+    // 差異が消えた日の pending 申請は上のループに現れず、フロントでは押せるのに
+    // GAS で弾かれる齟齬になる。未計上の pending を全て理由に加えて整合させる。
+    applications.forEach(a => {
+      if (a.status !== 'pending') return;
+      if (flagged.has(`${a.date}|${a.type}`)) return;
+      const label = APPLICATION_TYPE_LABEL[a.type] || a.type;
+      blockingReasons.push(`${a.date}: ${label}の申請が承認待ちです`);
+      flagged.add(`${a.date}|${a.type}`);
     });
     return {
       canSubmit: blockingReasons.length === 0 && !isLocked,
       blockingReasons,
     };
-  }, [rows, rowDiffs, applicationsByDate, isLocked]);
+  }, [rows, rowDiffs, applicationsByDate, applications, isLocked]);
 
   // Save (draft)
   const handleSave = async () => {

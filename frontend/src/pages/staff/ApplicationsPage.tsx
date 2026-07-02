@@ -59,9 +59,11 @@ export function ApplicationsPage() {
     return false;
   }, [selectedYear, selectedMonth]);
 
-  const loadApplications = useCallback(async () => {
+  const loadApplications = useCallback(async (background = false) => {
     if (!staff) return;
-    setIsLoading(true);
+    // background=true（タブ復帰時の再取得）はローディング表示を出さない。
+    // 毎回 isLoading(true) すると一覧が一瞬消えてチラつくため。
+    if (!background) setIsLoading(true);
     setError(null);
     try {
       const response = await applicationApi.list({
@@ -70,20 +72,36 @@ export function ApplicationsPage() {
       });
       if (response.success && response.data) {
         setApplications(response.data);
-      } else {
+      } else if (!background) {
+        // バックグラウンド更新の失敗で今表示中の一覧を消さない
         setError(response.error || '申請の取得に失敗しました');
         setApplications([]);
       }
     } catch {
-      setError('申請の取得に失敗しました');
-      setApplications([]);
+      if (!background) {
+        setError('申請の取得に失敗しました');
+        setApplications([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (!background) setIsLoading(false);
     }
   }, [staff, yearMonthStr]);
 
   useEffect(() => {
     loadApplications();
+    // タブ復帰時に再取得し、承認/却下結果が古いまま残るのを防ぐ
+    // （ClockPage の同種対策と揃える。bfcache 復元にも対応）。
+    const onVisible = () => { if (document.visibilityState === 'visible') loadApplications(true); };
+    const onFocus = () => loadApplications(true);
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) loadApplications(true); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('pageshow', onPageShow);
+    };
   }, [loadApplications]);
 
   const handlePreviousMonth = () => {
