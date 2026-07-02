@@ -312,8 +312,15 @@ function setupSystem() {
       headers: ['grade', 'monthly_min', 'monthly_max', 'standard_monthly']
     },
     {
+      // handleCreateApplication が書き込むフラットスキーマと一致させる。
+      // 旧 details_json ベースの定義のまま setupSystem でシート作成すると、
+      // reason_type/planned_start 等がヘッダー無しの列にずれて書かれ、
+      // 残業分・会社都合区分などが読み取れず給与控除が誤る不具合があった。
       name: SHEETS.APPLICATIONS,
-      headers: ['id', 'staff_id', 'staff_name', 'date', 'type', 'reason', 'details_json', 'status', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason']
+      headers: ['id', 'staff_id', 'staff_name', 'date', 'type', 'reason',
+        'reason_type', 'planned_start', 'planned_end', 'actual_start', 'actual_end',
+        'planned_break_min', 'actual_break_min', 'overtime_min',
+        'status', 'submitted_at', 'reviewed_at', 'reviewed_by', 'rejection_reason']
     },
     {
       name: SHEETS.SUBMISSIONS,
@@ -4759,6 +4766,15 @@ function handleSubmitShiftRequest(body) {
     if (e.status !== 'pending' || !newDateSet[dateKey]) return;
     setCellByColumnName_(sheet, e.rowIndex, headers, 'remarks', remarks);
     setCellByColumnName_(sheet, e.rowIndex, headers, 'submitted_at', now);
+  });
+
+  // 既存 approved 行にも備考を反映する。
+  // 承認済みのみ／新規追加なしのケースでは上記どの分岐にも該当せず、
+  // remarks の書き込み先が存在しないまま備考がサイレントに破棄されていた。
+  Object.keys(existingByDate).forEach(function (dateKey) {
+    const e = existingByDate[dateKey];
+    if (e.status !== 'approved') return;
+    setCellByColumnName_(sheet, e.rowIndex, headers, 'remarks', remarks);
   });
 
   // 新規日（既存に無い日）を行追加
