@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-06-17d (re-submit gate fix; reassign tool removed)';
+const CODE_VERSION = '2026-07-03 (fix 対象年月 label collision; submissions now recognized)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -835,6 +835,22 @@ function generateId() {
   return Utilities.getUuid();
 }
 
+// 日本語ラベル → 対応する英語キー（複数可）。
+// 同じ日本語ラベルに複数の英語キーが割り当てられている場合（例: 「対象年月」→
+// year_month と target_year_month）、REVERSE_HEADER_LABELS は後勝ちで1つしか
+// 返せず、もう片方のキーで読むコードが undefined になる。sheetToObjects で
+// 全ての別名キーに値を入れて、どちらのキーで読んでも取得できるようにする。
+const HEADER_LABEL_TO_KEYS = (function () {
+  const out = {};
+  for (const k in HEADER_LABELS) {
+    if (Object.prototype.hasOwnProperty.call(HEADER_LABELS, k)) {
+      const lab = HEADER_LABELS[k];
+      (out[lab] = out[lab] || []).push(k);
+    }
+  }
+  return out;
+})();
+
 // Convert sheet data to array of objects
 function sheetToObjects(sheet) {
   if (!sheet) return [];
@@ -848,11 +864,18 @@ function sheetToObjects(sheet) {
     const obj = {};
     headers.forEach((header, index) => {
       if (header !== '' && header != null) {
-        // 日本語ラベルが書かれている場合は英語キーに正規化（既存コードが英語キーでアクセスするため）
-        const en = (typeof header === 'string') ? REVERSE_HEADER_LABELS[header] : null;
-        const key = en || header;
+        const cellVal = row[index];
+        // 日本語ラベルが複数の英語キーに対応する場合は、その全ての別名キーに値を入れる
+        // （例: 「対象年月」→ year_month と target_year_month の両方）。これを怠ると
+        // 片方のキーで読むコードが undefined になり、月次提出の対象年月が読めず
+        // 「提出済みでも常に下書き扱い」になる不具合が起きる。
+        const keys = (typeof header === 'string' && HEADER_LABEL_TO_KEYS[header])
+          ? HEADER_LABEL_TO_KEYS[header]
+          : [((typeof header === 'string' && REVERSE_HEADER_LABELS[header]) || header)];
         // enum セルの日本語表示も英語キーへ正規化（status/type/source/clock_out_type/editor_role）
-        obj[key] = normalizeEnumValueFromCell_(key, row[index]);
+        keys.forEach(function (key) {
+          obj[key] = normalizeEnumValueFromCell_(key, cellVal);
+        });
       }
     });
     return obj;
