@@ -32,7 +32,8 @@ export function detectShiftDiff(
   actualClockIn: string,
   actualClockOut: string,
   actualBreakMinutes: number,
-  plannedBreakMinutes?: number
+  plannedBreakMinutes?: number,
+  breakMinutesIsManual?: boolean
 ): ShiftDiff {
   const kinds: ShiftDiffKind[] = [];
   const details: ShiftDiff['details'] = {
@@ -100,15 +101,18 @@ export function detectShiftDiff(
     }
   }
 
-  // 休憩相違: 予定と実績の差異が大きい場合
+  // 休憩相違: スタッフが「手動で」入力した休憩が予定より少ない場合のみ申請対象。
+  // 休憩が自動算出(breakMinutesIsManual !== true)の場合は、実労働が短い日に
+  // 法定休憩ブラケット(6:45/8:45)を跨いで自動的に予定休憩を下回るため、
+  // 早退/遅刻に加えて余分な『休憩相違』が二重発生し二重申請を強いていた。
+  // 自動算出の休憩は定義上「相違」ではないので判定しない。
   if (
+    breakMinutesIsManual === true &&
     plannedBreakMinutes !== undefined &&
+    actualBreakMinutes < plannedBreakMinutes &&
     Math.abs(actualBreakMinutes - plannedBreakMinutes) >= 1
   ) {
-    // 予定休憩より少なく取った場合のみ申請対象（多く取った場合は対象外）
-    if (actualBreakMinutes < plannedBreakMinutes) {
-      kinds.push('break_deviation');
-    }
+    kinds.push('break_deviation');
   }
 
   // 出退勤両方が異なる場合は shift_change を冗長に追加しない

@@ -272,7 +272,8 @@ export function AttendancePage() {
       }
       const plannedBreak = estimatedPlannedBreak(row.shift);
       return detectShiftDiff(
-        row.date, row.shift, row.clockIn, row.clockOut, row.breakMinutes, plannedBreak
+        row.date, row.shift, row.clockIn, row.clockOut, row.breakMinutes, plannedBreak,
+        row.breakMinutesIsManual
       );
     });
   }, [rows]);

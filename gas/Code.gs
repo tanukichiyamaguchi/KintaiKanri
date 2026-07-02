@@ -1302,17 +1302,24 @@ function handleClock(body) {
     return { success: false, error: '不正な打刻種別です' };
   }
 
-  // 不正な timestamp が渡された場合は現在時刻にフォールバックして処理続行。
-  // Invalid Date のまま Utilities.formatDate を呼ぶと例外になるためここで弾く。
-  let now = timestamp ? new Date(timestamp) : new Date();
+  // 「どの日の記録として書き込むか」は必ずサーバ時刻(Asia/Tokyo)基準で決める。
+  // handleGetTodayAttendance 等の「今日」判定も同じくサーバ時刻基準のため、
+  // ここをクライアントのローカル時刻基準にすると、両者の日付境界がズレたときに
+  // 「打刻したのに今日の記録に出てこない/前日の記録に紛れる」不具合になる。
+  const serverNow = new Date();
+  const year = serverNow.getFullYear();
+  const month = serverNow.getMonth() + 1;
+  const dateStr = Utilities.formatDate(serverNow, scriptTimeZone_(), 'yyyy-MM-dd');
+  const yearMonth = year + '-' + String(month).padStart(2, '0');
+
+  // 打刻の「実時刻」はクライアント timestamp を尊重する（打刻ボタンを押した
+  // その瞬間の時刻の方がネットワーク遅延の影響を受けず正確なため）。
+  // ただし不正な値ならサーバ時刻にフォールバックする。
+  let now = timestamp ? new Date(timestamp) : serverNow;
   if (!isValidDate_(now)) {
     Logger.log('handleClock: invalid timestamp received, falling back to server time. timestamp=' + timestamp);
-    now = new Date();
+    now = serverNow;
   }
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const dateStr = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM-dd');
-  const yearMonth = year + '-' + String(month).padStart(2, '0');
 
   // 月次提出ステータスチェック (submitted/approved の月は打刻不可)
   const submissionStatus = getSubmissionStatus_(staffId, yearMonth);
@@ -1414,10 +1421,11 @@ function handleClock(body) {
     }
   }
 
-  // 出勤簿シートを軽量に再生成（失敗しても打刻成功は維持）
+  // 出勤簿シートを軽量に再生成（失敗しても打刻成功は維持）。
+  // 対象月は行を書き込んだのと同じサーバ基準の yearMonth を使う
+  // （now=クライアント時刻から再計算すると書込先の月と食い違う恐れがある）。
   try {
-    const ym = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM');
-    rebuildAttendanceLogSheet_(staffId, ym);
+    rebuildAttendanceLogSheet_(staffId, yearMonth);
   } catch (e) { Logger.log('rebuildAttendanceLogSheet failed: ' + (e && e.message)); }
 
   return { success: true };
