@@ -1444,14 +1444,22 @@ function handleClock(body) {
     }
   }
 
-  // 出勤簿シートを軽量に再生成（失敗しても打刻成功は維持）。
-  // 対象月は行を書き込んだのと同じサーバ基準の yearMonth を使う
-  // （now=クライアント時刻から再計算すると書込先の月と食い違う恐れがある）。
-  try {
-    rebuildAttendanceLogSheet_(staffId, yearMonth);
-  } catch (e) { Logger.log('rebuildAttendanceLogSheet failed: ' + (e && e.message)); }
+  // 【高速化】以前はここで rebuildAttendanceLogSheet_ を同期実行していたが、
+  // 出勤簿シートは表示・社労士提出用の派生データであり打刻の成否には無関係。
+  // 大量の書式操作を伴い打刻の応答を大きく遅くしていたため、日次トリガー
+  // （dailyAttendanceLogRebuildTrigger / 深夜0時台）での自動再生成に移行した。
+  // 即時反映が必要な場合はメニュー「出勤簿を再生成」を使う。
 
-  return { success: true };
+  // 【高速化】打刻直後の状態（今日の勤怠 + 提出ゲート）を同梱して返し、
+  // フロントが getToday / clock-gate を追加取得する往復（計2回）を不要にする。
+  const result = { success: true };
+  try {
+    result.today = buildTodayAttendance_(staffId, dateStr);
+  } catch (e) { Logger.log('handleClock: buildTodayAttendance_ failed: ' + (e && e.message)); }
+  try {
+    result.gate = computeClockGate_(staffId, new Date());
+  } catch (e) { Logger.log('handleClock: computeClockGate_ failed: ' + (e && e.message)); }
+  return result;
 }
 
 /**
@@ -1474,30 +1482,25 @@ function computeLegalBreakMinutes_(elapsedMinutes) {
   return 0;
 }
 
-function handleGetTodayAttendance(params) {
-  const staffId = params.staffId;
-
-  if (!staffId) {
-    return { success: false, error: 'スタッフIDが指定されていません' };
-  }
-
+/**
+ * 指定スタッフの「その日」の勤怠状態（status / records / currentRecord）を組み立てる。
+ * handleGetTodayAttendance と handleClock（打刻レスポンス同梱）の両方から使う共通ヘルパ。
+ * @param {string} staffId
+ * @param {string} dateStr 'yyyy-MM-dd'（サーバ基準）。省略時はサーバの本日。
+ */
+function buildTodayAttendance_(staffId, dateStr) {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const dateStr = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM-dd');
+  const targetDate = dateStr || Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM-dd');
+  const parts = String(targetDate).split('-');
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
 
   const sheet = getAttendanceSheet(year, month);
   const data = sheetToObjects(sheet);
-  const todayRecord = data.find(r => formatDateOnly_(r.date) === dateStr && r.staff_id === staffId);
+  const todayRecord = data.find(r => formatDateOnly_(r.date) === targetDate && r.staff_id === staffId);
 
   if (!todayRecord) {
-    return {
-      success: true,
-      data: {
-        status: 'not_started',
-        records: []
-      }
-    };
+    return { status: 'not_started', records: [] };
   }
 
   // Build records array (Date オブジェクトは ISO 文字列に正規化)
@@ -1517,14 +1520,17 @@ function handleGetTodayAttendance(params) {
     status = 'working';
   }
 
-  return {
-    success: true,
-    data: {
-      status,
-      records,
-      currentRecord: todayRecord
-    }
-  };
+  return { status: status, records: records, currentRecord: todayRecord };
+}
+
+function handleGetTodayAttendance(params) {
+  const staffId = params.staffId;
+
+  if (!staffId) {
+    return { success: false, error: 'スタッフIDが指定されていません' };
+  }
+
+  return { success: true, data: buildTodayAttendance_(staffId, null) };
 }
 
 function handleGetAttendance(params) {
@@ -2448,8 +2454,9 @@ function handleUpdateAttendance(body) {
   // Append to history
   appendAttendanceHistory_(date, staffId, field, oldValue, value, editorId, editorRole, reason);
 
-  // 出勤簿シートを再構築（失敗しても更新成功は維持）
-  try { rebuildAttendanceLogSheet_(staffId, yearMonth); } catch (e) { Logger.log('rebuildAttendanceLogSheet failed (single update): ' + (e && e.message)); }
+  // 【高速化】同期の出勤簿再生成は廃止。日次トリガー
+  // （dailyAttendanceLogRebuildTrigger / 深夜0時台）で自動再生成する。
+  // 即時反映が必要な場合はメニュー「出勤簿を再生成」を使う。
 
   return { success: true };
 }
@@ -2570,11 +2577,11 @@ function handleBulkSaveAttendance(body) {
     savedCount++;
   }
 
-  // 出勤簿シートを再構築（失敗しても更新成功は維持）
-  try {
-    const ym = year + '-' + String(month).padStart(2, '0');
-    rebuildAttendanceLogSheet_(staffId, ym);
-  } catch (e) { Logger.log('rebuildAttendanceLogSheet failed (admin update): ' + (e && e.message)); }
+  // 【高速化】以前はここで rebuildAttendanceLogSheet_ を同期実行していたが、
+  // 大量の書式操作を伴い保存の応答を大きく遅くしていた。出勤簿シートは
+  // 表示・社労士提出用の派生データなので、日次トリガー
+  // （dailyAttendanceLogRebuildTrigger / 深夜0時台）での自動再生成に移行した。
+  // 即時反映が必要な場合はメニュー「出勤簿を再生成」を使う。
 
   return { success: true, data: { saved: savedCount } };
 }
@@ -3743,6 +3750,57 @@ function monthlyDeadlineReminderTrigger() {
   }
 }
 
+// ============================================================
+// 出勤簿シートの日次自動再生成
+//   打刻・保存のたびに同期再生成すると応答が大幅に遅くなるため、
+//   毎日深夜 0 時台にまとめて再生成する運用にしている。
+// ============================================================
+
+/**
+ * 毎日深夜 0 時台に rebuildAllAttendanceLogs_ を実行する
+ * 時刻ベーストリガーを登録する（重複登録は防止）。
+ */
+function installDailyAttendanceLogRebuildTrigger_() {
+  const handler = 'dailyAttendanceLogRebuildTrigger';
+  const existing = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < existing.length; i++) {
+    if (existing[i].getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(existing[i]); // 重複を避けるため一旦削除して作り直す
+    }
+  }
+  ScriptApp.newTrigger(handler)
+    .timeBased()
+    .everyDays(1)
+    .atHour(0) // スクリプトのタイムゾーン（Asia/Tokyo）の 0 時台
+    .create();
+  return true;
+}
+
+// トリガーから呼ばれるエントリポイント（全スタッフ×全月の出勤簿を再生成）
+function dailyAttendanceLogRebuildTrigger() {
+  try {
+    const sheets = rebuildAllAttendanceLogs_();
+    Logger.log('dailyAttendanceLogRebuildTrigger: rebuilt ' + (sheets ? sheets.length : 0) + ' sheets');
+  } catch (e) {
+    Logger.log('dailyAttendanceLogRebuildTrigger failed: ' + (e && e.message ? e.message : e));
+  }
+}
+
+// メニュー: 出勤簿の日次自動更新トリガーを登録
+function menuInstallDailyLogRebuild() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    installDailyAttendanceLogRebuildTrigger_();
+    ui.alert('出勤簿の自動更新を設定しました',
+      '毎日 深夜 0 時台に、全スタッフの出勤簿シートを自動で最新化します。\n\n' +
+      '打刻や出勤簿の保存時には再生成しなくなったため、打刻の反応が速くなります。\n' +
+      '（すぐに反映したい場合は「出勤簿を再生成（今すぐ）」をご利用ください）',
+      ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('設定に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+  }
+}
+
 // メニュー: 月初リマインドトリガーを登録
 function menuInstallMonthlyReminder() {
   const ui = SpreadsheetApp.getUi();
@@ -3786,7 +3844,8 @@ function onOpen() {
   ui.createMenu('勤怠管理')
     .addItem('コードのバージョンを確認', 'menuShowCodeVersion')
     .addItem('翌月のシフト雛形を作成', 'menuGenerateNextMonthShift')
-    .addItem('出勤簿を再生成', 'menuRebuildAttendanceLogs')
+    .addItem('出勤簿を再生成（今すぐ）', 'menuRebuildAttendanceLogs')
+    .addItem('出勤簿を毎日深夜に自動更新する設定', 'menuInstallDailyLogRebuild')
     .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
     .addSeparator()
     .addItem('提出期限リマインドを毎月1日に自動送信する設定', 'menuInstallMonthlyReminder')
