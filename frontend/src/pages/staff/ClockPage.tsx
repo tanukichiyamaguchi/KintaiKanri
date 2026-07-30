@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Play,
@@ -31,6 +31,10 @@ export function ClockPage() {
   // 既定値(未出勤)を正しい状態として見せない（サイレント失敗＋誤操作を防ぐ）。
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // 【高速化 1-D】visibilitychange/focus/pageshow が短時間に連発しても
+  // 無駄な往復を出さないよう、直近取得から数秒はスキップするデバウンス。
+  const lastFetchAtRef = useRef(0);
+  const FETCH_DEBOUNCE_MS = 3000;
 
   useEffect(() => {
     if (!isAuthenticated || !staff) {
@@ -70,18 +74,28 @@ export function ClockPage() {
 
   useEffect(() => {
     fetchTodayAttendance();
+    lastFetchAtRef.current = Date.now();
+
+    // 【高速化 1-D】visibilitychange/focus/pageshow が短時間に連発しても
+    // 直近取得から FETCH_DEBOUNCE_MS 以内ならスキップする（無駄な往復を抑制）。
+    const debouncedFetch = () => {
+      const now = Date.now();
+      if (now - lastFetchAtRef.current < FETCH_DEBOUNCE_MS) return;
+      lastFetchAtRef.current = now;
+      fetchTodayAttendance();
+    };
     // タブに戻ってきた時 / フォーカス時に即時更新（出勤簿提出直後の古いゲート状態を解消）
-    const onVisible = () => { if (document.visibilityState === 'visible') fetchTodayAttendance(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') debouncedFetch(); };
     // ブラウザの「戻る」等で bfcache から復元された場合は focus/visibilitychange が
     // 発火しないため、pageshow(persisted) でも必ず再取得する。
     // （出勤簿を提出→戻る で古い「未提出」リマインドが残るのを防ぐ）
-    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) fetchTodayAttendance(); };
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) debouncedFetch(); };
     document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', fetchTodayAttendance);
+    window.addEventListener('focus', debouncedFetch);
     window.addEventListener('pageshow', onPageShow);
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', fetchTodayAttendance);
+      window.removeEventListener('focus', debouncedFetch);
       window.removeEventListener('pageshow', onPageShow);
     };
   }, [fetchTodayAttendance]);
@@ -97,6 +111,16 @@ export function ClockPage() {
 
   const performClock = async (type: ClockType) => {
     if (!staff) return;
+
+    // 【高速化 1-C: 楽観的更新】サーバ応答を待たず、押した瞬間に画面の状態を
+    // 先行更新する（体感を「タップ→即反応」にする）。records は表示用の
+    // 簡易エントリを積むだけで、確定値は成功時にサーバの today で上書きする。
+    const prevStatus = status;
+    const prevRecords = records;
+    const optimisticTime = new Date().toISOString();
+    setStatus(type === 'clock_in' ? 'working' : 'finished');
+    setRecords(prev => [...prev, { type, time: optimisticTime }]);
+
     setIsClocking(true);
     setMessage(null);
     setShowConfirmModal(false);
@@ -106,14 +130,33 @@ export function ClockPage() {
       if (response.success) {
         const label = type === 'clock_in' ? '出勤' : '退勤';
         setMessage({ type: 'success', text: `${label}を記録しました` });
-        await fetchTodayAttendance();
+        // 【高速化 1-B】打刻レスポンスに同梱された today/gate があればそれを
+        // 正として反映し、追加の getToday/clockGate 往復を省略する
+        // （デモモード等で同梱が無い場合のみフォールバックで再取得）。
+        if (response.data?.today) {
+          setStatus(response.data.today.status || 'not_started');
+          setRecords(response.data.today.records || []);
+          setLoaded(true);
+          setLoadError(false);
+        }
+        if (response.data?.gate) {
+          setGate(response.data.gate);
+        }
+        if (!response.data?.today || !response.data?.gate) {
+          await fetchTodayAttendance();
+        }
       } else {
+        // 楽観的更新を巻き戻し、サーバの拒否理由を表示。
+        setStatus(prevStatus);
+        setRecords(prevRecords);
         setMessage({ type: 'error', text: response.error || '打刻に失敗しました' });
         // クライアント状態がサーバとズレて拒否された場合に備え、最新状態へ再同期。
         // （「既に出勤済み」等の拒否時にボタン可否を正しく再計算しソフトロックを防ぐ）
         await fetchTodayAttendance();
       }
     } catch {
+      setStatus(prevStatus);
+      setRecords(prevRecords);
       setMessage({ type: 'error', text: '打刻に失敗しました' });
       await fetchTodayAttendance();
     } finally {
