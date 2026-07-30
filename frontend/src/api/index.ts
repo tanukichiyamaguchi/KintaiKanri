@@ -1017,10 +1017,13 @@ export const staffApi = {
 
 // Attendance API (no GPS)
 export const attendanceApi = {
+  // 打刻。レスポンスには打刻直後の today（今日の勤怠）と gate（提出ゲート）が
+  // 同梱されるため、呼び出し側は getToday / clockGate を追加で叩かなくてよい
+  // （1タップあたりの往復を 3 → 1 に削減）。
   clock: (
     staffId: string,
     type: ClockType
-  ): Promise<ApiResponse<{ success: boolean }>> => {
+  ): Promise<ApiResponse<{ success: boolean; today?: TodayAttendance; gate?: ClockGate }>> => {
     const now = new Date();
     const timestamp = `${fmtDate(now)}T${fmtTime(now.getHours(), now.getMinutes())}:${String(now.getSeconds()).padStart(2, '0')}`;
     return apiRequest('clock', { staffId, type, timestamp });
