@@ -1,5 +1,5 @@
 export { Header } from './Header';
-export { Loading } from './Loading';
+export { Loading, Spinner } from './Loading';
 export { Modal } from './Modal';
 export { Clock } from './Clock';
 export { ApplicationModal } from './ApplicationModal';

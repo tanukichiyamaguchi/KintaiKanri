@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { StaffInfo, AdminInfo } from '../types';
-import { authApi } from '../api';
+import { authApi, clearCache } from '../api';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -39,8 +39,10 @@ function restoreSession(): StoredAuth | null {
       return auth;
     }
     localStorage.removeItem(STORAGE_KEY);
+    clearCache(); // ログイン期限切れ: 前の人の画面データを残さない
   } catch {
     localStorage.removeItem(STORAGE_KEY);
+    clearCache();
   }
   return null;
 }
@@ -57,6 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const normalizedEmail = email.trim().toLowerCase();
       const response = await authApi.login(normalizedEmail, password);
       if (response.success && response.data?.success) {
+        // 前にこの端末を使った人の画面データ（保存内容）を消してから切り替える
+        clearCache();
         const data = response.data;
         const tokenStr = data.token || '';
         const isAdminLogin = !!data.isAdmin;
@@ -98,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password: params.password,
       });
       if (response.success && response.data?.success && response.data.staffInfo) {
+        clearCache();
         const staffInfo = response.data.staffInfo;
         const tokenStr = response.data.token || '';
 
@@ -133,6 +138,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setIsAdmin(false);
     localStorage.removeItem(STORAGE_KEY);
+    // 画面データの保存内容も消す（共有端末で次の人に見えないように）
+    clearCache();
   }, []);
 
   const value: AuthContextType = {

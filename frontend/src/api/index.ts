@@ -22,7 +22,11 @@ import type {
   MonthlySubmission,
   SubmissionStatus,
   ClockGate,
+  DashboardSummary,
 } from '../types';
+import { invalidateForMutation } from './cache';
+
+export { readCache, writeCache, clearCache, invalidateCache, localDateKey } from './cache';
 
 // Base URL for the Google Apps Script Web App
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -232,6 +236,18 @@ function calculateMockSalary(staff: Staff, year: number, month: number): SalaryR
 //   - Write系 (body あり): POST + text/plain で body 送信
 //     （URL 長制限を回避。Content-Type を text/plain にすることで CORS プリフライトを発生させない）
 async function apiRequest<T>(
+  action: string,
+  body?: Record<string, unknown>,
+  queryParams?: Record<string, string>
+): Promise<ApiResponse<T>> {
+  const response = await apiRequestRaw<T>(action, body, queryParams);
+  // 更新系（body あり）が成功したら、関係する画面の保存内容（キャッシュ）を消す。
+  // 古い内容が次の画面で一瞬表示されて混乱しないようにするため。
+  if (body && response.success) invalidateForMutation(action);
+  return response;
+}
+
+async function apiRequestRaw<T>(
   action: string,
   body?: Record<string, unknown>,
   queryParams?: Record<string, string>
@@ -1321,7 +1337,56 @@ export const adminApi = {
     apiRequest('admins/delete', { adminId }),
 };
 
+// 管理者ダッシュボードのまとめ取得。
+// 以前はスタッフ一覧・人数分の今日の勤怠・承認待ち4種類を別々に取得していた（4人なら9回）のを
+// 1回にまとめる。サーバーが未対応（古いバージョン）の場合は、従来どおり個別に取得して
+// 同じ形に組み立てる（画面とサーバーの反映タイミングがずれても表示できるように）。
+export const dashboardApi = {
+  summary: async (): Promise<ApiResponse<DashboardSummary>> => {
+    const res = await apiRequest<DashboardSummary>('dashboard/summary');
+    if (res.success && res.data && res.data.counts) return res;
+    return dashboardSummaryFallback();
+  },
+};
+
+async function dashboardSummaryFallback(): Promise<ApiResponse<DashboardSummary>> {
+  const staffRes = await staffApi.getList();
+  if (!staffRes.success || !staffRes.data) {
+    return { success: false, error: staffRes.error || 'スタッフ情報の取得に失敗しました' };
+  }
+  const staff = staffRes.data;
+  const active = staff.filter(s => s.status === 'active');
+  const [todays, appsRes, subsRes, leaveRes, shiftReqRes] = await Promise.all([
+    Promise.all(active.map(s => attendanceApi.getToday(s.staffId))),
+    applicationApi.list({ status: 'pending' }),
+    submissionApi.list({ status: 'submitted' }),
+    paidLeaveApi.getAll(),
+    shiftRequestApi.list(),
+  ]);
+  const today: Record<string, TodayAttendance> = {};
+  active.forEach((s, i) => {
+    const t = todays[i];
+    if (t.success && t.data) today[s.staffId] = t.data;
+  });
+  return {
+    success: true,
+    data: {
+      staff,
+      today,
+      counts: {
+        pendingApplications: appsRes.success && appsRes.data ? appsRes.data.length : null,
+        pendingSubmissions: subsRes.success && subsRes.data ? subsRes.data.length : null,
+        pendingPaidLeave: leaveRes.success && leaveRes.data ? leaveRes.data.filter(r => r.status === 'pending').length : null,
+        pendingShiftRequests: shiftReqRes.success && shiftReqRes.data
+          ? shiftReqRes.data.filter(r => (r.offDays || []).some(d => d.status === 'pending')).length
+          : null,
+      },
+    },
+  };
+}
+
 export default {
+  dashboard: dashboardApi,
   auth: authApi,
   staff: staffApi,
   attendance: attendanceApi,

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import {
   LoginPage,
@@ -15,21 +15,25 @@ import {
   SalaryManagement,
   PaidLeaveManagement,
   SettingsPage,
+  MorePage,
 } from './pages';
 import { Loading, EnvironmentBanner } from './components/common';
+import { AppLayout } from './components/layout/AppLayout';
 
-function StaffRoute({ children }: { children: React.ReactNode }) {
+// ログイン済みのスタッフだけが入れるページ群（画面下部のタブ / 左側のメニュー付き）
+function StaffArea() {
   const { isAuthenticated, isAdmin, isLoading } = useAuth();
   if (isLoading) return <Loading fullScreen message="読み込み中..." />;
   if (!isAuthenticated || isAdmin) return <Navigate to="/" replace />;
-  return <>{children}</>;
+  return <Outlet />;
 }
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
+// ログイン済みの管理者だけが入れるページ群
+function AdminArea() {
   const { isAuthenticated, isAdmin, isLoading } = useAuth();
   if (isLoading) return <Loading fullScreen message="読み込み中..." />;
   if (!isAuthenticated || !isAdmin) return <Navigate to="/" replace />;
-  return <>{children}</>;
+  return <Outlet />;
 }
 
 function AppRoutes() {
@@ -39,25 +43,34 @@ function AppRoutes() {
       <Route path="/" element={<LoginPage />} />
 
       {/* Staff Routes */}
-      <Route path="/clock" element={<StaffRoute><ClockPage /></StaffRoute>} />
-      <Route path="/mypage" element={<StaffRoute><MyPage /></StaffRoute>} />
-      <Route path="/attendance" element={<StaffRoute><AttendancePage /></StaffRoute>} />
-      <Route path="/applications" element={<StaffRoute><ApplicationsPage /></StaffRoute>} />
-      <Route path="/shift-request" element={<StaffRoute><ShiftRequestPage /></StaffRoute>} />
+      <Route element={<StaffArea />}>
+        <Route element={<AppLayout />}>
+          <Route path="/clock" element={<ClockPage />} />
+          <Route path="/mypage" element={<MyPage />} />
+          <Route path="/attendance" element={<AttendancePage />} />
+          <Route path="/applications" element={<ApplicationsPage />} />
+          <Route path="/shift-request" element={<ShiftRequestPage />} />
+        </Route>
+      </Route>
 
       {/* Backward-compatible redirect */}
       <Route path="/bulk-entry" element={<Navigate to="/attendance" replace />} />
 
       {/* Admin Routes */}
-      <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-      <Route path="/admin/staff" element={<AdminRoute><StaffManagement /></AdminRoute>} />
-      <Route path="/admin/attendance" element={<AdminRoute><AttendanceManagement /></AdminRoute>} />
-      <Route path="/admin/attendance/edit" element={<AdminRoute><AttendancePage /></AdminRoute>} />
-      <Route path="/admin/approvals" element={<AdminRoute><AdminApprovalsPage /></AdminRoute>} />
-      <Route path="/admin/shift-requests" element={<AdminRoute><AdminShiftRequestsPage /></AdminRoute>} />
-      <Route path="/admin/salary" element={<AdminRoute><SalaryManagement /></AdminRoute>} />
-      <Route path="/admin/paid-leave" element={<AdminRoute><PaidLeaveManagement /></AdminRoute>} />
-      <Route path="/admin/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+      <Route element={<AdminArea />}>
+        <Route element={<AppLayout />}>
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/staff" element={<StaffManagement />} />
+          <Route path="/admin/attendance" element={<AttendanceManagement />} />
+          <Route path="/admin/attendance/edit" element={<AttendancePage />} />
+          <Route path="/admin/approvals" element={<AdminApprovalsPage />} />
+          <Route path="/admin/shift-requests" element={<AdminShiftRequestsPage />} />
+          <Route path="/admin/salary" element={<SalaryManagement />} />
+          <Route path="/admin/paid-leave" element={<PaidLeaveManagement />} />
+          <Route path="/admin/settings" element={<SettingsPage />} />
+          <Route path="/admin/more" element={<MorePage />} />
+        </Route>
+      </Route>
       <Route path="/admin/bulk-entry" element={<Navigate to="/admin/attendance/edit" replace />} />
 
       {/* Catch all */}

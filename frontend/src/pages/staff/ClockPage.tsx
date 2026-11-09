@@ -1,40 +1,57 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import {
-  Play,
-  LogOut,
-  Clock as ClockIcon,
-  AlertCircle,
-  CheckCircle,
-  ChevronRight,
-  Loader2,
-  ListChecks,
-  CalendarDays,
-} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { LogIn, LogOut, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { attendanceApi, submissionApi } from '../../api';
+import { attendanceApi, submissionApi, readCache, writeCache, localDateKey } from '../../api';
 import type { ClockType, WorkStatus, ClockRecord, ClockGate } from '../../types';
-import { Header, Clock, Loading, Modal, SubmissionDeadlineBanner } from '../../components/common';
+import { Header, Modal, SubmissionDeadlineBanner, Spinner } from '../../components/common';
+import { WorkRing } from '../../components/common/WorkRing';
+import { computeWorkedMinutes, formatDuration } from '../../utils/workTime';
+
+interface ClockCache {
+  status: WorkStatus;
+  records: ClockRecord[];
+  gate: ClockGate | null;
+}
+
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+function hhmm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 export function ClockPage() {
   const navigate = useNavigate();
   const { staff, isAuthenticated } = useAuth();
 
-  const [status, setStatus] = useState<WorkStatus>('not_started');
-  const [records, setRecords] = useState<ClockRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // 今日のこのスタッフの保存内容（前回の表示内容）。あればすぐ表示し、裏で最新を取得する。
+  const cacheKey = staff ? `clock:${staff.staffId}:${localDateKey()}` : '';
+  const [initialCache] = useState(() => (cacheKey ? readCache<ClockCache>(cacheKey) : undefined));
+
+  const [status, setStatus] = useState<WorkStatus>(initialCache?.status ?? 'not_started');
+  const [records, setRecords] = useState<ClockRecord[]>(initialCache?.records ?? []);
   const [isClocking, setIsClocking] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [gate, setGate] = useState<ClockGate | null>(null);
+  const [gate, setGate] = useState<ClockGate | null>(initialCache?.gate ?? null);
   // 初回読込が一度でも成功したか / 失敗中か。失敗中は「状態不明」としてボタンを無効化し、
   // 既定値(未出勤)を正しい状態として見せない（サイレント失敗＋誤操作を防ぐ）。
-  const [loaded, setLoaded] = useState(false);
+  // 保存内容がある場合は、それを「今日の状態」として表示・操作できる（サーバーが最終確認する）。
+  const [loaded, setLoadedState] = useState(!!initialCache);
   const [loadError, setLoadError] = useState(false);
+  // 取得処理の中では常に最新の値を見るため、ref にも持つ
+  const loadedRef = useRef(!!initialCache);
+  const setLoaded = useCallback((v: boolean) => {
+    loadedRef.current = v;
+    setLoadedState(v);
+  }, []);
+  const [now, setNow] = useState(() => new Date());
   // 【高速化 1-D】visibilitychange/focus/pageshow が短時間に連発しても
   // 無駄な往復を出さないよう、直近取得から数秒はスキップするデバウンス。
   const lastFetchAtRef = useRef(0);
   const FETCH_DEBOUNCE_MS = 3000;
+  // 打刻より前に始まった取得の結果が、打刻後の状態を古い内容で上書きしないための通し番号
+  const generationRef = useRef(0);
 
   useEffect(() => {
     if (!isAuthenticated || !staff) {
@@ -42,35 +59,54 @@ export function ClockPage() {
     }
   }, [isAuthenticated, staff, navigate]);
 
+  // 時計（1 秒ごと）
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const saveCache = useCallback(
+    (next: ClockCache) => {
+      if (cacheKey) writeCache<ClockCache>(cacheKey, next);
+    },
+    [cacheKey]
+  );
+
   const fetchTodayAttendance = useCallback(async () => {
     if (!staff) return;
+    const generation = generationRef.current;
     try {
       const [todayRes, gateRes] = await Promise.all([
         attendanceApi.getToday(staff.staffId),
         submissionApi.clockGate(staff.staffId),
       ]);
+      // 取得中に打刻した場合、この結果は打刻前の古い状態なので捨てる
+      if (generation !== generationRef.current) return;
       // apiRequest は失敗時も reject せず {success:false} を返すため、catch ではなく
       // success フラグで判定する（catch は防御的フォールバックとしてのみ残す）。
+      const nextGate = gateRes.success && gateRes.data ? gateRes.data : null;
       if (todayRes.success && todayRes.data) {
-        setStatus(todayRes.data.status || 'not_started');
-        setRecords(todayRes.data.records || []);
+        const nextStatus = todayRes.data.status || 'not_started';
+        const nextRecords = todayRes.data.records || [];
+        setStatus(nextStatus);
+        setRecords(nextRecords);
         setLoaded(true);
         setLoadError(false);
-      } else if (!loaded) {
+        saveCache({ status: nextStatus, records: nextRecords, gate: nextGate });
+      } else if (!loadedRef.current) {
         // 一度も正しく取得できていない＝状態不明。既定値(未出勤)を正解として見せない。
         setLoadError(true);
         setMessage({ type: 'error', text: todayRes.error || '勤怠情報の取得に失敗しました。通信状況をご確認のうえ画面を更新してください。' });
       }
-      if (gateRes.success && gateRes.data) {
-        setGate(gateRes.data);
+      if (nextGate) {
+        setGate(nextGate);
       }
     } catch {
-      if (!loaded) setLoadError(true);
+      if (generation !== generationRef.current) return;
+      if (!loadedRef.current) setLoadError(true);
       setMessage({ type: 'error', text: '勤怠情報の取得に失敗しました。通信状況をご確認のうえ画面を更新してください。' });
-    } finally {
-      setIsLoading(false);
     }
-  }, [staff, loaded]);
+  }, [staff, saveCache, setLoaded]);
 
   useEffect(() => {
     fetchTodayAttendance();
@@ -79,9 +115,9 @@ export function ClockPage() {
     // 【高速化 1-D】visibilitychange/focus/pageshow が短時間に連発しても
     // 直近取得から FETCH_DEBOUNCE_MS 以内ならスキップする（無駄な往復を抑制）。
     const debouncedFetch = () => {
-      const now = Date.now();
-      if (now - lastFetchAtRef.current < FETCH_DEBOUNCE_MS) return;
-      lastFetchAtRef.current = now;
+      const t = Date.now();
+      if (t - lastFetchAtRef.current < FETCH_DEBOUNCE_MS) return;
+      lastFetchAtRef.current = t;
       fetchTodayAttendance();
     };
     // タブに戻ってきた時 / フォーカス時に即時更新（出勤簿提出直後の古いゲート状態を解消）
@@ -111,6 +147,8 @@ export function ClockPage() {
 
   const performClock = async (type: ClockType) => {
     if (!staff) return;
+    // これより前に始まった取得の結果は使わない
+    generationRef.current += 1;
 
     // 【高速化 1-C: 楽観的更新】サーバ応答を待たず、押した瞬間に画面の状態を
     // 先行更新する（体感を「タップ→即反応」にする）。records は表示用の
@@ -129,15 +167,18 @@ export function ClockPage() {
       const response = await attendanceApi.clock(staff.staffId, type);
       if (response.success) {
         const label = type === 'clock_in' ? '出勤' : '退勤';
-        setMessage({ type: 'success', text: `${label}を記録しました` });
+        setMessage({ type: 'success', text: `${label}を記録しました（${hhmm(new Date(optimisticTime))}）` });
         // 【高速化 1-B】打刻レスポンスに同梱された today/gate があればそれを
         // 正として反映し、追加の getToday/clockGate 往復を省略する
         // （デモモード等で同梱が無い場合のみフォールバックで再取得）。
         if (response.data?.today) {
-          setStatus(response.data.today.status || 'not_started');
-          setRecords(response.data.today.records || []);
+          const nextStatus = response.data.today.status || 'not_started';
+          const nextRecords = response.data.today.records || [];
+          setStatus(nextStatus);
+          setRecords(nextRecords);
           setLoaded(true);
           setLoadError(false);
+          saveCache({ status: nextStatus, records: nextRecords, gate: response.data.gate ?? gate });
         }
         if (response.data?.gate) {
           setGate(response.data.gate);
@@ -173,216 +214,140 @@ export function ClockPage() {
   const stateUnknown = loadError && !loaded;
   const clockInDisabled = stateUnknown || isWorking || isFinished || hasClockIn;
   const clockOutDisabled = stateUnknown || !isWorking || isFinished || hasClockOut;
+  const waitingFirstLoad = !loaded && !loadError;
 
-  const formatTime = (isoString: string): string => {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('ja-JP', {
-      hour: '2-digit', minute: '2-digit', hour12: false,
-    });
-  };
+  const clockInRecord = records.find(r => r.type === 'clock_in');
+  const clockOutRecord = records.find(r => r.type === 'clock_out');
+  const clockInAt = clockInRecord ? new Date(clockInRecord.time) : null;
+  const clockOutAt = clockOutRecord ? new Date(clockOutRecord.time) : null;
+  const workedMinutes = computeWorkedMinutes(clockInAt, clockOutAt ?? (isWorking ? now : null));
 
-  const getStatusLabel = (s: WorkStatus): { text: string; class: string } => {
-    switch (s) {
-      case 'not_started': return { text: '未出勤', class: 'status-badge status-off' };
-      case 'working': return { text: '勤務中', class: 'status-badge status-working pulse-gold' };
-      case 'finished': return { text: '退勤済み', class: 'status-badge status-finished' };
-      default: return { text: '', class: '' };
+  const statusPill = (() => {
+    if (waitingFirstLoad) return { text: '確認中', cls: 'pill-neutral' };
+    if (stateUnknown) return { text: '状態を確認できません', cls: 'pill-danger' };
+    switch (status) {
+      case 'working': return { text: '勤務中', cls: 'pill-success' };
+      case 'finished': return { text: '退勤済み', cls: 'pill-info' };
+      default: return { text: '未出勤', cls: 'pill-neutral' };
     }
-  };
+  })();
 
-  const getTypeLabel = (type: ClockType): string => {
-    return type === 'clock_in' ? '出勤' : '退勤';
-  };
+  // 主ボタン: 次に行う打刻だけを大きく出す（出勤前 → 出勤 / 勤務中 → 退勤）
+  const primary = (() => {
+    if (isClocking) return { label: '記録しています…', icon: <Spinner size={18} className="!text-current" />, onClick: undefined, disabled: true, style: 'btn-filled' };
+    if (waitingFirstLoad) return { label: '読み込み中…', icon: <Spinner size={18} className="!text-current" />, onClick: undefined, disabled: true, style: 'btn-gray' };
+    if (!clockInDisabled) return { label: '出勤する', icon: <LogIn aria-hidden="true" />, onClick: handleClockIn, disabled: false, style: 'btn-filled' };
+    if (!clockOutDisabled) return { label: '退勤する', icon: <LogOut aria-hidden="true" />, onClick: handleClockOutClick, disabled: false, style: 'btn-filled' };
+    if (stateUnknown) return { label: '打刻できません', icon: null, onClick: undefined, disabled: true, style: 'btn-gray' };
+    return { label: '今日の打刻は完了しています', icon: <CheckCircle2 aria-hidden="true" />, onClick: undefined, disabled: true, style: 'btn-gray' };
+  })();
 
-  const statusInfo = getStatusLabel(status);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-        <Header title="打刻" />
-        <div className="flex items-center justify-center h-[calc(100vh-64px)]">
-          <Loading message="読み込み中..." />
-        </div>
-      </div>
-    );
-  }
+  const dateLabel = `${now.getMonth() + 1}月${now.getDate()}日（${WEEKDAYS[now.getDay()]}）`;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="打刻" />
+    <div className="page">
+      <Header title="打刻" subtitle={staff ? `${staff.name}さん` : undefined} />
 
-      <main className="max-w-lg mx-auto p-3 sm:p-4">
-        {/* Clock Display */}
-        <div className="card card-gold text-center mb-4 sm:mb-6 relative overflow-hidden !p-5 sm:!p-7">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-primary-200/20 to-transparent rounded-full" />
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-primary-200/20 to-transparent rounded-full" />
-          <div className="relative">
-            <Clock size="lg" showDate={true} />
-            <div className="mt-4 sm:mt-6 flex justify-center">
-              <span className={statusInfo.class}>{statusInfo.text}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 出勤簿 提出期限アラート / 打刻ブロック通知 */}
+      <main className="page-content">
+        {/* 出勤簿 提出期限アラート / 承認待ちのお知らせ */}
         <SubmissionDeadlineBanner gate={gate} />
 
-        {/* Message */}
+        {/* 時計と勤務リング */}
+        <section className="card !px-4 !pt-6 !pb-5" aria-labelledby="clock-heading">
+          <h2 id="clock-heading" className="sr-only">現在時刻と今日の勤務</h2>
+          <WorkRing workedMinutes={workedMinutes} active={isWorking}>
+            <p className="t-subhead text-label-2">{dateLabel}</p>
+            <p className="font-rounded tabular leading-none mt-1.5" aria-live="off">
+              <span className="text-[60px] font-semibold tracking-tight">{hhmm(now)}</span>
+              <span className="ml-1 text-[22px] font-medium text-label-3">{String(now.getSeconds()).padStart(2, '0')}</span>
+            </p>
+            <span className={`pill ${statusPill.cls} mt-3`}>{statusPill.text}</span>
+          </WorkRing>
+
+          <dl className="mt-5 grid grid-cols-3 text-center">
+            <div>
+              <dt className="t-footnote text-label-2">出勤</dt>
+              <dd className="t-title3 tabular mt-0.5">{clockInAt ? hhmm(clockInAt) : '--:--'}</dd>
+            </div>
+            <div className="hairline-x">
+              <dt className="t-footnote text-label-2">実働</dt>
+              <dd className="t-title3 tabular mt-0.5">{clockInAt ? formatDuration(workedMinutes) : '--:--'}</dd>
+            </div>
+            <div>
+              <dt className="t-footnote text-label-2">退勤</dt>
+              <dd className="t-title3 tabular mt-0.5">{clockOutAt ? hhmm(clockOutAt) : '--:--'}</dd>
+            </div>
+          </dl>
+        </section>
+
+        {/* 打刻ボタン */}
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={primary.onClick}
+            disabled={primary.disabled}
+            className={`btn btn-lg btn-block ${primary.style}`}
+          >
+            {primary.icon}
+            {primary.label}
+          </button>
+        </div>
+
+        {/* 結果のお知らせ */}
         {message && (
           <div
-            className={`flex items-center gap-3 px-4 sm:px-5 py-3 sm:py-4 rounded-xl mb-4 sm:mb-5 border ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-red-50 text-red-700 border-red-200'
-            }`}
+            className={`callout mt-3 ${message.type === 'success' ? 'callout-success' : 'callout-danger'}`}
+            role={message.type === 'error' ? 'alert' : 'status'}
           >
-            {message.type === 'success' ? (
-              <CheckCircle className="w-5 h-5 flex-shrink-0" />
-            ) : (
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            )}
-            <p className="font-medium text-sm sm:text-base break-words">{message.text}</p>
+            {message.type === 'success' ? <CheckCircle2 aria-hidden="true" /> : <AlertCircle aria-hidden="true" />}
+            <p className="font-medium break-words">{message.text}</p>
           </div>
         )}
 
-        {/* Clock Buttons */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-6">
-          <button
-            onClick={handleClockIn}
-            disabled={clockInDisabled || isClocking}
-            className={`relative group flex flex-col items-center justify-center gap-2 h-32 sm:h-28 rounded-2xl font-semibold transition-all duration-300 active:scale-95 ${
-              hasClockIn
-                ? 'bg-green-50 text-green-700 border-2 border-green-300'
-                : 'bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg shadow-green-500/25 hover:shadow-xl hover:shadow-green-500/35 hover:-translate-y-0.5'
-            } ${clockInDisabled && !hasClockIn ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <Play className="w-8 h-8 sm:w-7 sm:h-7" />
-            <span className="text-lg sm:text-lg">出勤</span>
-            {hasClockIn && (
-              <span className="absolute top-2 right-2 text-xs bg-green-200 text-green-700 px-2.5 py-0.5 rounded-full font-bold">済</span>
-            )}
-          </button>
-
-          <button
-            onClick={handleClockOutClick}
-            disabled={clockOutDisabled || isClocking}
-            className={`relative group flex flex-col items-center justify-center gap-2 h-32 sm:h-28 rounded-2xl font-semibold transition-all duration-300 active:scale-95 ${
-              hasClockOut
-                ? 'bg-primary-50 text-primary-700 border-2 border-primary-300'
-                : 'bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/35 hover:-translate-y-0.5'
-            } ${clockOutDisabled && !hasClockOut ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <LogOut className="w-8 h-8 sm:w-7 sm:h-7" />
-            <span className="text-lg sm:text-lg">退勤</span>
-            {hasClockOut && (
-              <span className="absolute top-2 right-2 text-xs bg-primary-200 text-primary-700 px-2.5 py-0.5 rounded-full font-bold">済</span>
-            )}
-          </button>
-        </div>
-
-        {/* 補足 */}
-        <div className="bg-primary-50/50 border border-primary-200/50 rounded-2xl px-4 sm:px-5 py-3 mb-4 sm:mb-5 text-xs sm:text-sm text-secondary-600 leading-relaxed">
-          休憩時間は退勤時に法定通り（拘束9h超→60分 / 6h45m超→45分）自動付与されます。実態と異なる場合は出勤簿で修正してください。
-        </div>
-
-        {/* Loading overlay */}
-        {isClocking && (
-          <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
-            <div className="bg-white p-8 sm:p-10 rounded-3xl shadow-2xl border border-primary-100 flex flex-col items-center gap-4 sm:gap-5">
-              <Loader2 className="w-10 h-10 sm:w-12 sm:h-12 text-primary-500 animate-spin" />
-              <p className="text-secondary-700 font-semibold text-base sm:text-lg">打刻中...</p>
-            </div>
-          </div>
-        )}
-
-        {/* Today's Records */}
-        <div className="card mb-4 !p-5 sm:!p-7">
-          <h3 className="font-semibold text-secondary-800 mb-4 sm:mb-5 flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
-              <ClockIcon className="w-4 h-4 text-primary-600" />
-            </div>
-            本日の記録
-          </h3>
-
-          {records.length === 0 ? (
-            <div className="text-center py-8 sm:py-10">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 rounded-2xl bg-secondary-50 flex items-center justify-center">
-                <ClockIcon className="w-7 h-7 sm:w-8 sm:h-8 text-secondary-300" />
+        {/* 今日の記録 */}
+        <section className="section">
+          <h2 className="section-header">今日の記録</h2>
+          <div className="list-group">
+            {records.length === 0 ? (
+              <div className="list-row">
+                <span className="t-body text-label-2">まだ打刻がありません</span>
               </div>
-              <p className="text-secondary-400 text-sm sm:text-base">まだ打刻がありません</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {records.map((record, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between py-3 sm:py-3.5 px-4 sm:px-5 bg-secondary-50 rounded-xl border border-secondary-100 min-h-11"
-                >
-                  <span className="text-secondary-700 font-medium text-sm sm:text-base">{getTypeLabel(record.type)}</span>
-                  <span className="font-mono text-secondary-900 font-semibold text-base sm:text-lg">{formatTime(record.time)}</span>
+            ) : (
+              records.map((record, index) => (
+                <div key={index} className="list-row list-row-with-icon">
+                  <span className={`row-icon ${record.type === 'clock_in' ? 'bg-icon-green' : 'bg-icon-indigo'}`}>
+                    {record.type === 'clock_in' ? <LogIn aria-hidden="true" /> : <LogOut aria-hidden="true" />}
+                  </span>
+                  <span className="list-row-title t-body">{record.type === 'clock_in' ? '出勤' : '退勤'}</span>
+                  <span className="list-row-detail tabular">{hhmm(new Date(record.time))}</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Navigation Links */}
-        <div className="space-y-2">
-          <Link
-            to="/attendance"
-            className="flex items-center justify-between w-full p-4 min-h-[56px] bg-white rounded-xl border border-secondary-200 hover:border-primary-300 hover:shadow-md transition-all group active:scale-[0.99]"
-          >
-            <span className="text-secondary-700 font-medium group-hover:text-primary-600 flex items-center gap-2 sm:gap-2.5 text-sm sm:text-base min-w-0">
-              <ListChecks className="w-5 h-5 text-primary-500 flex-shrink-0" />
-              <span className="truncate">出勤簿（修正・申請・提出）</span>
-            </span>
-            <ChevronRight className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0" />
-          </Link>
-          <Link
-            to="/shift-request"
-            className="flex items-center justify-between w-full p-4 min-h-[56px] bg-white rounded-xl border border-secondary-200 hover:border-primary-300 hover:shadow-md transition-all group active:scale-[0.99]"
-          >
-            <span className="text-secondary-700 font-medium group-hover:text-primary-600 flex items-center gap-2 sm:gap-2.5 text-sm sm:text-base min-w-0">
-              <CalendarDays className="w-5 h-5 text-primary-500 flex-shrink-0" />
-              <span className="truncate">希望シフト申請</span>
-            </span>
-            <ChevronRight className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0" />
-          </Link>
-          <Link
-            to="/mypage"
-            className="flex items-center justify-between w-full p-4 min-h-[56px] bg-white rounded-xl border border-secondary-200 hover:border-primary-300 hover:shadow-md transition-all group active:scale-[0.99]"
-          >
-            <span className="text-secondary-700 font-medium group-hover:text-primary-600 text-sm sm:text-base">マイページへ</span>
-            <ChevronRight className="w-5 h-5 text-secondary-400 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0" />
-          </Link>
-        </div>
+              ))
+            )}
+          </div>
+          <p className="section-footer">
+            休憩は退勤時に自動で入ります（出勤から退勤までが 6 時間を超えると 45 分、8 時間 45 分を超えると 60 分）。実際と違う場合は出勤簿で修正してください。
+          </p>
+        </section>
       </main>
 
-      {/* Confirmation Modal */}
-      <Modal
-        isOpen={showConfirmModal}
-        onClose={() => setShowConfirmModal(false)}
-        title="退勤しますか？"
-        size="sm"
-      >
-        <div className="text-center py-4 sm:py-6">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 sm:mb-5 rounded-2xl bg-primary-50 flex items-center justify-center">
-            <LogOut className="w-8 h-8 sm:w-10 sm:h-10 text-primary-600" />
-          </div>
-          <p className="text-secondary-700 mb-6 sm:mb-8 text-base sm:text-lg">退勤を記録します</p>
-
-          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
-            <button
-              onClick={() => setShowConfirmModal(false)}
-              className="btn btn-secondary flex-1"
-            >
+      {/* 退勤の確認 */}
+      <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="退勤を記録しますか？" size="sm">
+        <div className="pt-2 text-center">
+          <p className="t-body text-label-2">
+            {hhmm(now)} に退勤として記録します。
+            {clockInAt && (
+              <>
+                <br />
+                今日の実働は約 {formatDuration(computeWorkedMinutes(clockInAt, now))} です。
+              </>
+            )}
+          </p>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => setShowConfirmModal(false)} className="btn btn-gray">
               キャンセル
             </button>
-            <button
-              onClick={() => performClock('clock_out')}
-              className="btn btn-primary flex-1"
-            >
-              退勤
+            <button type="button" onClick={() => performClock('clock_out')} className="btn btn-filled">
+              退勤する
             </button>
           </div>
         </div>

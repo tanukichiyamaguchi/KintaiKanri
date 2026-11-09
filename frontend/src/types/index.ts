@@ -225,6 +225,19 @@ export interface ClockGate {
   clockBlocked: boolean;     // 4日以降かつ前月未提出 → 打刻ブロック
 }
 
+// 管理者ダッシュボードのまとめ取得（GAS: dashboard/summary）
+export interface DashboardSummary {
+  staff: StaffInfo[];
+  today: Record<string, TodayAttendance>;
+  counts: {
+    // 取得に失敗した項目は null
+    pendingApplications: number | null;
+    pendingSubmissions: number | null;
+    pendingPaidLeave: number | null;
+    pendingShiftRequests: number | null;
+  };
+}
+
 export interface SubmissionGateResult {
   canSubmit: boolean;
   blockingReasons: string[];     // 「3/15に未申請の遅刻があります」等

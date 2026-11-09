@@ -1,49 +1,214 @@
 @import "tailwindcss";
 
-@theme {
-  /* Refined Gold Palette - Luxurious & Elegant */
-  --color-gold-50: #fffef9;
-  --color-gold-100: #fefbeb;
-  --color-gold-200: #fcf4c7;
-  --color-gold-300: #f9e68a;
-  --color-gold-400: #f5d34a;
-  --color-gold-500: #d4af37;
-  --color-gold-600: #b8960f;
-  --color-gold-700: #8b7209;
-  --color-gold-800: #6d5a0b;
-  --color-gold-900: #4a3d0a;
+/* ============================================================================
+   KATEstageLASH 勤怠 — iOS 風デザインシステム
+   ----------------------------------------------------------------------------
+   - 色はすべて「意味」で定義し（面・ラベル・区切り線・アクセント・状態）、
+     端末の設定（ライト / ダーク）に合わせて自動で切り替わる。
+   - アクセントはブランドの金色。白地・黒地どちらでも文字として読める濃さ
+     （WCAG AA 4.5:1 以上）に調整している。装飾（リング等）には明るい金色を使う。
+   - 書体は端末のシステムフォント（iPhone では SF Pro + ヒラギノ角ゴ）。
+   ============================================================================ */
 
-  /* Primary = Gold */
-  --color-primary-50: #fffef9;
-  --color-primary-100: #fefbeb;
-  --color-primary-200: #fcf4c7;
-  --color-primary-300: #f9e68a;
-  --color-primary-400: #f5d34a;
-  --color-primary-500: #d4af37;
-  --color-primary-600: #b8960f;
-  --color-primary-700: #8b7209;
-  --color-primary-800: #6d5a0b;
-  --color-primary-900: #4a3d0a;
+:root {
+  color-scheme: light dark;
 
-  /* Warm White & Neutral */
-  --color-secondary-50: #ffffff;
-  --color-secondary-100: #fefefe;
-  --color-secondary-200: #f8f8f7;
-  --color-secondary-300: #eeeeec;
-  --color-secondary-400: #b8b8b4;
-  --color-secondary-500: #8a8a86;
-  --color-secondary-600: #5c5c58;
-  --color-secondary-700: #3d3d3a;
-  --color-secondary-800: #2a2a28;
-  --color-secondary-900: #1a1a18;
-  --color-secondary-950: #0d0d0c;
+  /* 面 */
+  --ios-canvas: #f2f2f7;          /* 画面の背景（グループ化リストの背景） */
+  --ios-surface: #ffffff;         /* リスト・カードの面 */
+  --ios-surface-2: #f2f2f7;       /* カード内のタイル・入れ子の面 */
+  --ios-elevated: #ffffff;        /* シート・ダイアログ */
+  --ios-fill: rgba(118, 118, 128, 0.12);   /* 入力欄・セグメントの下地 */
+  --ios-fill-2: rgba(118, 118, 128, 0.2);
+  --ios-highlight: #e5e5ea;       /* 行をタップしたときの色 */
+  --ios-bar: rgba(249, 249, 249, 0.82);    /* ナビバー・タブバー（すりガラス） */
 
-  /* Animation */
-  --animate-fade-in: fade-in 0.4s ease-out;
-  --animate-slide-up: slide-up 0.5s ease-out;
-  --animate-scale-in: scale-in 0.3s ease-out;
-  --animate-shimmer: shimmer 2.5s infinite;
-  --animate-glow: glow 2s ease-in-out infinite;
+  /* 区切り線 */
+  --ios-separator: rgba(60, 60, 67, 0.29);
+  --ios-separator-opaque: #d8d8dc;
+
+  /* ラベル（文字） */
+  --ios-label: #000000;
+  --ios-label-2: #6c6c70;         /* 補足（白地で 5.2:1） */
+  --ios-label-3: #8e8e93;         /* プレースホルダ・無効 */
+  --ios-label-4: #c7c7cc;         /* 装飾的なアイコン */
+
+  /* アクセント（ブランドの金色） */
+  --ios-tint: #8a6a00;            /* 文字・アイコン（白地で 5.1:1） */
+  --ios-tint-bright: #c9a227;     /* 装飾用（リング・ロゴ周り） */
+  --ios-tint-fill: rgba(176, 138, 20, 0.1);
+  --ios-tint-fill-weak: rgba(176, 138, 20, 0.06);
+  --ios-tint-line: rgba(176, 138, 20, 0.35);
+  --ios-tint-solid: #d4af37;      /* ボタンの塗り（ブランドの金色そのもの） */
+  --ios-on-tint: #1d1a0f;         /* 金色の塗りの上の文字（9:1 以上） */
+
+  /* 状態 */
+  --ios-success: #1d7533;
+  --ios-success-fill: rgba(52, 199, 89, 0.15);
+  --ios-danger: #d70015;
+  --ios-danger-fill: rgba(255, 59, 48, 0.12);
+  --ios-warning: #c93400;
+  --ios-warning-fill: rgba(255, 149, 0, 0.16);
+  --ios-info: #0062cc;
+  --ios-info-fill: rgba(0, 122, 255, 0.12);
+
+  /* アイコンの背景（iOS の「設定」アプリのような色付き角丸アイコン） */
+  --ios-icon-gold: #c9a227;
+  --ios-icon-orange: #ff9500;
+  --ios-icon-blue: #007aff;
+  --ios-icon-green: #34c759;
+  --ios-icon-red: #ff3b30;
+  --ios-icon-indigo: #5856d6;
+  --ios-icon-teal: #30b0c7;
+  --ios-icon-pink: #ff2d55;
+  --ios-icon-purple: #af52de;
+  --ios-icon-gray: #8e8e93;
+
+  --ios-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --ios-shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.16);
+  --ios-shadow-knob: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --tabbar-height: 50px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ios-canvas: #000000;
+    --ios-surface: #1c1c1e;
+    --ios-surface-2: #2c2c2e;
+    --ios-elevated: #1c1c1e;
+    --ios-fill: rgba(118, 118, 128, 0.24);
+    --ios-fill-2: rgba(118, 118, 128, 0.32);
+    --ios-highlight: #3a3a3c;
+    --ios-bar: rgba(22, 22, 24, 0.8);
+
+    --ios-separator: rgba(84, 84, 88, 0.65);
+    --ios-separator-opaque: #38383a;
+
+    --ios-label: #ffffff;
+    --ios-label-2: #aeaeb2;
+    --ios-label-3: #8e8e93;
+    --ios-label-4: #48484a;
+
+    --ios-tint: #e2bd4f;
+    --ios-tint-bright: #e2bd4f;
+    --ios-tint-fill: rgba(226, 189, 79, 0.16);
+    --ios-tint-fill-weak: rgba(226, 189, 79, 0.09);
+    --ios-tint-line: rgba(226, 189, 79, 0.4);
+    --ios-tint-solid: #e2bd4f;
+    --ios-on-tint: #000000;
+
+    --ios-success: #30d158;
+    --ios-success-fill: rgba(48, 209, 88, 0.18);
+    --ios-danger: #ff6961;
+    --ios-danger-fill: rgba(255, 69, 58, 0.16);
+    --ios-warning: #ff9f0a;
+    --ios-warning-fill: rgba(255, 159, 10, 0.18);
+    --ios-info: #409cff;
+    --ios-info-fill: rgba(10, 132, 255, 0.18);
+
+    --ios-icon-gold: #b8901a;
+    --ios-icon-orange: #ff9f0a;
+    --ios-icon-blue: #0a84ff;
+    --ios-icon-green: #30d158;
+    --ios-icon-red: #ff453a;
+    --ios-icon-indigo: #5e5ce6;
+    --ios-icon-teal: #40c8e0;
+    --ios-icon-pink: #ff375f;
+    --ios-icon-purple: #bf5af2;
+    --ios-icon-gray: #8e8e93;
+
+    --ios-shadow-raised: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+    --ios-shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* Tailwind のユーティリティ（bg-surface / text-label / text-tint …）として使えるようにする */
+@theme inline {
+  --color-canvas: var(--ios-canvas);
+  --color-surface: var(--ios-surface);
+  --color-surface-2: var(--ios-surface-2);
+  --color-elevated: var(--ios-elevated);
+  --color-fill: var(--ios-fill);
+  --color-fill-2: var(--ios-fill-2);
+  --color-highlight: var(--ios-highlight);
+  --color-bar: var(--ios-bar);
+  --color-separator: var(--ios-separator);
+  --color-separator-opaque: var(--ios-separator-opaque);
+  --color-label: var(--ios-label);
+  --color-label-2: var(--ios-label-2);
+  --color-label-3: var(--ios-label-3);
+  --color-label-4: var(--ios-label-4);
+  --color-tint: var(--ios-tint);
+  --color-tint-bright: var(--ios-tint-bright);
+  --color-tint-fill: var(--ios-tint-fill);
+  --color-tint-fill-weak: var(--ios-tint-fill-weak);
+  --color-tint-line: var(--ios-tint-line);
+  --color-tint-solid: var(--ios-tint-solid);
+  --color-on-tint: var(--ios-on-tint);
+  --color-success: var(--ios-success);
+  --color-success-fill: var(--ios-success-fill);
+  --color-danger: var(--ios-danger);
+  --color-danger-fill: var(--ios-danger-fill);
+  --color-warning: var(--ios-warning);
+  --color-warning-fill: var(--ios-warning-fill);
+  --color-info: var(--ios-info);
+  --color-info-fill: var(--ios-info-fill);
+  --color-icon-gold: var(--ios-icon-gold);
+  --color-icon-orange: var(--ios-icon-orange);
+  --color-icon-blue: var(--ios-icon-blue);
+  --color-icon-green: var(--ios-icon-green);
+  --color-icon-red: var(--ios-icon-red);
+  --color-icon-indigo: var(--ios-icon-indigo);
+  --color-icon-teal: var(--ios-icon-teal);
+  --color-icon-pink: var(--ios-icon-pink);
+  --color-icon-purple: var(--ios-icon-purple);
+  --color-icon-gray: var(--ios-icon-gray);
+
+  /* 旧パレット（primary = 金 / secondary = 無彩色）も意味の色に読み替える。
+     画面の書き換え漏れがあっても、ライト / ダークで崩れないようにするため。 */
+  --color-primary-50: var(--ios-tint-fill-weak);
+  --color-primary-100: var(--ios-tint-fill);
+  --color-primary-200: var(--ios-tint-line);
+  --color-primary-300: var(--ios-tint-line);
+  --color-primary-400: var(--ios-tint-bright);
+  --color-primary-500: var(--ios-tint);
+  --color-primary-600: var(--ios-tint);
+  --color-primary-700: var(--ios-tint);
+  --color-primary-800: var(--ios-tint);
+  --color-primary-900: var(--ios-tint);
+  --color-gold-50: var(--ios-tint-fill-weak);
+  --color-gold-100: var(--ios-tint-fill);
+  --color-gold-200: var(--ios-tint-line);
+  --color-gold-300: var(--ios-tint-line);
+  --color-gold-400: var(--ios-tint-bright);
+  --color-gold-500: var(--ios-tint);
+  --color-gold-600: var(--ios-tint);
+  --color-gold-700: var(--ios-tint);
+  --color-gold-800: var(--ios-tint);
+  --color-gold-900: var(--ios-tint);
+  --color-secondary-50: var(--ios-surface-2);
+  --color-secondary-100: var(--ios-separator-opaque);
+  --color-secondary-200: var(--ios-separator-opaque);
+  --color-secondary-300: var(--ios-label-4);
+  --color-secondary-400: var(--ios-label-3);
+  --color-secondary-500: var(--ios-label-2);
+  --color-secondary-600: var(--ios-label-2);
+  --color-secondary-700: var(--ios-label);
+  --color-secondary-800: var(--ios-label);
+  --color-secondary-900: var(--ios-label);
+  --color-secondary-950: var(--ios-label);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  --font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Hiragino Maru Gothic ProN", "Hiragino Sans", system-ui, sans-serif;
+
+  --animate-fade-in: fade-in 0.25s ease-out;
+  --animate-slide-up: slide-up 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-scale-in: scale-in 0.2s ease-out;
 }
 
 @keyframes fade-in {
@@ -52,445 +217,474 @@
 }
 
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.9); }
+  from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
 }
 
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
-@keyframes glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(212, 175, 55, 0.3); }
-  50% { box-shadow: 0 0 40px rgba(212, 175, 55, 0.5); }
-}
-
-@keyframes pulse-gold {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.5); }
-  50% { box-shadow: 0 0 0 12px rgba(212, 175, 55, 0); }
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-
+/* ============================================================================
+   ベース
+   ============================================================================ */
 @layer base {
   html {
-    font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic', 'Meiryo', sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
-    background: linear-gradient(180deg, #ffffff 0%, #fefefe 50%, #f8f8f7 100%);
-    color: #2a2a28;
-    min-height: 100vh;
+    background-color: var(--ios-canvas);
+    color: var(--ios-label);
+    font-size: 17px;
+    line-height: 1.45;
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
   }
 
   ::selection {
-    background-color: rgba(212, 175, 55, 0.25);
-    color: #4a3d0a;
+    background-color: var(--ios-tint-line);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ios-tint);
+    outline-offset: 2px;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--ios-tint);
+  }
+
+  /* タッチ操作の端末では、入力欄にフォーカスしても画面が拡大されないよう 16px 以上にする */
+  @media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea {
+      font-size: max(16px, 1em);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
+/* ============================================================================
+   部品
+   ============================================================================ */
 @layer components {
-  /* ===== BUTTONS ===== */
+  /* ---- 文字の大きさ（iOS の Dynamic Type の標準サイズに準拠） ---- */
+  .t-large-title { font-size: 34px; line-height: 1.2; font-weight: 700; letter-spacing: 0.01em; font-feature-settings: "palt"; }
+  .t-title1 { font-size: 28px; line-height: 1.22; font-weight: 700; font-feature-settings: "palt"; }
+  .t-title2 { font-size: 22px; line-height: 1.28; font-weight: 700; font-feature-settings: "palt"; }
+  .t-title3 { font-size: 20px; line-height: 1.3; font-weight: 600; font-feature-settings: "palt"; }
+  .t-headline { font-size: 17px; line-height: 1.35; font-weight: 600; }
+  .t-body { font-size: 17px; line-height: 1.45; }
+  .t-callout { font-size: 16px; line-height: 1.4; }
+  .t-subhead { font-size: 15px; line-height: 1.4; }
+  .t-footnote { font-size: 13px; line-height: 1.4; }
+  .t-caption { font-size: 12px; line-height: 1.35; }
+  .t-caption2 { font-size: 11px; line-height: 1.3; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .font-rounded { font-family: var(--font-rounded); }
+
+  /* ---- ページ ---- */
+  .page {
+    min-height: 100dvh;
+    background-color: var(--ios-canvas);
+  }
+  .page-content {
+    width: 100%;
+    max-width: 720px;
+    margin-inline: auto;
+    padding: 4px max(16px, var(--safe-left)) 32px max(16px, var(--safe-right));
+  }
+  .page-content-wide {
+    max-width: 1120px;
+  }
+
+  /* ---- グループ化リスト（iOS の「設定」アプリの角丸リスト） ---- */
+  .section { margin-top: 24px; }
+  .section:first-child { margin-top: 8px; }
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 16px 6px;
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--ios-label-2);
+  }
+  .section-footer {
+    padding: 6px 16px 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--ios-label-2);
+  }
+  .list-group {
+    background-color: var(--ios-surface);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--ios-shadow-raised);
+  }
+  .list-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 11px 16px;
+    width: 100%;
+    text-align: left;
+    color: inherit;
+    background-color: transparent;
+  }
+  /* 2 行目以降の上に、左側を空けた細い区切り線を引く（--row-inset で開始位置を調整） */
+  .list-group > .list-row + .list-row::before,
+  .list-group > * + .list-row::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: var(--row-inset, 16px);
+    right: 0;
+    border-top: 0.5px solid var(--ios-separator);
+  }
+  .list-row-with-icon { --row-inset: 57px; }
+  a.list-row,
+  button.list-row,
+  .list-row-tap {
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+  a.list-row:active,
+  button.list-row:active,
+  .list-row-tap:active {
+    background-color: var(--ios-highlight);
+  }
+  @media (hover: hover) {
+    a.list-row:hover,
+    button.list-row:hover,
+    .list-row-tap:hover {
+      background-color: color-mix(in srgb, var(--ios-highlight) 45%, transparent);
+    }
+  }
+  .list-row-title { flex: 1; min-width: 0; }
+  .list-row-detail {
+    color: var(--ios-label-2);
+    font-size: 17px;
+    text-align: right;
+  }
+  .list-chevron {
+    flex-shrink: 0;
+    width: 8px;
+    height: 13px;
+    color: var(--ios-label-3);
+    opacity: 0.8;
+  }
+
+  /* 色付き角丸アイコン（29 × 29） */
+  .row-icon {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 29px;
+    height: 29px;
+    border-radius: 7px;
+    color: #ffffff;
+  }
+  .row-icon > svg { width: 18px; height: 18px; }
+
+  /* ---- カード（グループ化リストと同じ面の質感） ---- */
+  .card {
+    background-color: var(--ios-surface);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: var(--ios-shadow-raised);
+  }
+  .card-gold { border: 0; }
+  .card-dark { background-color: var(--ios-surface-2); }
+  .gold-border { border: 0; }
+  .tile {
+    background-color: var(--ios-surface-2);
+    border-radius: 10px;
+    padding: 12px;
+  }
+
+  /* ---- ボタン ---- */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1.75rem;
-    border-radius: 0.875rem;
+    gap: 6px;
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 12px;
+    font-size: 17px;
     font-weight: 600;
-    font-size: 0.9375rem;
-    letter-spacing: 0.03em;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    line-height: 1.2;
+    white-space: nowrap;
     cursor: pointer;
-    border: none;
-    position: relative;
-    overflow: hidden;
+    border: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: opacity 0.15s, background-color 0.15s, transform 0.15s;
   }
-
-  .btn::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-    transition: left 0.6s;
+  .btn:active:not(:disabled) { opacity: 0.65; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  /* 塗りのボタンが押せないときは、iOS と同じく灰色の塗り + 薄い文字にする */
+  .btn-primary:disabled,
+  .btn-filled:disabled,
+  .btn-success:disabled,
+  .btn-warning:disabled,
+  .btn-danger:disabled,
+  .btn-gray:disabled,
+  .btn-secondary:disabled {
+    opacity: 1;
+    background-color: var(--ios-fill);
+    color: var(--ios-label-3);
   }
+  .btn > svg { width: 18px; height: 18px; flex-shrink: 0; }
 
-  .btn:hover::before {
-    left: 100%;
+  /* 塗り（主要な操作） */
+  .btn-primary,
+  .btn-filled {
+    background-color: var(--ios-tint-solid);
+    color: var(--ios-on-tint);
   }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none !important;
+  /* 薄い塗り（2 番目の操作） */
+  .btn-tinted {
+    background-color: var(--ios-tint-fill);
+    color: var(--ios-tint);
   }
-
-  .btn:disabled::before {
-    display: none;
+  /* 灰色（キャンセル等） */
+  .btn-secondary,
+  .btn-gray {
+    background-color: var(--ios-fill);
+    color: var(--ios-tint);
   }
-
-  .btn-primary {
-    background: linear-gradient(135deg, #d4af37 0%, #b8960f 100%);
-    color: white;
-    box-shadow: 0 4px 20px 0 rgba(212, 175, 55, 0.4);
+  .btn-plain {
+    background-color: transparent;
+    color: var(--ios-tint);
+    padding-inline: 8px;
   }
-
-  .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px 0 rgba(212, 175, 55, 0.5);
-  }
-
-  .btn-primary:active {
-    transform: translateY(0);
-    box-shadow: 0 4px 15px 0 rgba(212, 175, 55, 0.4);
-  }
-
-  .btn-secondary {
-    background: white;
-    color: #3d3d3a;
-    box-shadow: 0 2px 10px 0 rgba(0, 0, 0, 0.06);
-    border: 1.5px solid #eeeeec;
-  }
-
-  .btn-secondary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px 0 rgba(0, 0, 0, 0.1);
-    border-color: #d4af37;
-    color: #b8960f;
-  }
-
-  .btn-secondary:active {
-    transform: translateY(0);
-  }
-
   .btn-success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-    box-shadow: 0 4px 20px 0 rgba(16, 185, 129, 0.35);
+    background-color: var(--ios-icon-green);
+    color: #ffffff;
   }
-
-  .btn-success:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px 0 rgba(16, 185, 129, 0.45);
-  }
-
   .btn-warning {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    color: white;
-    box-shadow: 0 4px 20px 0 rgba(245, 158, 11, 0.35);
+    background-color: var(--ios-icon-orange);
+    color: #ffffff;
   }
-
-  .btn-warning:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px 0 rgba(245, 158, 11, 0.45);
-  }
-
   .btn-danger {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    color: white;
-    box-shadow: 0 4px 20px 0 rgba(239, 68, 68, 0.35);
+    background-color: var(--ios-icon-red);
+    color: #ffffff;
   }
-
-  .btn-danger:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px 0 rgba(239, 68, 68, 0.45);
+  .btn-danger-tinted {
+    background-color: var(--ios-danger-fill);
+    color: var(--ios-danger);
   }
-
-  .btn-large {
-    padding: 1.125rem 2.5rem;
-    font-size: 1.0625rem;
-    border-radius: 1rem;
-  }
-
   .btn-gold-outline {
-    background: transparent;
-    color: #b8960f;
-    border: 2px solid #d4af37;
-    box-shadow: none;
+    background-color: transparent;
+    color: var(--ios-tint);
+    box-shadow: inset 0 0 0 1px var(--ios-tint-line);
   }
-
-  .btn-gold-outline:hover {
-    background: linear-gradient(135deg, #d4af37 0%, #b8960f 100%);
-    color: white;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px 0 rgba(212, 175, 55, 0.4);
+  .btn-large,
+  .btn-lg {
+    min-height: 52px;
+    padding: 14px 20px;
+    border-radius: 14px;
+    font-size: 17px;
   }
-
-  /* ===== CARDS ===== */
-  .card {
-    background: white;
-    border-radius: 1.5rem;
-    box-shadow: 0 4px 30px -4px rgba(0, 0, 0, 0.06),
-                0 2px 10px -2px rgba(0, 0, 0, 0.04);
-    padding: 1.75rem;
-    border: 1px solid rgba(212, 175, 55, 0.08);
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    animation: var(--animate-fade-in);
+  .btn-sm {
+    min-height: 32px;
+    padding: 5px 12px;
+    border-radius: 9999px;
+    font-size: 15px;
   }
+  .btn-sm > svg { width: 15px; height: 15px; }
+  .btn-block { width: 100%; }
 
-  .card:hover {
-    box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.1),
-                0 4px 15px -2px rgba(0, 0, 0, 0.06);
-  }
-
-  .card-gold {
-    background: linear-gradient(145deg, #ffffff 0%, #fffef9 100%);
-    border: 1px solid rgba(212, 175, 55, 0.15);
-    box-shadow: 0 4px 30px -4px rgba(212, 175, 55, 0.12),
-                0 2px 10px -2px rgba(212, 175, 55, 0.08);
-  }
-
-  .card-gold:hover {
-    box-shadow: 0 12px 40px -8px rgba(212, 175, 55, 0.2),
-                0 4px 15px -2px rgba(212, 175, 55, 0.1);
-    border-color: rgba(212, 175, 55, 0.25);
-  }
-
-  .card-dark {
-    background: linear-gradient(145deg, #2a2a28 0%, #1a1a18 100%);
-    color: white;
-    border: 1px solid rgba(212, 175, 55, 0.2);
-  }
-
-  .card-dark:hover {
-    border-color: rgba(212, 175, 55, 0.4);
-    box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.3),
-                0 0 30px -8px rgba(212, 175, 55, 0.15);
-  }
-
-  /* ===== INPUTS ===== */
+  /* ---- 入力欄 ---- */
   .input {
+    display: block;
     width: 100%;
-    padding: 0.9375rem 1.25rem;
-    border: 2px solid #eeeeec;
-    border-radius: 0.875rem;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 0;
+    background-color: var(--ios-fill);
+    color: var(--ios-label);
+    font-size: 17px;
+    line-height: 1.3;
     outline: none;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    background: white;
-    font-size: 1rem;
+    transition: box-shadow 0.15s, background-color 0.15s;
+    -webkit-appearance: none;
+    appearance: none;
   }
-
-  .input:hover {
-    border-color: #d4d4d8;
+  .input::placeholder { color: var(--ios-label-3); }
+  .input:focus { box-shadow: 0 0 0 2px var(--ios-tint-line); }
+  .input:disabled { opacity: 0.5; }
+  .input-error,
+  .input-error:focus { box-shadow: 0 0 0 2px var(--ios-danger); }
+  select.input {
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
   }
+  textarea.input { min-height: 88px; resize: vertical; }
+  input[type="time"].input,
+  input[type="date"].input,
+  input[type="month"].input { font-variant-numeric: tabular-nums; }
 
-  .input:focus {
-    border-color: #d4af37;
-    box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.12);
-  }
-
-  .input-error {
-    border-color: #ef4444;
-  }
-
-  .input-error:focus {
-    border-color: #ef4444;
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
-  }
-
+  /* 入力欄の見出し */
   .label {
     display: block;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #5c5c58;
-    margin-bottom: 0.625rem;
-    letter-spacing: 0.025em;
+    margin-bottom: 6px;
+    padding-inline: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ios-label-2);
   }
 
-  /* ===== STATUS BADGES ===== */
-  .status-badge {
+  /* ---- セグメントコントロール ---- */
+  .segmented {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background-color: var(--ios-fill);
+  }
+  .segmented-item {
+    position: relative;
+    min-height: 30px;
+    padding: 4px 10px;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ios-label);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.2s, box-shadow 0.2s;
+  }
+  .segmented-item[aria-pressed="true"],
+  .segmented-item[aria-selected="true"],
+  .segmented-item[data-active="true"] {
+    font-weight: 600;
+    background-color: var(--ios-surface);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    .segmented-item[aria-pressed="true"],
+    .segmented-item[aria-selected="true"],
+    .segmented-item[data-active="true"] {
+      background-color: #636366;
+    }
+  }
+
+  /* ---- 札（状態の表示） ---- */
+  .pill {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1.125rem;
+    gap: 4px;
+    padding: 2px 9px;
     border-radius: 9999px;
-    font-size: 0.8125rem;
+    font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0.03em;
-    transition: all 0.2s;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .pill-neutral { background-color: var(--ios-fill); color: var(--ios-label-2); }
+  .pill-tint { background-color: var(--ios-tint-fill); color: var(--ios-tint); }
+  .pill-success { background-color: var(--ios-success-fill); color: var(--ios-success); }
+  .pill-danger { background-color: var(--ios-danger-fill); color: var(--ios-danger); }
+  .pill-warning { background-color: var(--ios-warning-fill); color: var(--ios-warning); }
+  .pill-info { background-color: var(--ios-info-fill); color: var(--ios-info); }
+  .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; font-size: 13px; font-weight: 600; }
+  .status-working { background-color: var(--ios-success-fill); color: var(--ios-success); }
+  .status-break { background-color: var(--ios-warning-fill); color: var(--ios-warning); }
+  .status-off { background-color: var(--ios-fill); color: var(--ios-label-2); }
+  .status-finished { background-color: var(--ios-info-fill); color: var(--ios-info); }
+
+  /* 件数バッジ（タブバーの赤丸） */
+  .count-badge {
+    display: inline-grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9999px;
+    background-color: var(--ios-icon-red);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
   }
 
-  .status-working {
-    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-    color: #065f46;
-    box-shadow: 0 2px 12px 0 rgba(16, 185, 129, 0.25);
+  /* ---- お知らせ（ページ内のバナー） ---- */
+  .callout {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border-radius: 12px;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .callout > svg { flex-shrink: 0; width: 18px; height: 18px; margin-top: 2px; }
+  .callout-info { background-color: var(--ios-info-fill); color: var(--ios-label); }
+  .callout-info > svg { color: var(--ios-info); }
+  .callout-warning { background-color: var(--ios-warning-fill); color: var(--ios-label); }
+  .callout-warning > svg { color: var(--ios-warning); }
+  .callout-danger { background-color: var(--ios-danger-fill); color: var(--ios-label); }
+  .callout-danger > svg { color: var(--ios-danger); }
+  .callout-success { background-color: var(--ios-success-fill); color: var(--ios-label); }
+  .callout-success > svg { color: var(--ios-success); }
+  .callout-tint { background-color: var(--ios-tint-fill); color: var(--ios-label); }
+  .callout-tint > svg { color: var(--ios-tint); }
+
+  /* ---- すりガラスのバー（ナビバー・タブバー・サイドバー） ---- */
+  .material-bar {
+    background-color: var(--ios-bar);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+  .hairline-bottom { box-shadow: inset 0 -0.5px 0 var(--ios-separator); }
+  .hairline-x { box-shadow: inset 0.5px 0 0 var(--ios-separator), inset -0.5px 0 0 var(--ios-separator); }
+  .hairline-top { box-shadow: inset 0 0.5px 0 var(--ios-separator); }
+
+  /* ダーク表示ではロゴ（黒い線画）を白く反転する */
+  @media (prefers-color-scheme: dark) {
+    .logo-adaptive { filter: invert(1) brightness(1.05); }
   }
 
-  .status-break {
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-    color: #92400e;
-    box-shadow: 0 2px 12px 0 rgba(245, 158, 11, 0.25);
-  }
-
-  .status-off {
-    background: linear-gradient(135deg, #f8f8f7 0%, #eeeeec 100%);
-    color: #5c5c58;
-    border: 1px solid #eeeeec;
-  }
-
-  .status-finished {
-    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-    color: #1e40af;
-    box-shadow: 0 2px 12px 0 rgba(59, 130, 246, 0.25);
-  }
-
-  /* ===== GOLD ACCENTS ===== */
-  .gold-border {
-    border: 2px solid transparent;
-    background: linear-gradient(white, white) padding-box,
-                linear-gradient(135deg, #d4af37 0%, #f5d34a 50%, #d4af37 100%) border-box;
-  }
-
-  .gold-text {
-    background: linear-gradient(135deg, #d4af37 0%, #8b7209 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  .gold-glow {
-    box-shadow: 0 0 40px rgba(212, 175, 55, 0.25);
-  }
-
-  .gold-shine {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .gold-shine::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 50%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-    animation: shine 3s infinite;
-  }
-
-  @keyframes shine {
-    0% { left: -100%; }
-    50%, 100% { left: 100%; }
-  }
-
-  /* ===== HEADER ===== */
-  .header-elegant {
-    background: linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.98) 100%);
-    border-bottom: 1px solid rgba(212, 175, 55, 0.15);
-    backdrop-filter: blur(20px);
-  }
-
-  .header-gradient {
-    background: linear-gradient(135deg, #1a1a18 0%, #2a2a28 100%);
-    border-bottom: 1px solid rgba(212, 175, 55, 0.25);
-  }
-
-  /* ===== CLOCK DISPLAY ===== */
-  .clock-display {
-    font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-    font-weight: 200;
-    letter-spacing: 0.08em;
-    background: linear-gradient(135deg, #d4af37 0%, #f5d34a 25%, #d4af37 50%, #8b7209 100%);
-    background-size: 200% 200%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: gradient-shift 4s ease-in-out infinite;
-  }
-
-  @keyframes gradient-shift {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-  }
-
-  /* ===== DIVIDERS ===== */
-  .divider-gold {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #d4af37, transparent);
-  }
-
-  .divider-elegant {
-    height: 1px;
-    background: linear-gradient(90deg, transparent 0%, #eeeeec 20%, #d4af37 50%, #eeeeec 80%, transparent 100%);
-  }
-
-  /* ===== ANIMATIONS ===== */
-  .float {
-    animation: float 4s ease-in-out infinite;
-  }
-
-  .pulse-gold {
-    animation: pulse-gold 2.5s infinite;
-  }
-
-  .glow {
-    animation: glow 2s ease-in-out infinite;
-  }
-
-  /* ===== LOADING SHIMMER ===== */
-  .shimmer {
-    background: linear-gradient(90deg, #f8f8f7 0%, #fffef9 50%, #f8f8f7 100%);
-    background-size: 200% 100%;
-    animation: var(--animate-shimmer);
-  }
-
-  /* ===== SCROLLBAR ===== */
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: #f8f8f7;
-    border-radius: 5px;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #d4af37, #b8960f);
-    border-radius: 5px;
-    border: 2px solid #f8f8f7;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #b8960f, #8b7209);
-  }
-
-  /* ===== LOGO TEXT ===== */
-  .logo-text {
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    background: linear-gradient(135deg, #d4af37 0%, #f5d34a 40%, #d4af37 60%, #8b7209 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    text-shadow: none;
-  }
-
-  /* ===== GLASS EFFECT ===== */
-  .glass {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
-  }
-
-  .glass-dark {
-    background: rgba(26, 26, 24, 0.9);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(212, 175, 55, 0.2);
-  }
+  /* ---- 旧クラス（書き換え前の画面のための互換） ---- */
+  .clock-display { font-family: var(--font-rounded); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .gold-text { color: var(--ios-tint); }
+  .glass, .glass-dark, .header-elegant, .header-gradient { background-color: var(--ios-bar); }
+  .divider-elegant, .divider-gold { height: 0; border-top: 0.5px solid var(--ios-separator); }
+  .gold-glow, .glow, .gold-shine, .shimmer, .pulse-gold, .float { box-shadow: none; animation: none; }
+  .logo-text { color: var(--ios-label); }
 }

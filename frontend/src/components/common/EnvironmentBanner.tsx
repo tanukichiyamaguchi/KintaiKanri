@@ -17,12 +17,12 @@ import { IS_DEMO_MODE, MISCONFIGURED_NO_API_BASE_URL } from '../../api';
 export function EnvironmentBanner() {
   if (MISCONFIGURED_NO_API_BASE_URL) {
     return (
-      <div className="bg-red-50 border-b border-red-200 px-4 py-2.5">
-        <div className="max-w-5xl mx-auto flex items-start gap-2.5 text-red-800">
-          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          <div className="text-sm leading-relaxed">
-            <p className="font-semibold">設定エラー: サーバー接続先が未設定です</p>
-            <p className="text-xs mt-0.5">
+      <div className="bg-danger-fill px-4 pb-2.5 pt-[calc(10px+var(--safe-top))]" role="alert">
+        <div className="mx-auto flex max-w-5xl items-start gap-2.5">
+          <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-danger" aria-hidden="true" />
+          <div className="t-subhead">
+            <p className="font-semibold text-danger">設定エラー: サーバー接続先が未設定です</p>
+            <p className="t-footnote mt-0.5 text-label">
               打刻・申請等のデータ保存ができません。管理者に「VITE_API_BASE_URL の設定」をお伝えください。
             </p>
           </div>
@@ -33,9 +33,9 @@ export function EnvironmentBanner() {
 
   if (IS_DEMO_MODE) {
     return (
-      <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-amber-800">
-        <div className="max-w-5xl mx-auto flex items-center gap-2 text-sm">
-          <Info className="w-4 h-4 flex-shrink-0" />
+      <div className="bg-warning-fill px-4 pb-2 pt-[calc(8px+var(--safe-top))]">
+        <div className="mx-auto flex max-w-5xl items-center gap-2 t-footnote text-label">
+          <Info className="h-4 w-4 flex-shrink-0 text-warning" aria-hidden="true" />
           <span>
             <span className="font-semibold">デモモード:</span> 入力したデータは保存されません（ページを閉じると消えます）。
           </span>
