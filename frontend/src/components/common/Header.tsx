@@ -10,6 +10,8 @@ interface HeaderProps {
   /** 指定すると、ナビバー左に「戻る」を表示する */
   backTo?: string;
   backLabel?: string;
+  /** 「戻る」を iPhone など幅の狭い画面でだけ表示する（PC・iPad は左側メニューから移動できるため） */
+  backMobileOnly?: boolean;
   /** ナビバー右側に置く操作 */
   actions?: ReactNode;
   /** 大きいタイトルを出さず、ナビバーに小さいタイトルだけを出す */
@@ -23,7 +25,7 @@ interface HeaderProps {
  * 大きいタイトルが見えている間はバーを透明にし、スクロールして隠れると
  * すりガラスのバーに小さいタイトルを表示する（iOS の標準的な動き）。
  */
-export function Header({ title, subtitle, backTo, backLabel = '戻る', actions, compact = false, wide = false }: HeaderProps) {
+export function Header({ title, subtitle, backTo, backLabel = '戻る', backMobileOnly = false, actions, compact = false, wide = false }: HeaderProps) {
   const headerRef = useRef<HTMLElement>(null);
   const largeTitleRef = useRef<HTMLDivElement>(null);
   const [scrolledPastTitle, setScrolledPastTitle] = useState(false);
@@ -60,7 +62,7 @@ export function Header({ title, subtitle, backTo, backLabel = '戻る', actions,
             {backTo && (
               <Link
                 to={backTo}
-                className="-ml-1 flex min-h-11 items-center gap-0.5 pr-2 text-tint active:opacity-60"
+                className={`-ml-1 flex min-h-11 items-center gap-0.5 pr-2 text-tint active:opacity-60 ${backMobileOnly ? 'lg:hidden' : ''}`}
                 aria-label={`${backLabel}へ戻る`}
               >
                 <ChevronLeft className="h-7 w-7" strokeWidth={2.2} aria-hidden="true" />
