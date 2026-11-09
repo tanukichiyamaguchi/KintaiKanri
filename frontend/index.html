@@ -2,14 +2,30 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#cc4438" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="description" content="KATEstageLASH 勤怠管理システム" />
+    <!-- iPhone の「ホーム画面に追加」から全画面のアプリとして開く -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="勤怠管理" />
     <title>KATEstageLASH 勤怠管理</title>
+    <script>
+      // ダーク表示の端末では、ホーム画面から開いたときのステータスバーを黒にする
+      // （対応していない環境では何も起きない）
+      try {
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          var m = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+          if (m) m.setAttribute('content', 'black');
+        }
+      } catch (e) {}
+    </script>
     <!-- GitHub Pages SPA redirect handler -->
     <script>
       (function(l) {

@@ -1,39 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import {
-  Users,
-  Calendar,
-  Palmtree,
-  Calculator,
-  Settings,
-  ChevronRight,
-  Sparkles,
-  TrendingUp,
-  AlertCircle,
-  ClipboardList,
-  ClipboardCheck,
-  Bell,
-} from 'lucide-react';
+import { AlertCircle, ChevronRight, CircleCheckBig, FileCheck2, Palmtree, CalendarHeart, UserPlus } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { staffApi, attendanceApi, applicationApi, submissionApi, paidLeaveApi, shiftRequestApi } from '../../api';
-import type { StaffInfo, TodayAttendance, WorkStatus } from '../../types';
-import { Header, Loading, Clock } from '../../components/common';
+import { refreshDashboard, useDashboardSummary } from '../../api/dashboardStore';
+import type { TodayAttendance, WorkStatus } from '../../types';
+import { Header, Loading, Spinner } from '../../components/common';
 
-interface StaffWithStatus extends StaffInfo {
-  attendance?: TodayAttendance;
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+function clockInTime(attendance?: TodayAttendance): string {
+  const rec = attendance?.records?.find(r => r.type === 'clock_in');
+  if (!rec) return '';
+  return new Date(rec.time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+function statusPill(status?: WorkStatus): { label: string; cls: string } {
+  switch (status) {
+    case 'working':
+      return { label: '勤務中', cls: 'pill-success' };
+    case 'finished':
+      return { label: '退勤済み', cls: 'pill-info' };
+    default:
+      return { label: '未出勤', cls: 'pill-neutral' };
+  }
+}
+
+/**
+ * 管理者のホーム。今日の出勤状況と承認待ちの件数を表示する。
+ * データはまとめ取得（dashboard/summary）1 回で取得し、タブバーの件数バッジと共有する。
+ * 前回の内容があればすぐ表示し、30 秒ごと・画面に戻ったときに最新へ更新する。
+ */
 export function AdminDashboard() {
   const navigate = useNavigate();
   const { isAdmin, isAuthenticated } = useAuth();
-
-  const [staffList, setStaffList] = useState<StaffWithStatus[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingApplications, setPendingApplications] = useState(0);
-  const [pendingSubmissions, setPendingSubmissions] = useState(0);
-  const [pendingPaidLeave, setPendingPaidLeave] = useState(0);
-  const [shiftRequestCount, setShiftRequestCount] = useState(0);
+  const { data, refreshing, error } = useDashboardSummary();
 
   // Redirect if not admin
   useEffect(() => {
@@ -42,369 +42,137 @@ export function AdminDashboard() {
     }
   }, [isAuthenticated, isAdmin, navigate]);
 
-  // Fetch staff list and their status
+  // 表示のたびに最新化し、30 秒ごと・タブに戻ったときにも更新する（スタッフの申請がすぐ反映される）
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const staffResponse = await staffApi.getList();
-        if (staffResponse.success && staffResponse.data) {
-          const staffWithStatus: StaffWithStatus[] = await Promise.all(
-            staffResponse.data
-              .filter(s => s.status === 'active')
-              .map(async staff => {
-                const attendanceResponse = await attendanceApi.getToday(staff.staffId);
-                return {
-                  ...staff,
-                  attendance: attendanceResponse.data,
-                };
-              })
-          );
-          setStaffList(staffWithStatus);
-        }
-      } catch {
-        setError('スタッフ情報の取得に失敗しました');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchData();
-  }, []);
-
-  // Fetch pending approvals counts (申請 / 月次提出 / 有給申請 / 希望シフト)
-  useEffect(() => {
-    async function fetchApprovals() {
-      try {
-        const [appsRes, subsRes, leaveRes, shiftReqRes] = await Promise.all([
-          applicationApi.list({ status: 'pending' }),
-          submissionApi.list({ status: 'submitted' }),
-          paidLeaveApi.getAll(),
-          shiftRequestApi.list(),
-        ]);
-        if (appsRes.success && appsRes.data) {
-          setPendingApplications(appsRes.data.length);
-        }
-        if (subsRes.success && subsRes.data) {
-          setPendingSubmissions(subsRes.data.length);
-        }
-        if (leaveRes.success && leaveRes.data) {
-          setPendingPaidLeave(leaveRes.data.filter(r => r.status === 'pending').length);
-        }
-        if (shiftReqRes.success && shiftReqRes.data) {
-          // 未承認の希望休が1日でも残っているリクエスト数を「対応すべき件数」として表示
-          const pending = shiftReqRes.data.filter(r =>
-            (r.offDays || []).some(d => d.status === 'pending')
-          );
-          setShiftRequestCount(pending.length);
-        }
-      } catch {
-        // Silently ignore — approvals widget is non-critical
-      }
-    }
-
-    fetchApprovals();
-    // 30 秒ごとに自動再フェッチ（スタッフ申請がリアルタイムで反映される）
-    const intervalId = setInterval(fetchApprovals, 30 * 1000);
-    // タブに戻ってきた時 / ウィンドウフォーカス時に即時更新
-    const onVisible = () => { if (document.visibilityState === 'visible') fetchApprovals(); };
+    refreshDashboard(true);
+    const intervalId = window.setInterval(() => refreshDashboard(), 30 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshDashboard();
+    };
     document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', fetchApprovals);
+    window.addEventListener('focus', onVisible);
     return () => {
-      clearInterval(intervalId);
+      window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', fetchApprovals);
+      window.removeEventListener('focus', onVisible);
     };
   }, []);
 
-  const getStatusInfo = (status?: WorkStatus): { bg: string; text: string; label: string; dot: string } => {
-    switch (status) {
-      case 'working':
-        return { bg: 'bg-green-50', text: 'text-green-700', label: '勤務中', dot: 'bg-green-500' };
-      case 'finished':
-        return { bg: 'bg-blue-50', text: 'text-blue-700', label: '退勤済み', dot: 'bg-blue-500' };
-      default:
-        return { bg: 'bg-secondary-50', text: 'text-secondary-500', label: '未出勤', dot: 'bg-secondary-300' };
-    }
-  };
+  const activeStaff = (data?.staff || []).filter(s => s.status === 'active');
+  const statusOf = (staffId: string) => data?.today?.[staffId]?.status;
+  const workingCount = activeStaff.filter(s => statusOf(s.staffId) === 'working').length;
+  const finishedCount = activeStaff.filter(s => statusOf(s.staffId) === 'finished').length;
+  const notStartedCount = activeStaff.length - workingCount - finishedCount;
 
-  const getClockInTime = (attendance?: TodayAttendance): string => {
-    if (!attendance?.records) return '';
-    const clockIn = attendance.records.find(r => r.type === 'clock_in');
-    if (!clockIn) return '';
-    const date = new Date(clockIn.time);
-    return date.toLocaleTimeString('ja-JP', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  };
-
-  const menuItems = [
-    {
-      to: '/admin/staff',
-      icon: <Users className="w-6 h-6" />,
-      label: 'スタッフ管理',
-      description: 'スタッフの追加・編集・削除',
-      color: 'from-primary-400 to-primary-600',
-      shadowColor: 'shadow-primary-500/20',
-    },
-    {
-      to: '/admin/attendance',
-      icon: <Calendar className="w-6 h-6" />,
-      label: '勤怠管理',
-      description: '打刻データの確認・修正',
-      color: 'from-blue-500 to-indigo-600',
-      shadowColor: 'shadow-blue-500/20',
-    },
-    {
-      to: '/admin/attendance/edit',
-      icon: <ClipboardList className="w-6 h-6" />,
-      label: '出勤簿編集',
-      description: 'スタッフ別の月次勤怠を編集',
-      color: 'from-cyan-500 to-blue-600',
-      shadowColor: 'shadow-cyan-500/20',
-    },
-    {
-      to: '/admin/approvals',
-      icon: <ClipboardCheck className="w-6 h-6" />,
-      label: '承認管理',
-      description: '申請・月次提出の承認',
-      color: 'from-rose-500 to-pink-600',
-      shadowColor: 'shadow-rose-500/20',
-    },
-    {
-      to: '/admin/shift-requests',
-      icon: <Calendar className="w-6 h-6" />,
-      label: '希望シフト',
-      description: 'スタッフからのシフト希望',
-      color: 'from-amber-500 to-orange-600',
-      shadowColor: 'shadow-amber-500/20',
-    },
-    {
-      to: '/admin/paid-leave',
-      icon: <Palmtree className="w-6 h-6" />,
-      label: '有給管理',
-      description: '有給申請の承認・却下',
-      color: 'from-emerald-500 to-teal-600',
-      shadowColor: 'shadow-emerald-500/20',
-    },
-    {
-      to: '/admin/salary',
-      icon: <Calculator className="w-6 h-6" />,
-      label: '給与計算',
-      description: '給与計算・明細発行',
-      color: 'from-violet-500 to-purple-600',
-      shadowColor: 'shadow-violet-500/20',
-    },
-    {
-      to: '/admin/settings',
-      icon: <Settings className="w-6 h-6" />,
-      label: 'システム設定',
-      description: '保険料率・税金設定',
-      color: 'from-secondary-500 to-secondary-700',
-      shadowColor: 'shadow-secondary-500/20',
-    },
+  const counts = data?.counts;
+  const approvalRows = [
+    { to: '/admin/approvals', label: '勤怠の申請', icon: CircleCheckBig, iconBg: 'bg-icon-green', count: counts?.pendingApplications },
+    { to: '/admin/approvals', label: '月次の出勤簿', icon: FileCheck2, iconBg: 'bg-icon-blue', count: counts?.pendingSubmissions },
+    { to: '/admin/paid-leave', label: '有給休暇', icon: Palmtree, iconBg: 'bg-icon-teal', count: counts?.pendingPaidLeave },
+    { to: '/admin/shift-requests', label: '希望シフト', icon: CalendarHeart, iconBg: 'bg-icon-pink', count: counts?.pendingShiftRequests },
   ];
 
   const today = new Date();
-  const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][today.getDay()];
-  const todayStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日（${dayOfWeek}）`;
-
-  // Count staff by status
-  const workingCount = staffList.filter(s => s.attendance?.status === 'working').length;
-  const finishedCount = staffList.filter(s => s.attendance?.status === 'finished').length;
+  const todayLabel = `${today.getMonth() + 1}月${today.getDate()}日（${WEEKDAYS[today.getDay()]}）`;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="管理画面" />
+    <div className="page">
+      <Header
+        title="ホーム"
+        subtitle={todayLabel}
+        actions={refreshing && data ? <Spinner size={18} className="mr-2" /> : undefined}
+      />
 
-      <main className="max-w-5xl mx-auto p-4 sm:p-6">
-        {/* Error */}
-        {error && (
-          <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg mb-4">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm">{error}</p>
+      <main className="page-content">
+        {error && !data && (
+          <div className="callout callout-danger mb-4" role="alert">
+            <AlertCircle aria-hidden="true" />
+            <p>スタッフ情報の取得に失敗しました。通信状況をご確認のうえ、画面を更新してください。</p>
           </div>
         )}
 
-        {/* Welcome Section */}
-        <div className="card card-gold gold-border mb-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-bl from-primary-200/30 to-transparent rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-56 h-56 bg-gradient-to-tr from-primary-200/20 to-transparent rounded-full blur-2xl" />
+        {/* 今日の人数 */}
+        <section className="card !p-3" aria-label="今日の出勤状況">
+          <dl className="grid grid-cols-3 gap-2 text-center">
+            <div className="tile">
+              <dt className="t-footnote text-label-2">勤務中</dt>
+              <dd className="t-title1 tabular mt-0.5 text-success">{data ? workingCount : '–'}</dd>
+            </div>
+            <div className="tile">
+              <dt className="t-footnote text-label-2">退勤済み</dt>
+              <dd className="t-title1 tabular mt-0.5 text-info">{data ? finishedCount : '–'}</dd>
+            </div>
+            <div className="tile">
+              <dt className="t-footnote text-label-2">未出勤</dt>
+              <dd className="t-title1 tabular mt-0.5">{data ? notStartedCount : '–'}</dd>
+            </div>
+          </dl>
+        </section>
 
-          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-2.5 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-sm shadow-primary-500/20">
-                  <Sparkles className="w-4 h-4 text-white" />
-                </div>
-                <span className="text-primary-600 text-sm font-semibold tracking-wider uppercase">Dashboard</span>
-              </div>
-              <h1 className="text-xl sm:text-2xl font-bold text-secondary-900 mb-1">おかえりなさい</h1>
-              <p className="text-sm sm:text-base text-secondary-500">{todayStr}</p>
-            </div>
-            <div className="flex items-center justify-around sm:justify-end gap-6 sm:gap-8">
-              <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-green-600">{workingCount}</div>
-                <div className="text-xs text-secondary-500 font-medium">勤務中</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-blue-600">{finishedCount}</div>
-                <div className="text-xs text-secondary-500 font-medium">退勤済</div>
-              </div>
-            </div>
+        {/* 承認待ち */}
+        <section className="section">
+          <h2 className="section-header">承認待ち</h2>
+          <div className="list-group">
+            {approvalRows.map(row => {
+              const Icon = row.icon;
+              const n = typeof row.count === 'number' ? row.count : null;
+              return (
+                <Link key={row.label} to={row.to} className="list-row list-row-with-icon">
+                  <span className={`row-icon ${row.iconBg}`}>
+                    <Icon aria-hidden="true" />
+                  </span>
+                  <span className="list-row-title t-body">{row.label}</span>
+                  {n === null ? (
+                    <span className="t-body text-label-3">–</span>
+                  ) : n > 0 ? (
+                    <span className="count-badge" aria-label={`${n}件`}>{n}</span>
+                  ) : (
+                    <span className="t-body text-label-3">なし</span>
+                  )}
+                  <ChevronRight className="list-chevron !h-4 !w-4" strokeWidth={2.5} aria-hidden="true" />
+                </Link>
+              );
+            })}
           </div>
-        </div>
+        </section>
 
-        {/* Pending Approvals */}
-        {(pendingApplications > 0 || pendingSubmissions > 0 || pendingPaidLeave > 0 || shiftRequestCount > 0) && (
-          <div className="card mb-6 border border-rose-100">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/20 flex-shrink-0">
-                <Bell className="w-5 h-5" />
+        {/* スタッフの今日の状態 */}
+        <section className="section">
+          <h2 className="section-header">
+            今日のスタッフ
+            {data && <span className="tabular">{activeStaff.length}名</span>}
+          </h2>
+          <div className="list-group">
+            {!data ? (
+              <div className="py-6">
+                <Loading message="読み込み中..." />
               </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-secondary-800">承認待ち</h3>
-                <p className="text-xs sm:text-sm text-secondary-500 mt-0.5">対応が必要な項目があります</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-              <Link
-                to="/admin/approvals"
-                className="group rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-50 px-3 py-3 transition-all flex items-center justify-between"
-              >
-                <div>
-                  <div className="text-xs text-secondary-600 font-medium mb-0.5">申請</div>
-                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{pendingApplications}</div>
+            ) : activeStaff.length === 0 ? (
+              <>
+                <div className="list-row">
+                  <span className="t-body text-label-2">スタッフが登録されていません</span>
                 </div>
-                <ChevronRight className="w-4 h-4 text-secondary-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
-              </Link>
-              <Link
-                to="/admin/approvals"
-                className="group rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-50 px-3 py-3 transition-all flex items-center justify-between"
-              >
-                <div>
-                  <div className="text-xs text-secondary-600 font-medium mb-0.5">月次提出</div>
-                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{pendingSubmissions}</div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-secondary-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
-              </Link>
-              <Link
-                to="/admin/paid-leave"
-                className="group rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-50 px-3 py-3 transition-all flex items-center justify-between"
-              >
-                <div>
-                  <div className="text-xs text-secondary-600 font-medium mb-0.5">有給申請</div>
-                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{pendingPaidLeave}</div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-secondary-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
-              </Link>
-              <Link
-                to="/admin/shift-requests"
-                className="group rounded-xl border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-50 px-3 py-3 transition-all flex items-center justify-between"
-              >
-                <div>
-                  <div className="text-xs text-secondary-600 font-medium mb-0.5">希望シフト</div>
-                  <div className="text-xl sm:text-2xl font-bold text-rose-600">{shiftRequestCount}</div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-secondary-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {/* Today's Status */}
-        <div className="card mb-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-secondary-800 flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center">
-                <TrendingUp className="w-4 h-4 text-primary-600" />
-              </div>
-              本日の出勤状況
-            </h2>
-            <span className="text-sm text-secondary-500 bg-secondary-50 px-3.5 py-1.5 rounded-full font-medium border border-secondary-100">
-              {staffList.length}名
-            </span>
-          </div>
-
-          {isLoading ? (
-            <div className="py-10">
-              <Loading />
-            </div>
-          ) : staffList.length === 0 ? (
-            <div className="text-center py-14">
-              <div className="w-20 h-20 mx-auto mb-5 rounded-2xl bg-secondary-50 flex items-center justify-center">
-                <Users className="w-10 h-10 text-secondary-300" />
-              </div>
-              <p className="text-secondary-400 text-lg">スタッフが登録されていません</p>
-              <Link
-                to="/admin/staff"
-                className="inline-flex items-center gap-2 mt-4 text-primary-600 hover:text-primary-700 font-medium"
-              >
-                スタッフを追加する
-                <ChevronRight className="w-4 h-4" />
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {staffList.map(staff => {
-                const statusInfo = getStatusInfo(staff.attendance?.status);
-                const clockInTime = getClockInTime(staff.attendance);
-
+                <Link to="/admin/staff" className="list-row text-tint">
+                  <UserPlus className="h-5 w-5" aria-hidden="true" />
+                  <span className="t-body">スタッフを追加する</span>
+                </Link>
+              </>
+            ) : (
+              activeStaff.map(staff => {
+                const attendance = data.today?.[staff.staffId];
+                const pill = statusPill(attendance?.status);
+                const since = clockInTime(attendance);
                 return (
-                  <div
-                    key={staff.staffId}
-                    className={`flex items-center justify-between gap-2 p-3 sm:p-4 rounded-xl transition-all border border-transparent hover:border-secondary-200 ${statusInfo.bg}`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${statusInfo.dot}`} />
-                      <span className="font-medium text-secondary-800 truncate">{staff.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-                      <span className={`text-xs sm:text-sm font-semibold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full ${statusInfo.bg} ${statusInfo.text} border border-current/10`}>
-                        {statusInfo.label}
-                      </span>
-                      {clockInTime && (
-                        <span className="hidden sm:inline text-sm text-secondary-500 font-mono">{clockInTime}〜</span>
-                      )}
-                    </div>
+                  <div key={staff.staffId} className="list-row">
+                    <span className="list-row-title t-body truncate">{staff.name}</span>
+                    {since && <span className="t-subhead tabular text-label-2">{since}〜</span>}
+                    <span className={`pill ${pill.cls}`}>{pill.label}</span>
                   </div>
                 );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Menu Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          {menuItems.map(item => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="group card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-transparent hover:border-primary-100"
-            >
-              <div className="flex items-start gap-4">
-                <div className={`w-12 h-12 bg-gradient-to-br ${item.color} rounded-xl flex items-center justify-center text-white shadow-lg ${item.shadowColor} group-hover:scale-110 transition-transform`}>
-                  {item.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-secondary-800 group-hover:text-primary-600 transition-colors">{item.label}</h3>
-                  <p className="text-sm text-secondary-500 mt-0.5">{item.description}</p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-secondary-300 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0 mt-1" />
-              </div>
-            </Link>
-          ))}
-        </div>
-
-        {/* Current Time */}
-        <div className="card card-gold text-center relative overflow-hidden gold-border">
-          <div className="absolute top-0 right-0 w-36 h-36 bg-gradient-to-bl from-primary-200/20 to-transparent rounded-full" />
-          <div className="absolute bottom-0 left-0 w-28 h-28 bg-gradient-to-tr from-primary-200/20 to-transparent rounded-full" />
-          <div className="relative">
-            <Clock size="md" showDate={false} />
+              })
+            )}
           </div>
-        </div>
+        </section>
       </main>
     </div>
   );
