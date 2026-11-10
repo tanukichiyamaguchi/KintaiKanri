@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * KintaiKanri の Service Worker（ビルド時に vite.config.ts が dist/sw.js として生成する）。
  *

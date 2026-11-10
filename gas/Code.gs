@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-11-09 (speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary)';
+const CODE_VERSION = '2026-11-10 (speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -1932,6 +1932,82 @@ function handleDeleteStaff(body) {
   return { success: true };
 }
 
+// ============================================================
+// 有給休暇
+//   - 申請はマイページ（1 日ずつ）と、希望休の画面（月ごとにまとめて）の 2 か所から行える。
+//   - 申請できるのは「残日数 − 承認待ちの日数」まで（サーバーでも確認する）。
+//   - 承認は「有給休暇」画面と「希望シフト」画面のどちらからでも行える。
+//     どちらで承認しても残日数は 1 日だけ減る（同じ状態への変更は何もしない）。
+//     承認済みを却下に変えた場合は残日数を 1 日戻す。
+//   - 有給休暇シートと残日数を書き換える処理は、同時に動いて二重に数えないよう
+//     ロックの中で行う（10 分トリガーのスクリプトロックとは別のユーザーロックを使い、
+//     出勤簿の作り直し中でも待たされないようにする）。
+// ============================================================
+
+function withPaidLeaveLock_(fn) {
+  const lock = LockService.getUserLock();
+  if (!lock.tryLock(10000)) {
+    return { success: false, error: 'ほかの操作と重なりました。少し待ってからもう一度お試しください' };
+  }
+  try {
+    return fn();
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* ignore */ }
+  }
+}
+
+/** 有給休暇シートの全行を読む（取得日は 'YYYY-MM-DD'、状態は英語キーに正規化）。 */
+function readPaidLeaveRows_() {
+  const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
+  const values = sheet.getDataRange().getValues();
+  const headers = (values && values[0]) ? values[0] : [];
+  const rows = [];
+  for (let i = 1; i < values.length; i++) {
+    const o = rowToObject_(headers, values[i]);
+    if (!o.id && !o.staff_id) continue;
+    rows.push({
+      rowIndex: i + 1,
+      id: String(o.id || ''),
+      staffId: String(o.staff_id || ''),
+      date: formatDateOnly_(o.leave_date),
+      status: o.status || 'pending',
+    });
+  }
+  return { sheet: sheet, headers: headers, rows: rows };
+}
+
+/** 有給休暇シートに承認待ちの申請を 1 行追加する（列は見出し名で合わせる）。 */
+function appendPaidLeaveRow_(ctx, staff, leaveDate, requestedAt) {
+  const headers = ctx.headers && ctx.headers.length ? ctx.headers : getHeaderRow_(ctx.sheet);
+  const width = Math.max(headers.length, 8);
+  const row = new Array(width).fill('');
+  const values = {
+    id: generateId(),
+    staff_id: staff.staff_id,
+    name: staff.name,
+    request_date: requestedAt,
+    leave_date: leaveDate,
+    status: localizeEnumValue_('pending'),
+    approved_date: '',
+    remarks: '',
+  };
+  // 見出しが見つからない場合は従来の列順（id, staff_id, name, request_date, leave_date, status, approved_date, remarks）
+  const fallbackOrder = ['id', 'staff_id', 'name', 'request_date', 'leave_date', 'status', 'approved_date', 'remarks'];
+  fallbackOrder.forEach(function (key, i) {
+    const idx = findHeaderIndex_(headers, key);
+    row[idx === -1 ? i : idx] = values[key];
+  });
+  ctx.sheet.appendRow(row);
+  return values.id;
+}
+
+/** スタッフの有給の状況（残日数・承認待ち・あと何日申請できるか）。 */
+function paidLeaveAvailability_(staff, rows) {
+  const balance = safeNumber_(staff.paid_leave_balance, 0);
+  const pending = rows.filter(function (r) { return r.staffId === String(staff.staff_id) && r.status === 'pending'; }).length;
+  return { balance: balance, pending: pending, available: balance - pending };
+}
+
 function handleGetPaidLeaveBalance(params) {
   const staffId = params.staffId;
 
@@ -1952,17 +2028,22 @@ function handleGetPaidLeaveBalance(params) {
   const leaveSheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
   const leaveData = sheetToObjects(leaveSheet);
   const history = leaveData.filter(l => l.staff_id === staffId);
+  const balance = safeNumber_(staff.paid_leave_balance, 0);
+  const pending = history.filter(h => (h.status || 'pending') === 'pending').length;
 
   return {
     success: true,
     data: {
-      balance: staff.paid_leave_balance || 0,
+      balance: balance,
+      pending: pending,
+      available: balance - pending,
       history: history.map(h => ({
         id: h.id,
         staffId: h.staff_id,
         name: h.name,
         requestDate: h.request_date,
-        leaveDate: h.leave_date,
+        // シートが日付型に変換している場合があるため 'YYYY-MM-DD' に揃える
+        leaveDate: formatDateOnly_(h.leave_date) || h.leave_date,
         status: h.status,
         approvedDate: h.approved_date,
         remarks: h.remarks
@@ -1971,11 +2052,16 @@ function handleGetPaidLeaveBalance(params) {
   };
 }
 
+/** マイページからの有給申請（1 日）。 */
 function handlePaidLeaveRequest(body) {
-  const { staffId, leaveDate } = body;
+  const staffId = body && body.staffId ? String(body.staffId) : '';
+  const leaveDate = body && body.leaveDate ? String(body.leaveDate).slice(0, 10) : '';
 
   if (!staffId || !leaveDate) {
     return { success: false, error: '必須項目が入力されていません' };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
+    return { success: false, error: '日付の形式が正しくありません' };
   }
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -1986,15 +2072,84 @@ function handlePaidLeaveRequest(body) {
     return { success: false, error: 'スタッフが見つかりません' };
   }
 
-  const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
-  const requestId = generateId();
+  return withPaidLeaveLock_(function () {
+    const ctx = readPaidLeaveRows_();
+    const mine = ctx.rows.filter(function (r) { return r.staffId === staffId; });
+    if (mine.some(function (r) { return r.date === leaveDate && (r.status === 'pending' || r.status === 'approved'); })) {
+      return { success: false, error: 'この日はすでに有給を申請しています' };
+    }
+    const av = paidLeaveAvailability_(staff, ctx.rows);
+    if (av.available < 1) {
+      return {
+        success: false,
+        error: '有給の残り日数が足りません（残り ' + av.balance + ' 日' + (av.pending ? '・承認待ち ' + av.pending + ' 日' : '') + '）',
+      };
+    }
+    const requestId = appendPaidLeaveRow_(ctx, staff, leaveDate, new Date().toISOString());
+    return { success: true, requestId: requestId };
+  });
+}
+
+/**
+ * 希望休の画面から送られた「対象月の有給の日」に合わせて、申請の追加・取り下げを計画する（まだ書き込まない）。
+ *  - 新しく選ばれた日 → 承認待ちで追加
+ *  - 承認待ちのまま選択から外された日 → 取り下げ（行を削除）
+ *  - 承認済みの日 → そのまま（この画面からは取り下げない）
+ *  - 却下された日を再び選んだ → 新しい申請として追加（却下の履歴は残す）
+ * 残日数: 対象月の承認待ち（申請後）が「残日数 − 他の月の承認待ち」を超える場合はエラー。
+ *         ただし既に超えている過去分を減らす・そのままにする操作は妨げない（増やす場合だけ止める）。
+ */
+function planPaidLeaveSync_(staff, targetYearMonth, requestedDates) {
+  const staffId = String(staff.staff_id);
+  const prefix = targetYearMonth + '-';
+  const desired = {};
+  for (let i = 0; i < requestedDates.length; i++) {
+    const d = String(requestedDates[i] || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d.indexOf(prefix) !== 0) {
+      return { ok: false, error: '有給の日付が対象月の範囲外です: ' + requestedDates[i] };
+    }
+    desired[d] = true;
+  }
+
+  const ctx = readPaidLeaveRows_();
+  const mine = ctx.rows.filter(function (r) { return r.staffId === staffId; });
+  const inMonth = function (r) { return r.date.indexOf(prefix) === 0; };
+  const activeByDate = {};
+  mine.filter(inMonth).forEach(function (r) {
+    if (r.status === 'approved' || (r.status === 'pending' && !activeByDate[r.date])) activeByDate[r.date] = r;
+  });
+
+  const toAppend = Object.keys(desired).filter(function (d) { return !activeByDate[d]; }).sort();
+  const toDelete = mine.filter(inMonth)
+    .filter(function (r) { return r.status === 'pending' && !desired[r.date]; })
+    .map(function (r) { return r.rowIndex; });
+
+  const balance = safeNumber_(staff.paid_leave_balance, 0);
+  const pendingOther = mine.filter(function (r) { return r.status === 'pending' && !inMonth(r); }).length;
+  const pendingInMonthNow = mine.filter(function (r) { return r.status === 'pending' && inMonth(r); }).length;
+  const pendingInMonthAfter = Object.keys(desired).filter(function (d) {
+    return !(activeByDate[d] && activeByDate[d].status === 'approved');
+  }).length;
+  const limit = balance - pendingOther;
+  if (pendingInMonthAfter > Math.max(limit, pendingInMonthNow)) {
+    return {
+      ok: false,
+      error: '有給の残り日数が足りません（残り ' + balance + ' 日'
+        + (pendingOther ? '・ほかの月の承認待ち ' + pendingOther + ' 日' : '')
+        + '。この月に申請できるのは ' + Math.max(0, limit) + ' 日までです）',
+    };
+  }
+  return { ok: true, ctx: ctx, desired: desired, toAppend: toAppend, toDelete: toDelete, pendingInMonthAfter: pendingInMonthAfter };
+}
+
+/** planPaidLeaveSync_ の計画を書き込む（追加 → 削除の順。削除は下の行から）。 */
+function applyPaidLeaveSync_(staff, plan) {
   const now = new Date().toISOString();
-
-  sheet.appendRow([
-    requestId, staffId, staff.name, now, leaveDate, localizeEnumValue_('pending'), '', ''
-  ]);
-
-  return { success: true, requestId };
+  plan.toAppend.forEach(function (d) { appendPaidLeaveRow_(plan.ctx, staff, d, now); });
+  plan.toDelete.slice().sort(function (a, b) { return b - a; }).forEach(function (rowIndex) {
+    try { plan.ctx.sheet.deleteRow(rowIndex); } catch (e) { Logger.log('paid leave deleteRow failed: ' + (e && e.message)); }
+  });
+  return { added: plan.toAppend.length, withdrawn: plan.toDelete.length };
 }
 
 function handleGetAllPaidLeave() {
@@ -2008,7 +2163,7 @@ function handleGetAllPaidLeave() {
       staffId: l.staff_id,
       name: l.name,
       requestDate: l.request_date,
-      leaveDate: l.leave_date,
+      leaveDate: formatDateOnly_(l.leave_date) || l.leave_date,
       status: l.status,
       approvedDate: l.approved_date,
       remarks: l.remarks
@@ -2016,42 +2171,67 @@ function handleGetAllPaidLeave() {
   };
 }
 
+/**
+ * 有給の承認・却下（「有給休暇」画面・「希望シフト」画面の両方から呼ばれる）。
+ *  - 同じ状態への変更（二重の承認など）は何もしない → 残日数を二重に減らさない
+ *  - 承認待ち/却下 → 承認: 残日数を 1 日減らす
+ *  - 承認 → 却下: 残日数を 1 日戻す
+ *  - reason（任意）は備考に書く（却下理由など）
+ */
 function handleUpdatePaidLeaveStatus(body) {
-  const { requestId, status } = body;
+  const requestId = body && body.requestId ? String(body.requestId) : '';
+  const status = body && body.status ? String(body.status) : '';
+  const reason = body && body.reason != null ? String(body.reason) : null;
 
   if (!requestId || !status) {
     return { success: false, error: '必須項目が入力されていません' };
   }
-
-  const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
-  const rowIndex = findRowIndex(sheet, 'id', requestId);
-
-  if (rowIndex === -1) {
-    return { success: false, error: '申請が見つかりません' };
+  if (status !== 'approved' && status !== 'rejected') {
+    return { success: false, error: '不正なステータスです' };
   }
 
-  const headers = getHeaderRow_(sheet);
-  setCellByColumnName_(sheet, rowIndex, headers, 'status', status);
+  return withPaidLeaveLock_(function () {
+    const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
+    const rowIndex = findRowIndex(sheet, 'id', requestId);
 
-  if (status === 'approved') {
-    setCellByColumnName_(sheet, rowIndex, headers, 'approved_date', new Date().toISOString());
+    if (rowIndex === -1) {
+      return { success: false, error: '申請が見つかりません（取り下げられた可能性があります）' };
+    }
 
-    // Decrease paid leave balance
-    const staffId = getCellByColumnName_(sheet, rowIndex, headers, 'staff_id');
+    const headers = getHeaderRow_(sheet);
+    const prevStatus = normalizeEnumValueFromCell_('status', getCellByColumnName_(sheet, rowIndex, headers, 'status')) || 'pending';
 
-    if (staffId) {
-      const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
-      const staffRowIndex = findRowIndex(staffSheet, 'staff_id', staffId);
+    if (prevStatus === status) {
+      if (reason !== null) setCellByColumnName_(sheet, rowIndex, headers, 'remarks', reason);
+      return { success: true, data: { unchanged: true } };
+    }
 
-      if (staffRowIndex !== -1) {
-        const staffHeaders = getHeaderRow_(staffSheet);
-        const currentBalance = safeNumber_(getCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance'), 0);
-        setCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance', currentBalance - 1);
+    setCellByColumnName_(sheet, rowIndex, headers, 'status', status);
+    let delta = 0;
+    if (status === 'approved') {
+      setCellByColumnName_(sheet, rowIndex, headers, 'approved_date', new Date().toISOString());
+      delta = -1;
+    } else if (prevStatus === 'approved') {
+      setCellByColumnName_(sheet, rowIndex, headers, 'approved_date', '');
+      delta = 1;
+    }
+    if (reason !== null) setCellByColumnName_(sheet, rowIndex, headers, 'remarks', reason);
+
+    if (delta !== 0) {
+      const staffId = getCellByColumnName_(sheet, rowIndex, headers, 'staff_id');
+      if (staffId) {
+        const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+        const staffRowIndex = findRowIndex(staffSheet, 'staff_id', staffId);
+        if (staffRowIndex !== -1) {
+          const staffHeaders = getHeaderRow_(staffSheet);
+          const currentBalance = safeNumber_(getCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance'), 0);
+          setCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance', currentBalance + delta);
+        }
       }
     }
-  }
 
-  return { success: true };
+    return { success: true };
+  });
 }
 
 function handleGetInsuranceRates() {
@@ -5072,7 +5252,17 @@ function normalizeOffDays_(parsed) {
  *
  * body: { staffId, targetYearMonth, offDays: [{date, status?}], remarks? }
  */
+/**
+ * 希望休（と有給）の提出。
+ * body.paidLeaveDates（配列）があれば、対象月の有給の申請も同じリクエストでまとめて反映する
+ * （古い画面から送られた場合は配列が無いので、有給には触れない）。
+ * 有給の残日数が足りないなど、確認で問題があれば何も書き込まずにエラーを返す。
+ */
 function handleSubmitShiftRequest(body) {
+  return withPaidLeaveLock_(function () { return submitShiftRequestCore_(body); });
+}
+
+function submitShiftRequestCore_(body) {
   const staffId = body && body.staffId ? String(body.staffId) : '';
   const targetYearMonth = body && body.targetYearMonth ? String(body.targetYearMonth) : '';
   const incoming = body && Array.isArray(body.offDays) ? body.offDays : (body && Array.isArray(body.days) ? body.days : null);
@@ -5105,6 +5295,16 @@ function handleSubmitShiftRequest(body) {
   const staff = sheetToObjects(staffSheet).find(s => s.staff_id === staffId);
   if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
+  // 有給（希望休の画面から選ばれた日）。まず確認だけ行い、問題があれば何も書き込まない。
+  let paidPlan = null;
+  if (body && Array.isArray(body.paidLeaveDates)) {
+    if (body.paidLeaveDates.length > 31) {
+      return { success: false, error: '有給の日数が多すぎます（最大 31 日）' };
+    }
+    paidPlan = planPaidLeaveSync_(staff, targetYearMonth, body.paidLeaveDates);
+    if (!paidPlan.ok) return { success: false, error: paidPlan.error };
+  }
+
   const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
   ensureShiftRequestsRowBased_(sheet);
   const data = sheet.getDataRange().getValues();
@@ -5132,9 +5332,20 @@ function handleSubmitShiftRequest(body) {
   }
 
   // 受信側を希望休のみに正規化（kind='off' or status を持つ要素のみ採用）
-  const incomingOff = normalizeOffDays_(incoming);
+  // 有給として選ばれた日は希望休には含めない（同じ日が両方になるのを防ぐ）
+  const incomingOff = normalizeOffDays_(incoming).filter(function (d) {
+    return !(paidPlan && paidPlan.desired[d.date]);
+  });
   const newDateSet = {};
   for (let k = 0; k < incomingOff.length; k++) newDateSet[incomingOff[k].date] = true;
+  if (paidPlan) {
+    const conflict = Object.keys(paidPlan.desired).filter(function (d) {
+      return existingByDate[d] && existingByDate[d].status === 'approved';
+    });
+    if (conflict.length > 0) {
+      return { success: false, error: '承認済みの希望休の日は有給にできません: ' + conflict.join(', ') };
+    }
+  }
 
   // 削除対象（pending かつ新セットに無い）の行 index を集める（後で逆順削除）
   const toDelete = [];
@@ -5211,6 +5422,9 @@ function handleSubmitShiftRequest(body) {
     try { sheet.deleteRow(rowIndex); } catch (e) { Logger.log('deleteRow failed: ' + (e && e.message)); }
   });
 
+  // 有給の申請（追加・取り下げ）を反映
+  const paidResult = paidPlan ? applyPaidLeaveSync_(staff, paidPlan) : null;
+
   // 管理者へメール通知（pending 件数のみ伝える）
   try {
     const admins = getAdminEmails_();
@@ -5219,15 +5433,16 @@ function handleSubmitShiftRequest(body) {
       const subject = '【希望休 申請】' + staff.name + ' から ' + targetYearMonth + ' 分の希望が届きました';
       const bodyText = staff.name + 'さんから ' + targetYearMonth + ' 分の希望休が提出されました。\n\n'
         + '未承認の希望休: ' + pendingCount + '日\n'
+        + (paidPlan ? '未承認の有給: ' + paidPlan.pendingInMonthAfter + '日\n' : '')
         + (remarks ? '\n備考: ' + remarks + '\n' : '')
-        + '\n管理画面で承認/却下を行ってください。';
+        + '\n管理画面（希望シフト）で承認/却下を行ってください。';
       admins.forEach(function (email) { safeSendEmail_(email, subject, bodyText); });
     }
   } catch (e) {
     Logger.log('notify shift request failed: ' + (e && e.message));
   }
 
-  return { success: true, data: { id: 'SR-' + staffId + '-' + targetYearMonth } };
+  return { success: true, data: { id: 'SR-' + staffId + '-' + targetYearMonth, paidLeave: paidResult } };
 }
 
 // (staff × month) の pending 件数を数える

@@ -495,17 +495,29 @@ async function handleDemoRequest<T>(
     const staffId = queryParams?.staffId || '';
     const staff = mockStaffDetails.find(s => s.staffId === staffId);
     const history = mockPaidLeaveRequests.filter(r => r.staffId === staffId);
+    const balance = staff?.paidLeaveBalance || 0;
+    const pending = history.filter(r => r.status === 'pending').length;
     return {
       success: true,
-      data: { balance: staff?.paidLeaveBalance || 0, history } as unknown as T,
+      data: { balance, pending, available: balance - pending, history } as unknown as T,
     };
   }
 
   if (action === 'paid-leave/request') {
     const staffId = body?.staffId as string;
-    const leaveDate = body?.leaveDate as string;
+    const leaveDate = String(body?.leaveDate || '').slice(0, 10);
     const staff = mockStaffDetails.find(s => s.staffId === staffId);
-    const requestId = 'PL' + Date.now();
+    const mine = mockPaidLeaveRequests.filter(r => r.staffId === staffId);
+    // サーバーと同じ確認: 同じ日の二重申請・残日数（承認待ちを含む）
+    if (mine.some(r => r.leaveDate === leaveDate && (r.status === 'pending' || r.status === 'approved'))) {
+      return { success: false, error: 'この日はすでに有給を申請しています' };
+    }
+    const pending = mine.filter(r => r.status === 'pending').length;
+    const balance = staff?.paidLeaveBalance || 0;
+    if (balance - pending < 1) {
+      return { success: false, error: `有給の残り日数が足りません（残り ${balance} 日${pending ? `・承認待ち ${pending} 日` : ''}）` };
+    }
+    const requestId = 'PL' + Date.now() + Math.random().toString(36).slice(2, 6);
     mockPaidLeaveRequests.push({
       id: requestId,
       staffId,
@@ -522,16 +534,23 @@ async function handleDemoRequest<T>(
   }
 
   if (action === 'paid-leave/update') {
+    // サーバーと同じ: 同じ状態への変更は何もしない / 承認で残日数 −1 / 承認済みを却下で +1
     const requestId = body?.requestId as string;
     const status = body?.status as 'approved' | 'rejected';
+    const reason = body?.reason !== undefined ? String(body.reason) : undefined;
     const req = mockPaidLeaveRequests.find(r => r.id === requestId);
-    if (req) {
-      req.status = status;
-      if (status === 'approved') {
-        req.approvedDate = new Date().toISOString();
-        const staff = mockStaffDetails.find(s => s.staffId === req.staffId);
-        if (staff && staff.paidLeaveBalance > 0) staff.paidLeaveBalance--;
-      }
+    if (!req) return { success: false, error: '申請が見つかりません（取り下げられた可能性があります）' };
+    const prev = req.status;
+    if (reason !== undefined) req.remarks = reason;
+    if (prev === status) return { success: true, data: undefined as unknown as T };
+    req.status = status;
+    const staff = mockStaffDetails.find(s => s.staffId === req.staffId);
+    if (status === 'approved') {
+      req.approvedDate = new Date().toISOString();
+      if (staff) staff.paidLeaveBalance -= 1;
+    } else if (prev === 'approved') {
+      req.approvedDate = undefined;
+      if (staff) staff.paidLeaveBalance += 1;
     }
     return { success: true, data: undefined as unknown as T };
   }
@@ -898,9 +917,12 @@ async function handleDemoRequest<T>(
   if (action === 'shift-requests/submit') {
     const staffId = String(body?.staffId || '');
     const targetYearMonth = String(body?.targetYearMonth || '');
-    const incomingOffDays = Array.isArray(body?.offDays)
+    const paidLeaveDates = Array.isArray(body?.paidLeaveDates) ? (body!.paidLeaveDates as string[]).map(d => String(d).slice(0, 10)) : null;
+    const paidSet = new Set(paidLeaveDates || []);
+    // 有給にした日は希望休に含めない（サーバーと同じ）
+    const incomingOffDays = (Array.isArray(body?.offDays)
       ? (body!.offDays as import('../types').ShiftRequestOffDay[])
-      : [];
+      : []).filter(d => !paidSet.has(d.date));
     const remarks = body?.remarks ? String(body.remarks) : undefined;
     const staff = mockStaff.find(s => s.staffId === staffId);
     const id = 'SR' + Date.now() + Math.random().toString(36).slice(2, 6);
@@ -909,6 +931,41 @@ async function handleDemoRequest<T>(
       r => r.staffId === staffId && r.targetYearMonth === targetYearMonth
     );
     const existingOffDays = existingIdx !== -1 ? mockShiftRequests[existingIdx].offDays : [];
+
+    // 有給: サーバー（planPaidLeaveSync_）と同じ確認をしてから反映する
+    let paidResult: { added: number; withdrawn: number } | null = null;
+    if (paidLeaveDates) {
+      if (paidLeaveDates.some(d => !d.startsWith(`${targetYearMonth}-`))) {
+        return { success: false, error: '有給の日付が対象月の範囲外です' };
+      }
+      const conflict = paidLeaveDates.filter(d => existingOffDays.some(o => o.date === d && o.status === 'approved'));
+      if (conflict.length) return { success: false, error: `承認済みの希望休の日は有給にできません: ${conflict.join(', ')}` };
+      const detail = mockStaffDetails.find(s => s.staffId === staffId);
+      const balance = detail?.paidLeaveBalance || 0;
+      const mine = mockPaidLeaveRequests.filter(r => r.staffId === staffId);
+      const inMonth = (r: PaidLeaveRequest) => r.leaveDate.startsWith(`${targetYearMonth}-`);
+      const approvedInMonth = new Set(mine.filter(r => r.status === 'approved' && inMonth(r)).map(r => r.leaveDate));
+      const pendingInMonth = mine.filter(r => r.status === 'pending' && inMonth(r));
+      const pendingOther = mine.filter(r => r.status === 'pending' && !inMonth(r)).length;
+      const after = [...paidSet].filter(d => !approvedInMonth.has(d)).length;
+      const limit = balance - pendingOther;
+      if (after > Math.max(limit, pendingInMonth.length)) {
+        return { success: false, error: `有給の残り日数が足りません（残り ${balance} 日${pendingOther ? `・ほかの月の承認待ち ${pendingOther} 日` : ''}。この月に申請できるのは ${Math.max(0, limit)} 日までです）` };
+      }
+      const activeDates = new Set([...approvedInMonth, ...pendingInMonth.map(r => r.leaveDate)]);
+      const toAdd = [...paidSet].filter(d => !activeDates.has(d)).sort();
+      const toWithdraw = pendingInMonth.filter(r => !paidSet.has(r.leaveDate));
+      toWithdraw.forEach(r => mockPaidLeaveRequests.splice(mockPaidLeaveRequests.indexOf(r), 1));
+      toAdd.forEach(d => mockPaidLeaveRequests.push({
+        id: 'PL' + Date.now() + Math.random().toString(36).slice(2, 6),
+        staffId,
+        name: staff?.name || '',
+        requestDate: new Date().toISOString(),
+        leaveDate: d,
+        status: 'pending',
+      }));
+      paidResult = { added: toAdd.length, withdrawn: toWithdraw.length };
+    }
 
     // マージ（GAS handleSubmitShiftRequest と同一仕様）:
     //  - approved: 常に保持
@@ -955,7 +1012,7 @@ async function handleDemoRequest<T>(
     } else {
       mockShiftRequests.push(record);
     }
-    return { success: true, data: { id: record.id } as unknown as T };
+    return { success: true, data: { id: record.id, paidLeave: paidResult } as unknown as T };
   }
 
   if (action === 'shift-requests/list') {
@@ -1088,11 +1145,13 @@ export const paidLeaveApi = {
   request: (staffId: string, leaveDate: string): Promise<ApiResponse<{ requestId: string }>> =>
     apiRequest('paid-leave/request', { staffId, leaveDate }),
 
+  // reason: 却下理由など（任意）。備考に保存される。
   updateStatus: (
     requestId: string,
-    status: 'approved' | 'rejected'
+    status: 'approved' | 'rejected',
+    reason?: string
   ): Promise<ApiResponse<void>> =>
-    apiRequest('paid-leave/update', { requestId, status }),
+    apiRequest('paid-leave/update', reason !== undefined ? { requestId, status, reason } : { requestId, status }),
 
   getAll: (): Promise<ApiResponse<PaidLeaveRequest[]>> =>
     apiRequest('paid-leave/all'),
@@ -1284,12 +1343,15 @@ export const passwordApi = {
 // Shift request API (希望休 申請)
 export const shiftRequestApi = {
   // スタッフが提出。target_year_month は 'YYYY-MM'。offDays は希望休として申請する日のリスト。
+  // paidLeaveDates: 同じ月に有給として申請する日（YYYY-MM-DD）。指定すると有給の申請も同時に反映される
+  // （新しく選んだ日は承認待ちで追加、外した承認待ちの日は取り下げ）。残日数が足りなければ何も保存されない。
   submit: (params: {
     staffId: string;
     targetYearMonth: string;
     offDays: import('../types').ShiftRequestOffDay[];
+    paidLeaveDates?: string[];
     remarks?: string;
-  }): Promise<ApiResponse<{ id: string }>> =>
+  }): Promise<ApiResponse<{ id: string; paidLeave?: { added: number; withdrawn: number } | null }>> =>
     apiRequest('shift-requests/submit', params as unknown as Record<string, unknown>),
 
   // 管理者が一覧取得（または該当スタッフのみ）。

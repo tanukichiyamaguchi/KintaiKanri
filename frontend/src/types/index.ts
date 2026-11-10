@@ -263,7 +263,9 @@ export interface PaidLeaveRequest {
 }
 
 export interface PaidLeaveBalance {
-  balance: number;
+  balance: number;              // 残日数（承認済みの分は差し引き済み）
+  pending?: number;             // 承認待ちの日数（全期間）
+  available?: number;           // あと何日申請できるか = balance − pending
   history: PaidLeaveRequest[];
 }
 

@@ -45,6 +45,7 @@
   /* 状態 */
   --ios-success: #1d7533;
   --ios-success-fill: rgba(52, 199, 89, 0.15);
+  --ios-on-success: #ffffff;      /* 緑の塗り（--ios-success）の上の文字（5.8:1） */
   --ios-danger: #d70015;
   --ios-danger-fill: rgba(255, 59, 48, 0.12);
   --ios-warning: #c93400;
@@ -104,6 +105,7 @@
 
     --ios-success: #30d158;
     --ios-success-fill: rgba(48, 209, 88, 0.18);
+    --ios-on-success: #000000;
     --ios-danger: #ff6961;
     --ios-danger-fill: rgba(255, 69, 58, 0.16);
     --ios-warning: #ff9f0a;
@@ -152,6 +154,7 @@
   --color-on-tint: var(--ios-on-tint);
   --color-success: var(--ios-success);
   --color-success-fill: var(--ios-success-fill);
+  --color-on-success: var(--ios-on-success);
   --color-danger: var(--ios-danger);
   --color-danger-fill: var(--ios-danger-fill);
   --color-warning: var(--ios-warning);

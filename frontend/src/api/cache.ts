@@ -109,8 +109,8 @@ export function invalidateForMutation(action: string): void {
     attendance: ['clock:', 'attendance:', 'mypage:', 'dashboard:'],
     applications: ['applications:', 'attendance:', 'approvals:', 'mypage:', 'dashboard:'],
     submissions: ['clock:', 'attendance:', 'approvals:', 'mypage:', 'dashboard:'],
-    'paid-leave': ['mypage:', 'approvals:', 'dashboard:'],
-    'shift-requests': ['shift-requests:', 'approvals:', 'dashboard:'],
+    'paid-leave': ['mypage:', 'approvals:', 'dashboard:', 'shift-requests:'],
+    'shift-requests': ['shift-requests:', 'approvals:', 'dashboard:', 'mypage:'],
     staff: ['staff:', 'dashboard:', 'attendance:'],
     admins: ['staff:'],
     // 読み取り専用の扱いだが POST で呼ぶもの（ログイン等）は消さない

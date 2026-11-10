@@ -79,6 +79,7 @@ function TabBar({ items, pathname, badgeOf }: { items: NavItem[]; pathname: stri
               <NavLink
                 to={item.to}
                 aria-current={active ? 'page' : undefined}
+                aria-label={count > 0 ? `${item.label}（未対応 ${count}件）` : undefined}
                 className={`relative flex h-full flex-col items-center justify-center gap-[3px] pt-1 transition-colors ${
                   active ? 'text-tint' : 'text-label-2'
                 }`}
@@ -86,7 +87,7 @@ function TabBar({ items, pathname, badgeOf }: { items: NavItem[]; pathname: stri
                 <span className="relative">
                   <Icon className="w-[25px] h-[25px]" strokeWidth={active ? 2.2 : 1.8} aria-hidden="true" />
                   {count > 0 && (
-                    <span className="count-badge absolute -top-1.5 left-[15px]" aria-label={`${count}件`}>
+                    <span className="count-badge absolute -top-1.5 left-[15px]" aria-hidden="true">
                       {count > 99 ? '99+' : count}
                     </span>
                   )}
@@ -135,6 +136,7 @@ function Sidebar({ sections, pathname, badgeOf }: { sections: NavSection[]; path
                     <NavLink
                       to={item.to}
                       aria-current={active ? 'page' : undefined}
+                      aria-label={count > 0 ? `${item.label}（未対応 ${count}件）` : undefined}
                       className={`flex items-center gap-3 rounded-[10px] px-3 py-2 transition-colors ${
                         active ? 'bg-tint-solid text-on-tint' : 'text-label hover:bg-fill'
                       }`}
@@ -144,7 +146,7 @@ function Sidebar({ sections, pathname, badgeOf }: { sections: NavSection[]; path
                       </span>
                       <span className="flex-1 t-body truncate">{item.label}</span>
                       {count > 0 && (
-                        <span className={`t-subhead tabular font-medium ${active ? 'text-on-tint' : 'text-label-2'}`}>{count}</span>
+                        <span className={`t-subhead tabular font-medium ${active ? 'text-on-tint' : 'text-label-2'}`} aria-hidden="true">{count}</span>
                       )}
                     </NavLink>
                   </li>
