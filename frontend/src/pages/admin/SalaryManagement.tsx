@@ -1,20 +1,25 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Calculator,
   Download,
   FileText,
-  RefreshCw,
   AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, salaryApi, taxApi } from '../../api';
 import type { StaffInfo, SalaryRecord, TaxManual } from '../../types';
-import { Header, Loading, Modal } from '../../components/common';
+import { Header, Loading, Modal, Spinner } from '../../components/common';
 import { formatCurrency } from '../../utils/calculations';
+
+// 表（iPad・PC）の見出しセル
+const TH = 't-footnote text-label-2 font-medium px-3 py-2.5 bg-surface sticky top-0 whitespace-nowrap';
+// 表の金額セル
+const TD_MONEY = 'px-3 py-3 text-right whitespace-nowrap';
+// 前月・次月の丸いボタン
+const STEP_BTN = 'grid h-11 w-11 place-items-center rounded-full text-tint transition-colors hover:bg-fill active:bg-fill-2';
 
 export function SalaryManagement() {
   const navigate = useNavigate();
@@ -154,108 +159,92 @@ export function SalaryManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="給与計算" />
+    <div className="page">
+      <Header title="給与計算" backTo="/admin/more" backLabel="その他" backMobileOnly wide />
 
-      <main className="max-w-6xl mx-auto p-4 sm:p-6">
-        {/* Back Link */}
-        <Link
-          to="/admin"
-          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">ダッシュボードへ戻る</span>
-        </Link>
-
+      <main className="page-content page-content-wide">
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm font-medium">{error}</p>
+          <div className="callout callout-danger mb-4" role="alert">
+            <AlertCircle aria-hidden="true" />
+            <p className="font-medium break-words">{error}</p>
           </div>
         )}
 
         {/* Controls */}
-        <div className="card mb-6">
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 sm:gap-4">
+        <section className="card" aria-label="対象月と操作">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             {/* Month Selector */}
-            <div className="flex items-center justify-center gap-1">
-              <button
-                onClick={handlePreviousMonth}
-                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors"
-                aria-label="前月"
-              >
-                <ChevronLeft className="w-5 h-5 text-secondary-600" />
+            <div className="-mx-2 flex items-center justify-between sm:justify-start">
+              <button type="button" onClick={handlePreviousMonth} className={STEP_BTN} aria-label="前月">
+                <ChevronLeft className="h-6 w-6" strokeWidth={2.4} aria-hidden="true" />
               </button>
-              <span className="text-base sm:text-lg font-semibold min-w-[140px] text-center text-secondary-800">
+              <p className="t-headline tabular min-w-[8.5em] text-center" aria-live="polite">
                 {selectedYear}年{selectedMonth}月分
-              </span>
-              <button
-                onClick={handleNextMonth}
-                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors"
-                aria-label="次月"
-              >
-                <ChevronRight className="w-5 h-5 text-secondary-600" />
+              </p>
+              <button type="button" onClick={handleNextMonth} className={STEP_BTN} aria-label="次月">
+                <ChevronRight className="h-6 w-6" strokeWidth={2.4} aria-hidden="true" />
               </button>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex gap-2">
+            <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex">
               <button
+                type="button"
                 onClick={handleCalculate}
                 disabled={isCalculating}
-                className="btn btn-primary flex-1 sm:flex-none !text-sm sm:!text-base !py-2.5 !px-3 sm:!px-5"
+                className="btn btn-filled"
               >
                 {isCalculating ? (
-                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  <Spinner size={18} className="!text-current" />
                 ) : (
-                  <Calculator className="w-5 h-5" />
+                  <Calculator aria-hidden="true" />
                 )}
-                <span className="hidden sm:inline">給与計算実行</span>
-                <span className="sm:hidden">計算</span>
+                給与計算実行
               </button>
               <button
+                type="button"
                 onClick={handleDownloadAllPdf}
                 disabled={salaryData.length === 0}
-                className="btn btn-secondary flex-1 sm:flex-none !text-sm sm:!text-base !py-2.5 !px-3 sm:!px-5"
+                className="btn btn-gray"
               >
-                <Download className="w-5 h-5" />
-                <span className="hidden sm:inline">一括PDF</span>
-                <span className="sm:hidden">PDF</span>
+                <Download aria-hidden="true" />
+                一括PDF
               </button>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Tax Input Section */}
-        <div className="card mb-6">
-          <h3 className="font-semibold text-secondary-800 mb-2">税金入力（所得税・住民税）</h3>
-          <p className="text-sm text-secondary-500 mb-4">
-            所得税と住民税は自動計算されないため、手動で入力してください。
-          </p>
+        <section className="section">
+          <h2 className="section-header">税金入力（所得税・住民税）</h2>
 
           {isLoading ? (
-            <Loading />
+            <div className="card">
+              <Loading />
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="list-group empty:hidden">
               {staffList.map(staff => {
                 const tax = getStaffTax(staff.staffId);
                 return (
-                  <div
-                    key={staff.staffId}
-                    className="p-4 bg-secondary-50 border border-secondary-100 rounded-xl flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium text-secondary-800 truncate">{staff.name}</p>
-                      <div className="text-xs text-secondary-600 mt-1">
-                        <span>所得税: {formatCurrency(tax?.incomeTax || 0)}</span>
-                        <span className="mx-2 text-secondary-300">|</span>
-                        <span>住民税: {formatCurrency(tax?.residentTax || 0)}</span>
+                  <div key={staff.staffId} className="list-row !py-2 !pr-2">
+                    <span className="list-row-title t-body truncate">{staff.name}</span>
+                    <dl className="grid grid-cols-[auto_auto] items-baseline gap-x-2 t-footnote tabular sm:flex sm:gap-6">
+                      <div className="contents sm:flex sm:w-36 sm:justify-end sm:gap-2">
+                        <dt className="text-label-2">所得税</dt>
+                        <dd className="text-right">{formatCurrency(tax?.incomeTax || 0)}</dd>
                       </div>
-                    </div>
+                      <div className="contents sm:flex sm:w-36 sm:justify-end sm:gap-2">
+                        <dt className="text-label-2">住民税</dt>
+                        <dd className="text-right">{formatCurrency(tax?.residentTax || 0)}</dd>
+                      </div>
+                    </dl>
                     <button
+                      type="button"
                       onClick={() => handleOpenTaxModal(staff.staffId)}
-                      className="btn btn-secondary !py-2 !px-4 !text-xs !rounded-lg flex-shrink-0"
+                      className="btn btn-plain flex-shrink-0"
+                      aria-label={`${staff.name}の税金を編集`}
                     >
                       編集
                     </button>
@@ -264,17 +253,17 @@ export function SalaryManagement() {
               })}
             </div>
           )}
-        </div>
+          <p className="section-footer">
+            所得税と住民税は自動計算されないため、手動で入力してください。
+          </p>
+        </section>
 
         {/* Salary Results */}
         {salaryData.length > 0 && (
-          <>
-            {/* Section header */}
-            <div className="mb-3 sm:hidden">
-              <h3 className="font-semibold text-secondary-800">給与計算結果</h3>
-            </div>
+          <section className="section">
+            <h2 className="section-header">給与計算結果</h2>
 
-            {/* Mobile: Card list */}
+            {/* iPhone: Card list */}
             <div className="sm:hidden space-y-3">
               {salaryData.map(record => {
                 const socialInsurance =
@@ -285,80 +274,76 @@ export function SalaryManagement() {
                 const taxes = record.incomeTax + record.residentTax;
 
                 return (
-                  <div key={record.staffId} className="card !p-4">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <p className="font-semibold text-secondary-800 truncate">
-                        {record.name}
-                      </p>
+                  <article key={record.staffId} className="card">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="t-headline min-w-0 truncate">{record.name}</h3>
                       <button
+                        type="button"
                         onClick={() => handleDownloadPdf(record.staffId)}
-                        className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors flex-shrink-0"
+                        className="btn btn-tinted -my-1 flex-shrink-0 !px-3.5 !text-[15px]"
                         aria-label="PDFダウンロード"
                       >
-                        <FileText className="w-5 h-5" />
+                        <FileText aria-hidden="true" />
+                        PDF
                       </button>
                     </div>
-                    <div className="space-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-secondary-500">基本給</span>
-                        <span className="text-secondary-700">{formatCurrency(record.baseSalary)}</span>
+                    <dl className="mt-2 t-subhead tabular">
+                      <div className="flex justify-between gap-3 py-1">
+                        <dt className="text-label-2">基本給</dt>
+                        <dd>{formatCurrency(record.baseSalary)}</dd>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-secondary-500">残業手当</span>
-                        <span className="text-secondary-700">{formatCurrency(record.overtimePay)}</span>
+                      <div className="flex justify-between gap-3 py-1">
+                        <dt className="text-label-2">残業手当</dt>
+                        <dd>{formatCurrency(record.overtimePay)}</dd>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-secondary-500">交通費</span>
-                        <span className="text-secondary-700">{formatCurrency(record.transportation)}</span>
+                      <div className="flex justify-between gap-3 py-1">
+                        <dt className="text-label-2">交通費</dt>
+                        <dd>{formatCurrency(record.transportation)}</dd>
                       </div>
-                      <div className="flex justify-between border-t border-secondary-100 pt-1.5">
-                        <span className="text-secondary-600 font-medium">総支給額</span>
-                        <span className="font-medium text-secondary-800">{formatCurrency(record.grossPay)}</span>
+                      <div className="mt-1 flex justify-between gap-3 border-t-[0.5px] border-separator pt-2 pb-1 t-headline">
+                        <dt>総支給額</dt>
+                        <dd>{formatCurrency(record.grossPay)}</dd>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-secondary-500">社会保険料</span>
-                        <span className="text-red-600">-{formatCurrency(socialInsurance)}</span>
+                      <div className="mt-1 flex justify-between gap-3 py-1">
+                        <dt className="text-label-2">社会保険料</dt>
+                        <dd className="text-danger">-{formatCurrency(socialInsurance)}</dd>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-secondary-500">税金</span>
-                        <span className="text-red-600">-{formatCurrency(taxes)}</span>
+                      <div className="flex justify-between gap-3 py-1">
+                        <dt className="text-label-2">税金</dt>
+                        <dd className="text-danger">-{formatCurrency(taxes)}</dd>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-secondary-500">控除計</span>
-                        <span className="text-red-600">-{formatCurrency(record.totalDeduction)}</span>
+                      <div className="mt-1 flex justify-between gap-3 border-t-[0.5px] border-separator pt-2 pb-1 t-headline">
+                        <dt>控除計</dt>
+                        <dd className="text-danger">-{formatCurrency(record.totalDeduction)}</dd>
                       </div>
-                      <div className="flex justify-between border-t border-secondary-100 pt-1.5">
-                        <span className="text-secondary-700 font-semibold">差引支給額</span>
-                        <span className="font-bold text-primary-700">{formatCurrency(record.netPay)}</span>
+                      <div className="mt-2 flex items-baseline justify-between gap-3 rounded-[10px] bg-tint-fill px-3 py-2.5">
+                        <dt className="t-headline">差引支給額</dt>
+                        <dd className="t-title3 text-tint">{formatCurrency(record.netPay)}</dd>
                       </div>
-                    </div>
-                  </div>
+                    </dl>
+                  </article>
                 );
               })}
             </div>
 
-            {/* Desktop: Table */}
-            <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden">
-              <div className="px-6 py-5">
-                <h3 className="font-semibold text-secondary-800">給与計算結果</h3>
-              </div>
-
-              <table className="w-full min-w-[1000px] text-sm">
+            {/* iPad・PC: Table */}
+            <div className="hidden sm:block card !p-0 overflow-x-auto">
+              <table className="w-full min-w-[860px] t-subhead tabular">
                 <thead>
-                  <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
-                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">氏名</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">基本給</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">残業手当</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">交通費</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">総支給額</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">社会保険料</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">税金</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">控除計</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">差引支給額</th>
-                    <th className="px-3 py-3 text-center text-xs font-semibold tracking-wider">PDF</th>
+                  <tr>
+                    <th scope="col" className={`${TH} !pl-4 text-left`}>氏名</th>
+                    <th scope="col" className={`${TH} text-right`}>基本給</th>
+                    <th scope="col" className={`${TH} text-right`}>残業手当</th>
+                    <th scope="col" className={`${TH} text-right`}>交通費</th>
+                    <th scope="col" className={`${TH} text-right`}>総支給額</th>
+                    <th scope="col" className={`${TH} text-right`}>社会保険料</th>
+                    <th scope="col" className={`${TH} text-right`}>税金</th>
+                    <th scope="col" className={`${TH} text-right`}>控除計</th>
+                    <th scope="col" className={`${TH} text-right`}>差引支給額</th>
+                    <th scope="col" className={`${TH} !pr-4 text-center`}>PDF</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-secondary-100">
+                <tbody>
                   {salaryData.map(record => {
                     const socialInsurance =
                       record.healthInsurance +
@@ -368,42 +353,43 @@ export function SalaryManagement() {
                     const taxes = record.incomeTax + record.residentTax;
 
                     return (
-                      <tr key={record.staffId} className="hover:bg-primary-50/30 transition-colors">
-                        <td className="px-3 py-3 font-medium text-secondary-800">
+                      <tr key={record.staffId} className="border-t-[0.5px] border-separator">
+                        <td className="pl-4 pr-3 py-3 font-medium whitespace-nowrap">
                           {record.name}
                         </td>
-                        <td className="px-3 py-3 text-right text-secondary-700">
+                        <td className={TD_MONEY}>
                           {formatCurrency(record.baseSalary)}
                         </td>
-                        <td className="px-3 py-3 text-right text-secondary-700">
+                        <td className={TD_MONEY}>
                           {formatCurrency(record.overtimePay)}
                         </td>
-                        <td className="px-3 py-3 text-right text-secondary-700">
+                        <td className={TD_MONEY}>
                           {formatCurrency(record.transportation)}
                         </td>
-                        <td className="px-3 py-3 text-right font-medium text-secondary-800">
+                        <td className={`${TD_MONEY} font-semibold`}>
                           {formatCurrency(record.grossPay)}
                         </td>
-                        <td className="px-3 py-3 text-right text-red-600">
+                        <td className={`${TD_MONEY} text-danger`}>
                           -{formatCurrency(socialInsurance)}
                         </td>
-                        <td className="px-3 py-3 text-right text-red-600">
+                        <td className={`${TD_MONEY} text-danger`}>
                           -{formatCurrency(taxes)}
                         </td>
-                        <td className="px-3 py-3 text-right text-red-600">
+                        <td className={`${TD_MONEY} font-semibold text-danger`}>
                           -{formatCurrency(record.totalDeduction)}
                         </td>
-                        <td className="px-3 py-3 text-right font-bold text-primary-700">
+                        <td className={`${TD_MONEY} font-semibold text-tint`}>
                           {formatCurrency(record.netPay)}
                         </td>
-                        <td className="px-3 py-3 text-center">
+                        <td className="pl-2 pr-3 py-0">
                           <button
+                            type="button"
                             onClick={() => handleDownloadPdf(record.staffId)}
-                            className="p-1.5 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                            className="mx-auto grid h-11 w-11 place-items-center rounded-full text-tint transition-colors hover:bg-fill active:bg-fill-2"
                             aria-label="PDFダウンロード"
                             title="PDFダウンロード"
                           >
-                            <FileText className="w-5 h-5" />
+                            <FileText className="h-5 w-5" aria-hidden="true" />
                           </button>
                         </td>
                       </tr>
@@ -412,18 +398,20 @@ export function SalaryManagement() {
                 </tbody>
               </table>
             </div>
-          </>
+          </section>
         )}
 
         {/* Empty State */}
         {!isLoading && salaryData.length === 0 && (
-          <div className="card text-center py-12">
-            <Calculator className="w-16 h-16 text-secondary-300 mx-auto mb-4" />
-            <p className="text-secondary-500 mb-2">給与計算結果がありません</p>
-            <p className="text-sm text-secondary-400">
-              「給与計算実行」ボタンをクリックして計算を開始してください
-            </p>
-          </div>
+          <section className="section">
+            <div className="card flex flex-col items-center px-6 py-10 text-center">
+              <Calculator className="h-12 w-12 text-label-4" strokeWidth={1.5} aria-hidden="true" />
+              <p className="t-headline mt-3">給与計算結果がありません</p>
+              <p className="t-subhead text-label-2 mt-1">
+                「給与計算実行」ボタンをクリックして計算を開始してください
+              </p>
+            </div>
+          </section>
         )}
       </main>
 
@@ -434,39 +422,42 @@ export function SalaryManagement() {
         title={`税金入力 - ${selectedStaffForTax ? getStaffName(selectedStaffForTax) : ''}`}
         size="sm"
       >
-        <div className="space-y-4">
+        <div className="space-y-4 pt-2">
           <div>
-            <label className="label">所得税</label>
+            <label htmlFor="salary-income-tax" className="label">所得税</label>
             <input
+              id="salary-income-tax"
               type="number"
               value={taxInput.incomeTax}
               onChange={e => setTaxInput(prev => ({ ...prev, incomeTax: Number(e.target.value) }))}
-              className="input"
+              className="input tabular"
               placeholder="5000"
             />
           </div>
           <div>
-            <label className="label">住民税</label>
+            <label htmlFor="salary-resident-tax" className="label">住民税</label>
             <input
+              id="salary-resident-tax"
               type="number"
               value={taxInput.residentTax}
               onChange={e => setTaxInput(prev => ({ ...prev, residentTax: Number(e.target.value) }))}
-              className="input"
+              className="input tabular"
               placeholder="12000"
             />
           </div>
+        </div>
 
-          <div className="flex gap-3 pt-4">
-            <button
-              onClick={() => setShowTaxModal(false)}
-              className="btn btn-secondary flex-1"
-            >
-              キャンセル
-            </button>
-            <button onClick={handleSaveTax} className="btn btn-primary flex-1">
-              保存
-            </button>
-          </div>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setShowTaxModal(false)}
+            className="btn btn-gray"
+          >
+            キャンセル
+          </button>
+          <button type="button" onClick={handleSaveTax} className="btn btn-filled">
+            保存
+          </button>
         </div>
       </Modal>
     </div>

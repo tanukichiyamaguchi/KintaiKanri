@@ -1,17 +1,22 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
-  Settings as SettingsIcon,
   Save,
   AlertCircle,
   CheckCircle,
-  History,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { insuranceApi } from '../../api';
 import type { InsuranceRates } from '../../types';
 import { Header, Loading } from '../../components/common';
+
+// 料率の行: 1 行目に「見出し + 入力欄」、2 行目に補足を行の幅いっぱいに出す
+const RATE_ROW = 'list-row flex-wrap !gap-y-1';
+// 料率の行の右側に置く、小さめの数値入力欄
+const RATE_INPUT = 'input !w-[5.75rem] !min-h-9 !py-1.5 !px-2.5 text-right tabular';
+// 料率の行の補足
+const RATE_HINT = 'w-full t-footnote text-label-2';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -116,219 +121,210 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="システム設定" />
+    <div className="page">
+      <Header title="システム設定" backTo="/admin/more" backLabel="その他" backMobileOnly />
 
-      <main className="max-w-2xl mx-auto p-4 sm:p-6">
-        {/* Back Link */}
-        <Link
-          to="/admin"
-          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">ダッシュボードへ戻る</span>
-        </Link>
-
+      <main className="page-content">
         {isLoading ? (
-          <div className="card">
+          <div className="card mt-2">
             <Loading message="読み込み中..." />
           </div>
         ) : (
           <>
             {/* Insurance Rates Form */}
-            <div className="card mb-6">
-              <div className="flex items-center gap-2 mb-6">
-                <SettingsIcon className="w-5 h-5 text-secondary-700 flex-shrink-0" />
-                <h2 className="text-base sm:text-lg font-semibold text-secondary-800">
-                  社会保険料率設定
-                </h2>
-              </div>
-
-              <form onSubmit={handleSubmit}>
-                <div className="space-y-4">
-                  {/* Effective Date */}
-                  <div>
-                    <label className="label">適用開始年月</label>
-                    <select
-                      name="effectiveDate"
-                      value={rates.effectiveDate}
-                      onChange={e => setRates(prev => ({ ...prev, effectiveDate: e.target.value }))}
-                      className="input"
-                    >
-                      <option value="">選択してください</option>
-                      {generateDateOptions().map(date => (
-                        <option key={date} value={date}>
-                          {date.replace('-', '年')}月
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Health Insurance */}
-                  <div>
-                    <label className="label">健康保険料率（本人負担）</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        name="healthInsuranceRate"
-                        value={rates.healthInsuranceRate}
-                        onChange={handleInputChange}
-                        step="0.001"
-                        min="0"
-                        max="100"
-                        className="input"
-                      />
-                      <span className="text-secondary-600">％</span>
-                    </div>
-                    <p className="text-xs text-secondary-500 mt-1">
-                      ※全国健康保険協会（協会けんぽ）の料率の半分を入力
-                    </p>
-                  </div>
-
-                  {/* Nursing Insurance */}
-                  <div>
-                    <label className="label">介護保険料率（本人負担）</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        name="nursingInsuranceRate"
-                        value={rates.nursingInsuranceRate}
-                        onChange={handleInputChange}
-                        step="0.001"
-                        min="0"
-                        max="100"
-                        className="input"
-                      />
-                      <span className="text-secondary-600">％</span>
-                    </div>
-                    <p className="text-xs text-secondary-500 mt-1">
-                      ※40歳以上65歳未満の方が対象
-                    </p>
-                  </div>
-
-                  {/* Pension */}
-                  <div>
-                    <label className="label">厚生年金保険料率（本人負担）</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        name="pensionRate"
-                        value={rates.pensionRate}
-                        onChange={handleInputChange}
-                        step="0.001"
-                        min="0"
-                        max="100"
-                        className="input"
-                      />
-                      <span className="text-secondary-600">％</span>
-                    </div>
-                    <p className="text-xs text-secondary-500 mt-1">
-                      ※18.3%の半分（9.15%）が一般的
-                    </p>
-                  </div>
-
-                  {/* Employment Insurance */}
-                  <div>
-                    <label className="label">雇用保険料率（本人負担）</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        name="employmentInsuranceRate"
-                        value={rates.employmentInsuranceRate}
-                        onChange={handleInputChange}
-                        step="0.001"
-                        min="0"
-                        max="100"
-                        className="input"
-                      />
-                      <span className="text-secondary-600">％</span>
-                    </div>
-                    <p className="text-xs text-secondary-500 mt-1">
-                      ※2024年度は0.6%（一般の事業）
-                    </p>
-                  </div>
-
-                  {/* Message */}
-                  {message && (
-                    <div
-                      className={`flex items-center gap-2 px-4 py-3 rounded-xl border ${
-                        message.type === 'success'
-                          ? 'bg-green-50 text-green-700 border-green-200'
-                          : 'bg-red-50 text-red-700 border-red-200'
-                      }`}
-                    >
-                      {message.type === 'success' ? (
-                        <CheckCircle className="w-5 h-5 flex-shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                      )}
-                      <p className="text-sm font-medium">{message.text}</p>
-                    </div>
-                  )}
-
-                  {/* Submit Button */}
-                  <button
-                    type="submit"
-                    disabled={isSaving}
-                    className="btn btn-primary w-full"
+            <form onSubmit={handleSubmit} className="section">
+              <h2 className="section-header">社会保険料率設定</h2>
+              <div className="list-group">
+                {/* Effective Date */}
+                <div className="list-row">
+                  <label htmlFor="settings-effective-date" className="list-row-title t-body">
+                    適用開始年月
+                  </label>
+                  <select
+                    id="settings-effective-date"
+                    name="effectiveDate"
+                    value={rates.effectiveDate}
+                    onChange={e => setRates(prev => ({ ...prev, effectiveDate: e.target.value }))}
+                    className="input !w-auto !min-h-9 !py-1.5 !pl-3 tabular"
                   >
-                    <Save className="w-5 h-5" />
-                    {isSaving ? '保存中...' : '保存'}
-                  </button>
+                    <option value="">選択してください</option>
+                    {generateDateOptions().map(date => (
+                      <option key={date} value={date}>
+                        {date.replace('-', '年')}月
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </form>
-            </div>
 
-            {/* Rate History */}
-            <div className="card">
-              <div className="flex items-center gap-2 mb-4">
-                <History className="w-5 h-5 text-secondary-700 flex-shrink-0" />
-                <h3 className="font-semibold text-secondary-800">料率履歴</h3>
+                {/* Health Insurance */}
+                <div className={RATE_ROW}>
+                  <label htmlFor="settings-health" className="list-row-title t-body">
+                    健康保険料率<span className="whitespace-nowrap t-subhead text-label-2">（本人負担）</span>
+                  </label>
+                  <div className="flex flex-shrink-0 items-center gap-1.5">
+                    <input
+                      id="settings-health"
+                      type="number"
+                      name="healthInsuranceRate"
+                      value={rates.healthInsuranceRate}
+                      onChange={handleInputChange}
+                      step="0.001"
+                      min="0"
+                      max="100"
+                      className={RATE_INPUT}
+                    />
+                    <span className="t-body text-label-2">％</span>
+                  </div>
+                  <p className={RATE_HINT}>
+                    ※全国健康保険協会（協会けんぽ）の料率の半分を入力
+                  </p>
+                </div>
+
+                {/* Nursing Insurance */}
+                <div className={RATE_ROW}>
+                  <label htmlFor="settings-nursing" className="list-row-title t-body">
+                    介護保険料率<span className="whitespace-nowrap t-subhead text-label-2">（本人負担）</span>
+                  </label>
+                  <div className="flex flex-shrink-0 items-center gap-1.5">
+                    <input
+                      id="settings-nursing"
+                      type="number"
+                      name="nursingInsuranceRate"
+                      value={rates.nursingInsuranceRate}
+                      onChange={handleInputChange}
+                      step="0.001"
+                      min="0"
+                      max="100"
+                      className={RATE_INPUT}
+                    />
+                    <span className="t-body text-label-2">％</span>
+                  </div>
+                  <p className={RATE_HINT}>
+                    ※40歳以上65歳未満の方が対象
+                  </p>
+                </div>
+
+                {/* Pension */}
+                <div className={RATE_ROW}>
+                  <label htmlFor="settings-pension" className="list-row-title t-body">
+                    厚生年金保険料率<span className="whitespace-nowrap t-subhead text-label-2">（本人負担）</span>
+                  </label>
+                  <div className="flex flex-shrink-0 items-center gap-1.5">
+                    <input
+                      id="settings-pension"
+                      type="number"
+                      name="pensionRate"
+                      value={rates.pensionRate}
+                      onChange={handleInputChange}
+                      step="0.001"
+                      min="0"
+                      max="100"
+                      className={RATE_INPUT}
+                    />
+                    <span className="t-body text-label-2">％</span>
+                  </div>
+                  <p className={RATE_HINT}>
+                    ※18.3%の半分（9.15%）が一般的
+                  </p>
+                </div>
+
+                {/* Employment Insurance */}
+                <div className={RATE_ROW}>
+                  <label htmlFor="settings-employment" className="list-row-title t-body">
+                    雇用保険料率<span className="whitespace-nowrap t-subhead text-label-2">（本人負担）</span>
+                  </label>
+                  <div className="flex flex-shrink-0 items-center gap-1.5">
+                    <input
+                      id="settings-employment"
+                      type="number"
+                      name="employmentInsuranceRate"
+                      value={rates.employmentInsuranceRate}
+                      onChange={handleInputChange}
+                      step="0.001"
+                      min="0"
+                      max="100"
+                      className={RATE_INPUT}
+                    />
+                    <span className="t-body text-label-2">％</span>
+                  </div>
+                  <p className={RATE_HINT}>
+                    ※2024年度は0.6%（一般の事業）
+                  </p>
+                </div>
               </div>
 
-              {history.length === 0 ? (
-                <p className="text-center text-secondary-500 py-4">履歴がありません</p>
-              ) : (
-                <div className="space-y-3">
-                  {history.map((rate, index) => (
-                    <div
-                      key={rate.effectiveDate}
-                      className={`p-3.5 rounded-xl border ${
-                        index === 0
-                          ? 'bg-primary-50 border-primary-200'
-                          : 'bg-secondary-50 border-secondary-100'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="font-medium text-secondary-800 truncate">
-                          {rate.effectiveDate.replace('-', '年')}月〜
-                        </span>
-                        {index === 0 && (
-                          <span className="text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full font-medium flex-shrink-0">
-                            適用中
-                          </span>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2 text-xs sm:text-sm text-secondary-600">
-                        <span>健康保険: {rate.healthInsuranceRate}%</span>
-                        <span>介護保険: {rate.nursingInsuranceRate}%</span>
-                        <span>厚生年金: {rate.pensionRate}%</span>
-                        <span>雇用保険: {rate.employmentInsuranceRate}%</span>
-                      </div>
-                    </div>
-                  ))}
+              {/* Message */}
+              {message && (
+                <div
+                  className={`callout mt-4 ${
+                    message.type === 'success' ? 'callout-success' : 'callout-danger'
+                  }`}
+                  role={message.type === 'error' ? 'alert' : 'status'}
+                >
+                  {message.type === 'success' ? (
+                    <CheckCircle aria-hidden="true" />
+                  ) : (
+                    <AlertCircle aria-hidden="true" />
+                  )}
+                  <p className="font-medium break-words">{message.text}</p>
                 </div>
               )}
-            </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="btn btn-filled btn-lg btn-block mt-5"
+              >
+                <Save aria-hidden="true" />
+                {isSaving ? '保存中...' : '保存'}
+              </button>
+            </form>
+
+            {/* Rate History */}
+            <section className="section">
+              <h2 className="section-header">料率履歴</h2>
+              <div className="list-group">
+                {history.length === 0 ? (
+                  <div className="list-row justify-center">
+                    <span className="t-body text-label-2">履歴がありません</span>
+                  </div>
+                ) : (
+                  history.map((rate, index) => (
+                    <div key={rate.effectiveDate} className="list-row">
+                      <div className="list-row-title">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="t-body tabular truncate">
+                            {rate.effectiveDate.replace('-', '年')}月〜
+                          </span>
+                          {index === 0 && (
+                            <span className="pill pill-tint flex-shrink-0">適用中</span>
+                          )}
+                        </div>
+                        <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 t-footnote tabular text-label-2 sm:grid-cols-4">
+                          <span>健康保険: {rate.healthInsuranceRate}%</span>
+                          <span>介護保険: {rate.nursingInsuranceRate}%</span>
+                          <span>厚生年金: {rate.pensionRate}%</span>
+                          <span>雇用保険: {rate.employmentInsuranceRate}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
 
             {/* Note */}
-            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-              <h4 className="font-medium text-amber-800 mb-2">注意事項</h4>
-              <ul className="text-sm text-amber-700 list-disc list-inside space-y-1">
-                <li>毎年3月に協会けんぽの料率が改定されます</li>
-                <li>都道府県によって健康保険料率が異なります</li>
-                <li>料率変更は翌月分の給与計算から適用されます</li>
-              </ul>
+            <div className="callout callout-warning mt-6">
+              <AlertTriangle aria-hidden="true" />
+              <div className="min-w-0">
+                <h3 className="font-semibold">注意事項</h3>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 t-footnote">
+                  <li>毎年3月に協会けんぽの料率が改定されます</li>
+                  <li>都道府県によって健康保険料率が異なります</li>
+                  <li>料率変更は翌月分の給与計算から適用されます</li>
+                </ul>
+              </div>
             </div>
           </>
         )}

@@ -1,19 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Save,
   AlertCircle,
   CheckCircle,
   AlertTriangle,
-  Loader2,
-  CalendarDays,
-  Clock as ClockIcon,
   Send,
   Lock,
-  FileText,
   Info,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -33,7 +28,7 @@ import type {
   ShiftDiffKind,
   StaffInfo,
 } from '../../types';
-import { Header, Loading, Modal, ApplicationModal, SubmissionStatusBadge, ShiftDiffKindBadge, ApplicationStatusBadge } from '../../components/common';
+import { Header, Loading, Modal, ApplicationModal, SubmissionStatusBadge, ShiftDiffKindBadge, ApplicationStatusBadge, Spinner } from '../../components/common';
 import { formatLocalDate, extractLocalTimeHHMM } from '../../utils/calculations';
 import {
   computeWorkAndOvertime,
@@ -41,6 +36,23 @@ import {
   getLegalBreakMinutes,
 } from '../../utils/breakCalculator';
 import { detectShiftDiff, estimatedPlannedBreak, APPLICATION_TYPE_LABEL } from '../../utils/shiftDiff';
+
+// ---- 日別の行の見た目 ----
+// iPhone: 「日付・シフト」/「出勤・退勤・休憩・実働」/「差異・申請」/「備考」の縦並び。
+// 幅の広い画面（md 以上）: 日付・出勤・退勤・休憩・実働・備考を 1 行に並べ、差異・申請は 2 行目。
+// 時刻欄は 12 時間表記（「07:03 PM」）+ 時計アイコンでも欠けない幅にしておく。
+const DAY_COLS_MD = 'md:grid-cols-[7.75rem_7.75rem_7.75rem_4rem_3.75rem_minmax(0,1fr)]';
+const DAY_GRID = `grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_3.75rem_3.5rem] ${DAY_COLS_MD}`;
+// 入力欄の見出し（幅の広い画面では列の見出しを出すので、読み上げ用にだけ残す）
+const DAY_CAPTION = 'mb-1 block px-0.5 t-caption2 font-medium text-label-2 md:sr-only';
+// 入力欄（編集できないときは枠を消して、値だけを読みやすく表示する）
+const DAY_INPUT = 'input h-11 text-base disabled:bg-transparent disabled:text-label-2 disabled:opacity-100';
+const DAY_INPUT_CENTER = `${DAY_INPUT} px-1 text-center tabular`;
+// 時刻欄: iPhone の Safari でも値を中央に寄せる。幅の狭い画面では Chrome の時計アイコンを出さず、
+// 時刻の表示幅を確保する（タップすれば時刻の選択は開く）。
+const DAY_INPUT_TIME = `${DAY_INPUT_CENTER} [&::-webkit-date-and-time-value]:text-center max-md:[&::-webkit-calendar-picker-indicator]:hidden`;
+// 小さいボタン（高さ 32px）でも指で押しやすいよう、押せる範囲を上下に 6px ずつ広げる
+const SMALL_BTN_HIT = "relative after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-['']";
 
 export function AttendancePage() {
   const navigate = useNavigate();
@@ -478,607 +490,413 @@ export function AttendancePage() {
     return sum + (isShiftWorkDay || hasActualWork ? 1 : 0);
   }, 0);
 
-  const backLink = isAdmin ? '/admin/attendance' : '/clock';
-  const backLabel = isAdmin ? '勤怠管理へ戻る' : '打刻画面へ戻る';
+  // 「下書き保存」「申請する」（ページ上部と末尾の両方に置く）
+  const actionButtons = (
+    <div className={`grid gap-3 ${isAdmin ? 'grid-cols-1' : 'grid-cols-2'}`}>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={isSaving || !currentStaffId}
+        className={`btn ${isAdmin ? 'btn-filled' : 'btn-gray'}`}
+      >
+        {isSaving ? <Spinner size={18} className="!text-current" /> : <Save aria-hidden="true" />}
+        下書き保存
+      </button>
+      {!isAdmin && (
+        <button
+          type="button"
+          onClick={() => setShowSubmitModal(true)}
+          disabled={!submissionGate.canSubmit || isSubmitting}
+          className="btn btn-filled"
+          title={submissionGate.canSubmit ? '月次提出' : submissionGate.blockingReasons[0]}
+        >
+          <Send aria-hidden="true" />
+          申請する
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="出勤簿" />
+    <div className="page">
+      {isAdmin ? (
+        <Header
+          title="出勤簿の編集"
+          subtitle={currentStaffName ? `${currentStaffName}さん` : undefined}
+          backTo="/admin/more"
+          backLabel="その他"
+          backMobileOnly
+        />
+      ) : (
+        <Header title="出勤簿" subtitle={currentStaffName ? `${currentStaffName}さん` : undefined} />
+      )}
 
-      <main className="max-w-7xl mx-auto p-4 sm:p-6">
-        <Link
-          to={backLink}
-          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">{backLabel}</span>
-        </Link>
-
-        {/* Status Banner */}
-        <div className="card mb-5 flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="min-w-0">
-              <div className="text-xs text-secondary-500 mb-1 truncate">{currentStaffName} さんの {selectedYear}年{selectedMonth}月</div>
-              <div className="flex flex-wrap items-center gap-2">
-                <SubmissionStatusBadge status={submissionStatus} />
-                {submission?.rejectionReason && (
-                  <span className="text-xs text-red-600">差戻理由: {submission.rejectionReason}</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Month Selector */}
+      <main className="page-content">
+        {/* 月の切り替え・提出状況・今月の集計 */}
+        <section className="card" aria-label="表示する月と今月の集計">
           <div className="flex items-center justify-center gap-1">
             <button
+              type="button"
               onClick={handlePreviousMonth}
-              className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors min-h-11 min-w-11 flex items-center justify-center"
+              className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full text-tint transition-colors hover:bg-fill active:bg-fill-2"
               aria-label="前の月"
             >
-              <ChevronLeft className="w-5 h-5 text-secondary-600" />
+              <ChevronLeft className="h-6 w-6" strokeWidth={2.4} aria-hidden="true" />
             </button>
-            <span className="text-lg font-bold min-w-[140px] text-center text-secondary-800">
+            <h2 className="min-w-[7.5em] text-center t-title3 tabular" aria-live="polite">
               {selectedYear}年{selectedMonth}月
-            </span>
+            </h2>
             <button
+              type="button"
               onClick={handleNextMonth}
-              className="p-2.5 rounded-xl hover:bg-primary-50 transition-colors min-h-11 min-w-11 flex items-center justify-center"
+              className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full text-tint transition-colors hover:bg-fill active:bg-fill-2"
               aria-label="次の月"
             >
-              <ChevronRight className="w-5 h-5 text-secondary-600" />
+              <ChevronRight className="h-6 w-6" strokeWidth={2.4} aria-hidden="true" />
             </button>
           </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
+            <SubmissionStatusBadge status={submissionStatus} />
             {hasUnsavedChanges && !isLocked && (
-              <span className="self-start text-sm text-amber-600 inline-flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
-                <AlertTriangle className="w-3.5 h-3.5" />未保存
+              <span className="pill pill-warning">
+                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                未保存
               </span>
             )}
-            {isLocked ? (
-              <span className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary-100 text-secondary-600 text-sm">
-                <Lock className="w-3.5 h-3.5" />編集ロック中
+            {isLocked && (
+              <span className="pill pill-neutral">
+                <Lock className="h-3 w-3" aria-hidden="true" />
+                編集ロック中
               </span>
-            ) : (
-              <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
-                <button
-                  onClick={handleSave}
-                  disabled={isSaving || !currentStaffId}
-                  className="btn btn-secondary inline-flex items-center justify-center gap-2 min-h-11 whitespace-nowrap"
-                >
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  <span>下書き保存</span>
-                </button>
-                {!isAdmin && (
-                  <button
-                    onClick={() => setShowSubmitModal(true)}
-                    disabled={!submissionGate.canSubmit || isSubmitting}
-                    className="btn btn-primary inline-flex items-center justify-center gap-2 min-h-11 whitespace-nowrap"
-                    title={submissionGate.canSubmit ? '月次提出' : submissionGate.blockingReasons[0]}
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>申請する</span>
-                  </button>
-                )}
-              </div>
             )}
           </div>
-        </div>
 
-        {/* Message */}
+          {!isLoading && (
+            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="tile">
+                <dt className="t-footnote text-label-2">入力済み</dt>
+                <dd className="mt-0.5 t-title3 tabular">
+                  {filledRowCount}
+                  <span className="ml-1 t-footnote font-normal text-label-2">/ {expectedWorkDays}日</span>
+                </dd>
+              </div>
+              <div className="tile">
+                <dt className="t-footnote text-label-2">総労働時間</dt>
+                <dd className="mt-0.5 t-title3 tabular">{formatMinutes(totalWorkMinutes)}</dd>
+              </div>
+              <div className="tile">
+                <dt className="t-footnote text-label-2">残業時間</dt>
+                <dd className={`mt-0.5 t-title3 tabular ${totalOvertimeMinutes > 0 ? 'text-warning' : ''}`}>
+                  {formatMinutes(totalOvertimeMinutes)}
+                </dd>
+              </div>
+              <div className="tile">
+                <dt className="t-footnote text-label-2">申請</dt>
+                <dd className="mt-0.5 t-title3 tabular">
+                  {applications.length}
+                  <span className="ml-1 t-footnote font-normal text-label-2">
+                    ({applications.filter(a => a.status === 'approved').length}承認/{applications.filter(a => a.status === 'pending').length}待)
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          )}
+        </section>
+
+        {/* 差戻しの理由 */}
+        {submission?.rejectionReason && (
+          <div className="callout callout-danger mt-3">
+            <AlertCircle aria-hidden="true" />
+            <p className="min-w-0 break-words">
+              <span className="font-semibold">差戻理由:</span> {submission.rejectionReason}
+            </p>
+          </div>
+        )}
+
+        {/* 操作（上部） */}
+        {!isLocked && <div className="mt-4">{actionButtons}</div>}
+
+        {/* 結果のお知らせ */}
         {message && (
           <div
-            className={`flex items-center gap-3 px-5 py-4 rounded-xl mb-5 border ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-red-50 text-red-700 border-red-200'
-            }`}
+            className={`callout mt-3 ${message.type === 'success' ? 'callout-success' : 'callout-danger'}`}
+            role={message.type === 'error' ? 'alert' : 'status'}
           >
-            {message.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 flex-shrink-0" />}
-            <p className="text-sm font-medium">{message.text}</p>
+            {message.type === 'success' ? <CheckCircle aria-hidden="true" /> : <AlertCircle aria-hidden="true" />}
+            <p className="font-medium break-words">{message.text}</p>
           </div>
         )}
 
-        {/* Submission gate blocking reasons */}
+        {/* 提出できない理由 */}
         {!isLocked && submissionGate.blockingReasons.length > 0 && (
-          <div className="card mb-5 border-amber-200 bg-amber-50/50">
-            <div className="flex items-start gap-3 text-sm">
-              <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-semibold text-amber-700 mb-1">提出する前に以下に対応してください</p>
-                <ul className="text-amber-700 space-y-0.5 text-xs">
-                  {submissionGate.blockingReasons.slice(0, 8).map((r, i) => (
-                    <li key={i}>・{r}</li>
-                  ))}
-                  {submissionGate.blockingReasons.length > 8 && (
-                    <li>・ほか {submissionGate.blockingReasons.length - 8} 件</li>
-                  )}
-                </ul>
-              </div>
+          <div className="callout callout-warning mt-3">
+            <AlertTriangle aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">提出する前に以下に対応してください</p>
+              <ul className="mt-1 space-y-0.5 t-footnote tabular break-words">
+                {submissionGate.blockingReasons.slice(0, 8).map((r, i) => (
+                  <li key={i} className="pl-[1em] -indent-[1em]">・{r}</li>
+                ))}
+                {submissionGate.blockingReasons.length > 8 && (
+                  <li className="pl-[1em] -indent-[1em]">・ほか {submissionGate.blockingReasons.length - 8} 件</li>
+                )}
+              </ul>
             </div>
           </div>
         )}
 
-        {/* Summary cards (上部) */}
-        {!isLoading && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <CalendarDays className="w-4 h-4 text-primary-500" />
-                <span className="text-xs font-medium text-secondary-500">入力済み</span>
-              </div>
-              <div className="text-2xl font-bold text-secondary-800">{filledRowCount}<span className="text-sm text-secondary-400 ml-1">/ {expectedWorkDays}日</span></div>
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <ClockIcon className="w-4 h-4 text-blue-500" />
-                <span className="text-xs font-medium text-secondary-500">総労働時間</span>
-              </div>
-              <div className="text-2xl font-bold text-secondary-800">{formatMinutes(totalWorkMinutes)}</div>
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
-                <span className="text-xs font-medium text-secondary-500">残業時間</span>
-              </div>
-              <div className="text-2xl font-bold text-amber-600">{formatMinutes(totalOvertimeMinutes)}</div>
-            </div>
-            <div className="card p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <FileText className="w-4 h-4 text-primary-500" />
-                <span className="text-xs font-medium text-secondary-500">申請</span>
-              </div>
-              <div className="text-2xl font-bold text-secondary-800">
-                {applications.length}
-                <span className="text-xs text-secondary-400 ml-1">
-                  ({applications.filter(a => a.status === 'approved').length}承認/{applications.filter(a => a.status === 'pending').length}待)
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Guide */}
-        <div className="bg-primary-50/50 border border-primary-200/50 rounded-2xl px-5 py-3.5 mb-5">
-          <div className="flex items-start gap-3 text-sm">
-            <Info className="w-4 h-4 text-primary-600 flex-shrink-0 mt-1" />
-            <div className="text-secondary-600 space-y-1">
-              <p>シフトと差異がある日は<strong className="text-amber-600">申請が必要</strong>です。理由を添えて申請してください。</p>
-              <p>休憩は<strong>法定通り自動付与</strong>されます。実態と異なる場合は休憩列で修正できます（修正は履歴に記録されます）。</p>
-            </div>
+        {/* 入力のしかた */}
+        <div className="callout callout-tint mt-3">
+          <Info aria-hidden="true" />
+          <div className="min-w-0 space-y-1">
+            <p>シフトと差異がある日は<strong className="font-semibold text-warning">申請が必要</strong>です。理由を添えて申請してください。</p>
+            <p className="t-footnote text-label-2">
+              休憩は<strong className="font-semibold text-label">法定通り自動付与</strong>されます。実態と異なる場合は休憩欄で修正できます（修正は履歴に記録されます）。
+            </p>
           </div>
         </div>
 
-        {/* Loading state */}
         {isLoading ? (
-          <div className="card overflow-hidden p-0">
-            <div className="p-10"><Loading message="読み込み中..." /></div>
+          <div className="card mt-6 py-10">
+            <Loading message="読み込み中..." />
           </div>
         ) : (
           <>
-            {/* Mobile: Card stack (< sm) */}
-            <div className="sm:hidden space-y-2">
-              {rows.map((row, index) => {
-                const diff = rowDiffs[index];
-                const dateApps = applicationsByDate[row.date] || [];
-                const dateObj = new Date(row.date);
-                const dow = dateObj.getDay();
-                const isSunday = dow === 0;
-                const isSaturday = dow === 6;
-                const hasOvertime = row.overtimeMinutes > 0;
-                const shiftLabel = row.shift
-                  ? row.shift.isOff
-                    ? `休${row.shift.isTentative ? '(仮)' : ''}`
-                    : `${row.shift.startTime || '?'} - ${row.shift.endTime || '?'}${row.shift.isTentative ? '(仮)' : ''}`
-                  : '';
-                const cellDisabled = isLocked;
-                const cardBg =
-                  diff && diff.hasIssue && dateApps.length === 0 ? 'bg-amber-50/60 border-amber-200' :
-                  isSunday || isSaturday ? 'bg-secondary-50/60 border-secondary-200' :
-                  'bg-white border-secondary-200';
-                return (
-                  <div
-                    key={row.date}
-                    className={`rounded-xl border overflow-hidden ${cardBg}`}
-                  >
-                    {/* Header: date + shift + 定時ボタン */}
-                    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-secondary-100/70">
-                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                        <span className={`text-sm font-bold ${
-                          isSunday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-secondary-800'
-                        }`}>
-                          {selectedMonth}/{formatDateLabel(row.date)}
+            {/* 日別の勤怠 */}
+            <section className="section" aria-labelledby="attendance-days-heading">
+              <h2 id="attendance-days-heading" className="section-header md:sr-only">日別の勤怠</h2>
+              {/* 幅の広い画面だけ、列の見出しを出す（各入力欄には個別のラベルがある） */}
+              <div aria-hidden="true" className={`hidden gap-x-2 whitespace-nowrap px-4 pb-1.5 t-footnote font-medium text-label-2 md:grid ${DAY_COLS_MD}`}>
+                <span>日付</span>
+                <span className="text-center">出勤</span>
+                <span className="text-center">退勤</span>
+                <span className="text-center">休憩（分）</span>
+                <span className="text-center">実働</span>
+                <span className="pl-3">備考</span>
+              </div>
+              <div className="list-group">
+                {rows.map((row, index) => {
+                  const diff = rowDiffs[index];
+                  const dateApps = applicationsByDate[row.date] || [];
+                  const dateObj = new Date(row.date);
+                  const dow = dateObj.getDay();
+                  const isSunday = dow === 0;
+                  const isSaturday = dow === 6;
+                  const hasOvertime = row.overtimeMinutes > 0;
+                  const shiftLabel = row.shift
+                    ? row.shift.isOff
+                      ? `休${row.shift.isTentative ? '(仮)' : ''}`
+                      : `${row.shift.startTime || '?'} - ${row.shift.endTime || '?'}${row.shift.isTentative ? '(仮)' : ''}`
+                    : '';
+                  const cellDisabled = isLocked;
+                  return (
+                    <div
+                      key={row.date}
+                      role="group"
+                      aria-label={`${selectedMonth}/${formatDateLabel(row.date)}`}
+                      className={`list-row ${DAY_GRID} items-center gap-x-2 gap-y-2.5 py-3 ${
+                        diff && diff.hasIssue && dateApps.length === 0 ? 'bg-warning-fill/50' : ''
+                      }`}
+                    >
+                      {/* 日付・シフト・定時で入力 */}
+                      <div className="col-span-4 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 md:col-span-1">
+                        <span
+                          className={`text-[17px] font-semibold leading-snug tabular md:text-[15px] ${
+                            isSunday ? 'text-danger' : isSaturday ? 'text-info' : 'text-label'
+                          }`}
+                        >
+                          <span className="md:hidden">{selectedMonth}/</span>
+                          {formatDateLabel(row.date)}
                         </span>
-                        {row.shift ? (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
-                            row.shift.isTentative
-                              ? 'text-secondary-400 border-secondary-200 bg-secondary-50'
-                              : row.shift.isOff
-                                ? 'text-secondary-600 border-secondary-200 bg-secondary-100'
-                                : 'text-secondary-700 border-primary-200 bg-primary-50'
-                          }`}>
-                            {shiftLabel}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-secondary-200 bg-secondary-50 text-secondary-300">
-                            シフト未登録
-                          </span>
+                        <span className="md:order-last md:basis-full">
+                          {row.shift ? (
+                            <span
+                              className={`pill tabular ${
+                                row.shift.isTentative
+                                  ? 'text-label-2 ring-1 ring-inset ring-separator'
+                                  : row.shift.isOff
+                                    ? 'pill-neutral'
+                                    : 'pill-tint'
+                              }`}
+                            >
+                              {shiftLabel}
+                            </span>
+                          ) : (
+                            <span className="t-caption text-label-3">シフト未登録</span>
+                          )}
+                        </span>
+                        {row.shift && !row.shift.isOff && !row.shift.isTentative && row.shift.startTime && row.shift.endTime && !cellDisabled && (
+                          <button
+                            type="button"
+                            onClick={() => applyScheduledTime(index)}
+                            className={`btn btn-sm btn-tinted ml-auto md:px-2.5 ${SMALL_BTN_HIT}`}
+                            title="出勤・退勤を定時で埋める"
+                          >
+                            <span>定時<span className="md:hidden">で入力</span></span>
+                          </button>
                         )}
                       </div>
-                      {row.shift && !row.shift.isOff && !row.shift.isTentative && row.shift.startTime && row.shift.endTime && !cellDisabled && (
-                        <button
-                          type="button"
-                          onClick={() => applyScheduledTime(index)}
-                          className="shrink-0 inline-flex items-center gap-1 px-3 h-9 text-xs font-bold border border-primary-400 text-primary-700 bg-primary-100 rounded-lg hover:bg-primary-200 active:scale-95 transition-all shadow-sm"
-                          title="出勤・退勤を定時で埋める"
-                        >
-                          <ClockIcon className="w-3.5 h-3.5" />定時で入力
-                        </button>
-                      )}
-                    </div>
 
-                    {/* Body: clock-in/out, break, work/overtime — 横一列 */}
-                    <div className="px-3 py-2 space-y-2">
-                      <div className="grid grid-cols-4 gap-1.5">
-                        <label className="block min-w-0">
-                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">出勤</span>
-                          <input
-                            type="time"
-                            value={row.clockIn}
-                            onChange={e => updateRow(index, 'clockIn', e.target.value)}
-                            disabled={cellDisabled}
-                            className="w-full h-10 px-1 text-sm text-center border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
-                          />
-                        </label>
-                        <label className="block min-w-0">
-                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">退勤</span>
-                          <input
-                            type="time"
-                            value={row.clockOut}
-                            onChange={e => updateRow(index, 'clockOut', e.target.value)}
-                            disabled={cellDisabled}
-                            className="w-full h-10 px-1 text-sm text-center border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
-                          />
-                        </label>
-                        <label className="block min-w-0">
-                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">休憩</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={480}
-                            inputMode="numeric"
-                            value={
-                              !row.clockIn || !row.clockOut
-                                ? ''
-                                : row.breakMinutesIsManual
-                                  ? row.breakMinutes
-                                  : (row.breakMinutes || '')
-                            }
-                            onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
-                            disabled={cellDisabled || (!row.clockIn || !row.clockOut)}
-                            className={`w-full h-10 px-1 text-sm text-center border rounded-md focus:outline-none ${
-                              row.breakMinutesIsManual ? 'border-amber-300 bg-amber-50' : 'border-secondary-200 bg-white'
-                            } focus:border-primary-400 focus:ring-2 focus:ring-primary-200 disabled:bg-secondary-50 disabled:text-secondary-300`}
-                            placeholder="-"
-                            title={row.breakMinutesIsManual ? '手動修正済み' : '法定休憩を自動付与'}
-                          />
-                        </label>
-                        <div className="block min-w-0">
-                          <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">実働{hasOvertime ? '/残業' : ''}</span>
-                          <div className="h-10 flex flex-col items-center justify-center px-1 rounded-md bg-secondary-50 border border-secondary-100 leading-tight">
-                            <span className={`text-sm font-mono ${row.workMinutes > 0 ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
-                              {formatMinutes(row.workMinutes)}
+                      <label className="min-w-0">
+                        <span className={DAY_CAPTION}>出勤</span>
+                        <input
+                          type="time"
+                          value={row.clockIn}
+                          onChange={e => updateRow(index, 'clockIn', e.target.value)}
+                          disabled={cellDisabled}
+                          className={DAY_INPUT_TIME}
+                        />
+                      </label>
+                      <label className="min-w-0">
+                        <span className={DAY_CAPTION}>退勤</span>
+                        <input
+                          type="time"
+                          value={row.clockOut}
+                          onChange={e => updateRow(index, 'clockOut', e.target.value)}
+                          disabled={cellDisabled}
+                          className={DAY_INPUT_TIME}
+                        />
+                      </label>
+                      <label className="min-w-0">
+                        <span className={DAY_CAPTION}>休憩（分）</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={480}
+                          inputMode="numeric"
+                          // Show "0" as 0 when manually set to zero; only blank if no clock data yet
+                          value={
+                            !row.clockIn || !row.clockOut
+                              ? ''
+                              : row.breakMinutesIsManual
+                                ? row.breakMinutes
+                                : (row.breakMinutes || '')
+                          }
+                          onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
+                          disabled={cellDisabled || (!row.clockIn || !row.clockOut)}
+                          className={`${DAY_INPUT_CENTER} ${
+                            row.breakMinutesIsManual ? '!bg-warning-fill font-semibold !text-warning' : ''
+                          }`}
+                          placeholder="-"
+                          title={row.breakMinutesIsManual ? '手動修正済み' : '法定休憩を自動付与'}
+                        />
+                      </label>
+                      <div className="min-w-0">
+                        <span className={DAY_CAPTION}>実働{hasOvertime ? '/残業' : ''}</span>
+                        <div className="flex h-11 flex-col items-center justify-center leading-tight tabular">
+                          <span className={`text-[15px] ${row.workMinutes > 0 ? 'font-semibold text-label' : 'text-label-3'}`}>
+                            {formatMinutes(row.workMinutes)}
+                          </span>
+                          {hasOvertime && (
+                            <span className="t-caption2 font-semibold text-warning">
+                              残{formatMinutes(row.overtimeMinutes)}
                             </span>
-                            {hasOvertime && (
-                              <span className="text-[9px] font-semibold text-amber-600">
-                                残{formatMinutes(row.overtimeMinutes)}
-                              </span>
-                            )}
-                          </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Diff / Application */}
+                      {/* 差異 / 申請 */}
                       {diff && diff.hasIssue && (
-                        <div>
-                          <span className="block text-xs font-medium text-secondary-500 mb-1.5">差異 / 申請</span>
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {diff.kinds.map(kind => {
-                              const matched = findRelevantApp(dateApps, kind);
-                              if (!matched || matched.status === 'rejected') {
-                                return (
-                                  <div key={kind} className="flex items-center gap-1 flex-wrap">
-                                    {matched && (
-                                      <>
-                                        <ShiftDiffKindBadge kind={kind} />
-                                        <ApplicationStatusBadge status={matched.status} />
-                                      </>
-                                    )}
-                                    <button
-                                      onClick={() => {
-                                        setAppModalDate(row.date);
-                                        setAppModalDiff(diff);
-                                        setAppModalKind(kind);
-                                      }}
-                                      disabled={cellDisabled}
-                                      className="inline-flex items-center gap-1 h-9 px-3 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
-                                    >
-                                      <Send className="w-3 h-3" />
-                                      {matched ? '再申請' : '申請'}
-                                    </button>
-                                  </div>
-                                );
-                              }
+                        <div className="col-span-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 md:col-span-5 md:col-start-2 md:row-start-2">
+                          <span className="t-caption font-medium text-label-2">差異 / 申請</span>
+                          {diff.kinds.map(kind => {
+                            const matched = findRelevantApp(dateApps, kind);
+                            // No application yet → show 申請 button
+                            // Rejected (latest) → also show re-apply button alongside the badge
+                            if (!matched || matched.status === 'rejected') {
                               return (
-                                <div key={kind} className="flex items-center gap-1">
+                                <div key={kind} className="flex flex-wrap items-center gap-1.5">
                                   <ShiftDiffKindBadge kind={kind} />
-                                  <ApplicationStatusBadge status={matched.status} />
+                                  {matched && <ApplicationStatusBadge status={matched.status} />}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAppModalDate(row.date);
+                                      setAppModalDiff(diff);
+                                      setAppModalKind(kind);
+                                    }}
+                                    disabled={cellDisabled}
+                                    className={`btn btn-sm btn-tinted ${SMALL_BTN_HIT}`}
+                                  >
+                                    <Send aria-hidden="true" />
+                                    {matched ? '再申請' : '申請'}
+                                  </button>
                                 </div>
                               );
-                            })}
-                          </div>
+                            }
+                            return (
+                              <div key={kind} className="flex items-center gap-1.5">
+                                <ShiftDiffKindBadge kind={kind} />
+                                <ApplicationStatusBadge status={matched.status} />
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
 
-                      {/* Remarks */}
-                      <label className="block">
-                        <span className="block text-[10px] font-medium text-secondary-500 mb-0.5">備考</span>
+                      {/* 備考 */}
+                      <label className="col-span-4 flex min-w-0 items-center gap-3 md:col-span-1 md:col-start-6 md:row-start-1">
+                        <span className="flex-shrink-0 t-footnote text-label-2 md:sr-only">備考</span>
                         <input
                           type="text"
                           value={row.remarks}
                           onChange={e => updateRow(index, 'remarks', e.target.value)}
                           disabled={cellDisabled}
-                          className="w-full h-10 px-2 text-sm border border-secondary-200 rounded-md focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400 bg-white"
+                          className={`${DAY_INPUT} min-w-0 flex-1 px-3`}
                           placeholder="-"
                         />
                       </label>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Tablet+: Table (>= sm) */}
-            <div className="card overflow-hidden p-0 hidden sm:block">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1100px]">
-                  <thead>
-                    <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
-                      <th className="px-3 py-3 text-left text-xs font-semibold w-20">日付</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold w-28">予定（シフト）</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold w-[108px]">出勤</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold w-[108px]">退勤</th>
-                      <th className="px-3 py-3 text-center text-xs font-semibold w-20">休憩<span className="font-normal opacity-70">（分）</span></th>
-                      <th className="px-3 py-3 text-center text-xs font-semibold w-20">実働</th>
-                      <th className="px-3 py-3 text-center text-xs font-semibold w-20">残業</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold">差異 / 申請</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold w-[120px]">備考</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, index) => {
-                      const diff = rowDiffs[index];
-                      const dateApps = applicationsByDate[row.date] || [];
-                      const dateObj = new Date(row.date);
-                      const dow = dateObj.getDay();
-                      const isSunday = dow === 0;
-                      const isSaturday = dow === 6;
-                      const hasOvertime = row.overtimeMinutes > 0;
-                      const shiftLabel = row.shift
-                        ? row.shift.isOff
-                          ? `休${row.shift.isTentative ? '(仮)' : ''}`
-                          : `${row.shift.startTime || '?'} - ${row.shift.endTime || '?'}${row.shift.isTentative ? '(仮)' : ''}`
-                        : '';
-                      const cellDisabled = isLocked;
-                      return (
-                        <tr key={row.date} className={`border-b border-secondary-100 last:border-0 transition-colors ${
-                          diff && diff.hasIssue && dateApps.length === 0 ? 'bg-amber-50/40' :
-                          isSunday || isSaturday ? 'bg-secondary-50/60' : 'bg-white'
-                        } hover:bg-primary-50/30`}>
-                          <td className={`px-3 py-2 text-sm whitespace-nowrap ${
-                            isSunday ? 'text-red-500 font-semibold' : isSaturday ? 'text-blue-500 font-semibold' : 'text-secondary-800'
-                          }`}>
-                            {formatDateLabel(row.date)}
-                          </td>
-                          <td className="px-3 py-2 text-xs whitespace-nowrap">
-                            {row.shift ? (
-                              <div className="flex items-center gap-1.5">
-                                <span className={row.shift.isTentative ? 'text-secondary-400' : 'text-secondary-700'}>
-                                  {shiftLabel}
-                                </span>
-                                {!row.shift.isOff && !row.shift.isTentative && row.shift.startTime && row.shift.endTime && !cellDisabled && (
-                                  <button
-                                    type="button"
-                                    onClick={() => applyScheduledTime(index)}
-                                    className="px-1.5 py-0.5 text-[10px] font-semibold border border-primary-300 text-primary-700 bg-primary-50 rounded hover:bg-primary-100 transition-colors"
-                                    title="出勤・退勤を定時で埋める"
-                                  >
-                                    定時
-                                  </button>
-                                )}
-                              </div>
-                            ) : <span className="text-secondary-300">未登録</span>}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="time"
-                              value={row.clockIn}
-                              onChange={e => updateRow(index, 'clockIn', e.target.value)}
-                              disabled={cellDisabled}
-                              className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="time"
-                              value={row.clockOut}
-                              onChange={e => updateRow(index, 'clockOut', e.target.value)}
-                              disabled={cellDisabled}
-                              className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
-                            />
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="number"
-                              min={0}
-                              max={480}
-                              // Show "0" as 0 when manually set to zero; only blank if no clock data yet
-                              value={
-                                !row.clockIn || !row.clockOut
-                                  ? ''
-                                  : row.breakMinutesIsManual
-                                    ? row.breakMinutes
-                                    : (row.breakMinutes || '')
-                              }
-                              onChange={e => updateRow(index, 'breakMinutes', e.target.value)}
-                              disabled={cellDisabled || (!row.clockIn || !row.clockOut)}
-                              className={`w-full py-1.5 px-2 text-sm text-center border rounded-lg focus:outline-none ${
-                                row.breakMinutesIsManual ? 'border-amber-300 bg-amber-50' : 'border-secondary-200 bg-white'
-                              } focus:border-primary-400 focus:ring-2 focus:ring-primary-200 disabled:bg-secondary-50 disabled:text-secondary-300`}
-                              placeholder="-"
-                              title={row.breakMinutesIsManual ? '手動修正済み' : '法定休憩を自動付与'}
-                            />
-                          </td>
-                          <td className="px-3 py-1.5 text-center">
-                            <span className={`text-sm font-mono ${row.workMinutes > 0 ? 'font-semibold text-secondary-800' : 'text-secondary-300'}`}>
-                              {formatMinutes(row.workMinutes)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-1.5 text-center">
-                            {hasOvertime ? (
-                              <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
-                                <AlertTriangle className="w-3 h-3" />{formatMinutes(row.overtimeMinutes)}
-                              </span>
-                            ) : <span className="text-sm text-secondary-300">-</span>}
-                          </td>
-                          <td className="px-3 py-1.5">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {diff && diff.hasIssue && diff.kinds.map(kind => {
-                                const matched = findRelevantApp(dateApps, kind);
-                                // No application yet → show 申請 button
-                                // Rejected (latest) → also show re-apply button alongside the badge
-                                if (!matched || matched.status === 'rejected') {
-                                  return (
-                                    <div key={kind} className="flex items-center gap-1">
-                                      {matched && (
-                                        <>
-                                          <ShiftDiffKindBadge kind={kind} />
-                                          <ApplicationStatusBadge status={matched.status} />
-                                        </>
-                                      )}
-                                      <button
-                                        onClick={() => {
-                                          setAppModalDate(row.date);
-                                          setAppModalDiff(diff);
-                                          setAppModalKind(kind);
-                                        }}
-                                        disabled={cellDisabled}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors disabled:opacity-50"
-                                      >
-                                        <Send className="w-3 h-3" />
-                                        {matched ? '再申請' : '申請'}
-                                      </button>
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <div key={kind} className="flex items-center gap-1">
-                                    <ShiftDiffKindBadge kind={kind} />
-                                    <ApplicationStatusBadge status={matched.status} />
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="text"
-                              value={row.remarks}
-                              onChange={e => updateRow(index, 'remarks', e.target.value)}
-                              disabled={cellDisabled}
-                              className="w-full py-1.5 px-2.5 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none disabled:bg-secondary-50 disabled:text-secondary-400"
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                  );
+                })}
               </div>
-            </div>
+            </section>
 
-            {/* ページ末尾のアクション + サマリ（スクロール末尾でも操作できるように） */}
-            <div className="mt-6 sm:mt-8 space-y-4">
-              {/* アクションボタン */}
-              {!isLocked && (
-                <div className="card !p-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  {hasUnsavedChanges && (
-                    <span className="self-start text-sm text-amber-600 inline-flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200">
-                      <AlertTriangle className="w-3.5 h-3.5" />未保存の変更あり
-                    </span>
-                  )}
-                  <div className="grid grid-cols-2 sm:flex sm:items-center sm:ml-auto gap-2 w-full sm:w-auto">
-                    <button
-                      onClick={handleSave}
-                      disabled={isSaving || !currentStaffId}
-                      className="btn btn-secondary inline-flex items-center justify-center gap-2 min-h-11 whitespace-nowrap"
-                    >
-                      {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      <span>下書き保存</span>
-                    </button>
-                    {!isAdmin && (
-                      <button
-                        onClick={() => setShowSubmitModal(true)}
-                        disabled={!submissionGate.canSubmit || isSubmitting}
-                        className="btn btn-primary inline-flex items-center justify-center gap-2 min-h-11 whitespace-nowrap"
-                        title={submissionGate.canSubmit ? '月次提出' : submissionGate.blockingReasons[0]}
-                      >
-                        <Send className="w-4 h-4" />
-                        <span>申請する</span>
-                      </button>
-                    )}
-                  </div>
+            {/* ページ末尾: 今月の合計 + 操作（スクロールした先でも確認・操作できるように） */}
+            <section className="section">
+              <h2 className="section-header">今月の合計</h2>
+              <dl className="list-group">
+                <div className="list-row">
+                  <dt className="list-row-title t-body">入力済み</dt>
+                  <dd className="list-row-detail tabular">
+                    {filledRowCount} / {expectedWorkDays}日
+                  </dd>
                 </div>
-              )}
-
-              {/* サマリ */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                <div className="card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CalendarDays className="w-4 h-4 text-primary-500" />
-                    <span className="text-xs font-medium text-secondary-500">入力済み</span>
-                  </div>
-                  <div className="text-2xl font-bold text-secondary-800">{filledRowCount}<span className="text-sm text-secondary-400 ml-1">/ {expectedWorkDays}日</span></div>
+                <div className="list-row">
+                  <dt className="list-row-title t-body">総労働時間</dt>
+                  <dd className="list-row-detail tabular">{formatMinutes(totalWorkMinutes)}</dd>
                 </div>
-                <div className="card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <ClockIcon className="w-4 h-4 text-blue-500" />
-                    <span className="text-xs font-medium text-secondary-500">総労働時間</span>
-                  </div>
-                  <div className="text-2xl font-bold text-secondary-800">{formatMinutes(totalWorkMinutes)}</div>
+                <div className="list-row">
+                  <dt className="list-row-title t-body">残業時間</dt>
+                  <dd className={`list-row-detail tabular ${totalOvertimeMinutes > 0 ? 'text-warning' : ''}`}>
+                    {formatMinutes(totalOvertimeMinutes)}
+                  </dd>
                 </div>
-                <div className="card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <span className="text-xs font-medium text-secondary-500">残業時間</span>
-                  </div>
-                  <div className="text-2xl font-bold text-amber-600">{formatMinutes(totalOvertimeMinutes)}</div>
-                </div>
-                <div className="card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <FileText className="w-4 h-4 text-primary-500" />
-                    <span className="text-xs font-medium text-secondary-500">申請</span>
-                  </div>
-                  <div className="text-2xl font-bold text-secondary-800">
+                <div className="list-row">
+                  <dt className="list-row-title t-body">申請</dt>
+                  <dd className="list-row-detail tabular">
                     {applications.length}
-                    <span className="text-xs text-secondary-400 ml-1">
+                    <span className="ml-1 t-subhead">
                       ({applications.filter(a => a.status === 'approved').length}承認/{applications.filter(a => a.status === 'pending').length}待)
                     </span>
-                  </div>
+                  </dd>
                 </div>
+              </dl>
+            </section>
+
+            {!isLocked && (
+              <div className="mt-6">
+                {hasUnsavedChanges && (
+                  <p className="mb-3 flex justify-center">
+                    <span className="pill pill-warning">
+                      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                      未保存の変更あり
+                    </span>
+                  </p>
+                )}
+                {actionButtons}
               </div>
-            </div>
+            )}
           </>
         )}
       </main>
@@ -1100,35 +918,37 @@ export function AttendancePage() {
         title="月次勤怠を提出する"
         size="md"
       >
-        <div className="space-y-4 py-2">
-          <p className="text-secondary-700">
-            <strong>{selectedYear}年{selectedMonth}月</strong>の勤怠を管理者に提出します。
+        <div className="pt-1">
+          <p className="t-body text-label-2">
+            <strong className="font-semibold text-label">{selectedYear}年{selectedMonth}月</strong>の勤怠を管理者に提出します。
             提出後は編集できなくなります（差戻時のみ再編集可）。
           </p>
-          <div>
-            <label className="label">備考（任意）</label>
+          <label className="mt-5 block">
+            <span className="label">備考（任意）</span>
             <textarea
               value={submissionRemarks}
               onChange={e => setSubmissionRemarks(e.target.value)}
-              className="input min-h-[80px] resize-y"
+              className="input"
               rows={3}
               placeholder="管理者への申し送り事項があれば記入"
             />
-          </div>
-          <div className="flex gap-3 pt-2">
+          </label>
+          <div className="mt-6 grid grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => setShowSubmitModal(false)}
               disabled={isSubmitting}
-              className="btn btn-secondary flex-1"
+              className="btn btn-gray"
             >
               キャンセル
             </button>
             <button
+              type="button"
               onClick={handleSubmitMonthly}
               disabled={isSubmitting}
-              className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+              className="btn btn-filled"
             >
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {isSubmitting ? <Spinner size={18} className="!text-current" /> : <Send aria-hidden="true" />}
               提出する
             </button>
           </div>

@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft,
-  Calendar,
   Palmtree,
   Wallet,
   ChevronRight,
   ChevronLeft,
   AlertCircle,
   CheckCircle,
-  ClipboardList,
+  CalendarDays,
   FileText,
+  Download,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi, paidLeaveApi, salaryApi, submissionApi } from '../../api';
@@ -22,7 +22,7 @@ type Tab = 'attendance' | 'paidLeave' | 'salary';
 
 export function MyPage() {
   const navigate = useNavigate();
-  const { staff, isAuthenticated } = useAuth();
+  const { staff, isAuthenticated, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState<Tab>('attendance');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -207,249 +207,248 @@ export function MyPage() {
     });
   };
 
-  const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: 'attendance', label: '勤怠履歴', icon: <Calendar className="w-5 h-5" /> },
-    { key: 'paidLeave', label: '有給休暇', icon: <Palmtree className="w-5 h-5" /> },
-    { key: 'salary', label: '給与明細', icon: <Wallet className="w-5 h-5" /> },
+  // 日付の文字色（日曜は赤・土曜は青）
+  const weekdayColor = (dateStr: string): string => {
+    const day = new Date(dateStr).getDay();
+    return day === 0 ? 'text-danger' : day === 6 ? 'text-info' : '';
+  };
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'attendance', label: '勤怠履歴' },
+    { key: 'paidLeave', label: '有給休暇' },
+    { key: 'salary', label: '給与明細' },
   ];
 
+  // 月の切り替えボタン（‹ ›）
+  const monthButtonClass =
+    'grid h-11 w-11 flex-shrink-0 place-items-center rounded-[10px] text-tint transition-colors enabled:active:bg-fill';
+  // 日別の表のセル
+  const thClass = 't-footnote font-medium text-label-2 py-2.5 px-1.5 text-right first:pl-4 first:text-left last:pr-4';
+  const tdClass = 'whitespace-nowrap py-2.5 px-1.5 text-right first:pl-4 first:text-left last:pr-4';
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
+    <div className="page">
       <Header title="マイページ" />
 
-      <main className="max-w-2xl mx-auto p-3 sm:p-6">
+      <main className="page-content">
         {/* 出勤簿 提出期限アラート / 打刻ブロック通知 */}
         <SubmissionDeadlineBanner gate={gate} />
 
-        {/* Back Link + Attendance + Applications */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-5 gap-3">
-          <Link
-            to="/clock"
-            className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors min-h-11 self-start"
-          >
-            <ArrowLeft className="w-4 h-4 flex-shrink-0" />
-            <span className="text-sm font-medium">打刻画面へ戻る</span>
-          </Link>
-          <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
-            <Link
-              to="/attendance"
-              className="btn btn-primary !py-2.5 !px-4 !text-sm !rounded-xl !min-h-11"
-            >
-              <ClipboardList className="w-4 h-4 flex-shrink-0" />
-              出勤簿
-            </Link>
-            <Link
-              to="/applications"
-              className="btn btn-secondary !py-2.5 !px-4 !text-sm !rounded-xl !min-h-11"
-            >
-              <FileText className="w-4 h-4 flex-shrink-0" />
-              申請一覧
-            </Link>
-          </div>
-        </div>
-
-        {/* Message */}
-        {message && (
-          <div
-            className={`flex items-center gap-3 px-5 py-4 rounded-xl mb-5 border ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-red-50 text-red-700 border-red-200'
-            }`}
-          >
-            {message.type === 'success' ? (
-              <CheckCircle className="w-5 h-5 flex-shrink-0" />
-            ) : (
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            )}
-            <p className="text-sm font-medium">{message.text}</p>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm font-medium">{error}</p>
-          </div>
-        )}
-
-        {/* Submission Status (attendance tab only) */}
-        {activeTab === 'attendance' && submission && (
-          <div className="card mb-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-sm text-secondary-700">
-                <span className="font-medium">
-                  {selectedYear}年{selectedMonth}月
-                </span>
-                <span className="text-secondary-500">の提出状況: </span>
-              </p>
-              <SubmissionStatusBadge status={submission.status} />
-            </div>
-            {submission.status === 'rejected' && submission.rejectionReason && (
-              <p className="mt-3 text-sm text-red-600">
-                差戻理由: {submission.rejectionReason}
-              </p>
-            )}
-            {(submission.status === 'submitted' || submission.status === 'approved') && (
-              <p className="mt-3 text-xs text-secondary-500">編集ロック中</p>
-            )}
-          </div>
-        )}
-
         {/* Tabs */}
-        <div className="flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 scroll-smooth snap-x">
+        <div className="segmented mt-2" role="tablist" aria-label="表示する内容">
           {tabs.map(tab => (
             <button
               key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
               onClick={() => { setActiveTab(tab.key); setError(null); setMessage(null); }}
-              className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 min-h-11 rounded-xl whitespace-nowrap transition-all text-sm font-medium snap-start flex-shrink-0 ${
-                activeTab === tab.key
-                  ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25'
-                  : 'bg-white text-secondary-600 hover:bg-primary-50 hover:text-primary-700 border border-secondary-200 hover:border-primary-200'
-              }`}
+              className="segmented-item"
             >
-              {tab.icon}
               {tab.label}
             </button>
           ))}
         </div>
 
-        {/* Content */}
-        {activeTab === 'attendance' && (
-          <div className="card !p-4 sm:!p-7">
-            {/* Month Selector */}
-            <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
-              <button
-                onClick={handlePreviousMonth}
-                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
-                aria-label="前月"
-              >
-                <ChevronLeft className="w-5 h-5 text-secondary-600" />
-              </button>
-              <h2 className="text-base sm:text-lg font-semibold text-secondary-800 text-center">
-                {selectedYear}年{selectedMonth}月
-              </h2>
-              <button
-                onClick={handleNextMonth}
-                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
-                aria-label="次月"
-              >
-                <ChevronRight className="w-5 h-5 text-secondary-600" />
-              </button>
-            </div>
-
-            {isLoading ? (
-              <div className="py-8">
-                <Loading message="読み込み中..." />
-              </div>
-            ) : attendance.length === 0 ? (
-              <p className="text-center text-secondary-500 py-8 text-sm">
-                この月の勤怠データはありません
-              </p>
+        {/* Message */}
+        {message && (
+          <div
+            className={`callout mt-4 ${message.type === 'success' ? 'callout-success' : 'callout-danger'}`}
+            role={message.type === 'error' ? 'alert' : 'status'}
+          >
+            {message.type === 'success' ? (
+              <CheckCircle aria-hidden="true" />
             ) : (
-              <div className="space-y-2">
-                {/* Header */}
-                <div className="grid grid-cols-5 gap-1 sm:gap-2 text-[11px] sm:text-xs font-semibold text-secondary-500 pb-2 border-b border-secondary-200">
-                  <div>日付</div>
-                  <div>出勤</div>
-                  <div>退勤</div>
-                  <div>休憩</div>
-                  <div>実働</div>
-                </div>
-
-                {/* Records */}
-                {attendance.map(record => (
-                  <div
-                    key={record.date}
-                    className="grid grid-cols-5 gap-1 sm:gap-2 text-xs sm:text-sm py-2 border-b border-secondary-100 last:border-0"
-                  >
-                    <div className="font-medium text-secondary-800">{formatDate(record.date)}</div>
-                    <div className="text-secondary-700">{formatTime(record.clockIn)}</div>
-                    <div className="text-secondary-700">
-                      {formatTime(record.clockOut)}
-                    </div>
-                    <div className="text-secondary-700">
-                      {record.breakMinutes > 0 ? `${record.breakMinutes}分` : '-'}
-                    </div>
-                    <div className="text-secondary-900 font-medium">
-                      {record.workMinutes > 0 ? formatMinutesAsTime(record.workMinutes) : '-'}
-                    </div>
-                  </div>
-                ))}
-
-                {/* Summary */}
-                <div className="pt-4 mt-4 border-t-2 border-secondary-200">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-secondary-600">出勤日数</span>
-                    <span className="font-medium text-secondary-800">
-                      {attendance.filter(r => r.workMinutes > 0).length}日
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm mt-2">
-                    <span className="text-secondary-600">総労働時間</span>
-                    <span className="font-medium text-secondary-800">
-                      {formatMinutesAsTime(
-                        attendance.reduce((sum, r) => sum + r.workMinutes, 0)
-                      )}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <AlertCircle aria-hidden="true" />
             )}
+            <p className="font-medium break-words">{message.text}</p>
           </div>
         )}
 
-        {activeTab === 'paidLeave' && (
-          <div>
-            {/* Balance Card */}
-            <div className="card mb-4 text-center !p-5 sm:!p-7">
-              <Palmtree className="w-10 h-10 sm:w-12 sm:h-12 text-green-500 mx-auto mb-2" />
-              <p className="text-secondary-600 mb-1 text-sm">有給休暇残日数</p>
-              <p className="text-3xl sm:text-4xl font-bold text-secondary-800">
-                {isLoading ? '-' : paidLeave?.balance ?? 0}
-                <span className="text-base sm:text-lg ml-1">日</span>
-              </p>
-            </div>
+        {/* Error */}
+        {error && (
+          <div className="callout callout-danger mt-4" role="alert">
+            <AlertCircle aria-hidden="true" />
+            <p className="font-medium break-words">{error}</p>
+          </div>
+        )}
 
-            {/* Request Button */}
-            <button
-              onClick={() => setShowLeaveModal(true)}
-              className="btn btn-primary w-full mb-4"
-            >
-              有給休暇を申請する
-            </button>
+        {/* 勤怠履歴: Month Selector */}
+        {activeTab === 'attendance' && (
+          <section className="section">
+            <div className="card !p-1.5 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={handlePreviousMonth}
+                className={monthButtonClass}
+                aria-label="前月"
+              >
+                <ChevronLeft className="h-6 w-6" strokeWidth={2.2} aria-hidden="true" />
+              </button>
+              <h2 className="t-headline tabular text-center">
+                {selectedYear}年{selectedMonth}月
+              </h2>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className={monthButtonClass}
+                aria-label="次月"
+              >
+                <ChevronRight className="h-6 w-6" strokeWidth={2.2} aria-hidden="true" />
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Submission Status (attendance tab only) */}
+        {activeTab === 'attendance' && submission && (
+          <section className="section">
+            <div className="list-group">
+              <div className="list-row">
+                <span className="list-row-title t-body">
+                  {selectedYear}年{selectedMonth}月の提出状況
+                </span>
+                <SubmissionStatusBadge status={submission.status} />
+              </div>
+              {submission.status === 'rejected' && submission.rejectionReason && (
+                <div className="list-row">
+                  <p className="list-row-title t-subhead text-danger break-words">
+                    差戻理由: {submission.rejectionReason}
+                  </p>
+                </div>
+              )}
+            </div>
+            {(submission.status === 'submitted' || submission.status === 'approved') && (
+              <p className="section-footer">編集ロック中</p>
+            )}
+          </section>
+        )}
+
+        {/* 勤怠履歴: Content */}
+        {activeTab === 'attendance' && (
+          isLoading ? (
+            <div className="card mt-4 py-8">
+              <Loading message="読み込み中..." />
+            </div>
+          ) : attendance.length === 0 ? (
+            <div className="card mt-4 py-8 text-center">
+              <p className="t-subhead text-label-2">この月の勤怠データはありません</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary */}
+              <section className="section">
+                <div className="card grid grid-cols-2 gap-3">
+                  <div className="tile">
+                    <p className="t-footnote text-label-2">出勤日数</p>
+                    <p className="t-title2 tabular mt-1">
+                      {attendance.filter(r => r.workMinutes > 0).length}
+                      <span className="t-subhead ml-0.5 font-normal text-label-2">日</span>
+                    </p>
+                  </div>
+                  <div className="tile">
+                    <p className="t-footnote text-label-2">総労働時間</p>
+                    <p className="t-title2 tabular mt-1">
+                      {formatMinutesAsTime(
+                        attendance.reduce((sum, r) => sum + r.workMinutes, 0)
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              {/* Records */}
+              <section className="section">
+                <div className="card !p-0 overflow-x-auto">
+                  <table className="w-full t-subhead tabular">
+                    <thead>
+                      <tr>
+                        <th scope="col" className={thClass}>日付</th>
+                        <th scope="col" className={thClass}>出勤</th>
+                        <th scope="col" className={thClass}>退勤</th>
+                        <th scope="col" className={thClass}>休憩</th>
+                        <th scope="col" className={thClass}>実働</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attendance.map(record => (
+                        <tr key={record.date} className="border-t-[0.5px] border-separator">
+                          <td className={`${tdClass} ${weekdayColor(record.date)}`}>{formatDate(record.date)}</td>
+                          <td className={tdClass}>{formatTime(record.clockIn)}</td>
+                          <td className={tdClass}>
+                            {formatTime(record.clockOut)}
+                          </td>
+                          <td className={tdClass}>
+                            {record.breakMinutes > 0 ? `${record.breakMinutes}分` : '-'}
+                          </td>
+                          <td className={`${tdClass} font-medium`}>
+                            {record.workMinutes > 0 ? formatMinutesAsTime(record.workMinutes) : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )
+        )}
+
+        {activeTab === 'paidLeave' && (
+          <>
+            {/* Balance Card */}
+            <section className="section">
+              <div className="card !pt-6 text-center">
+                <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-icon-green text-white">
+                  <Palmtree className="h-7 w-7" aria-hidden="true" />
+                </span>
+                <p className="t-subhead mt-3 text-label-2">有給休暇残日数</p>
+                <p className="mt-1.5 font-rounded tabular leading-none">
+                  <span className="text-[48px] font-semibold tracking-tight">
+                    {isLoading ? '-' : paidLeave?.balance ?? 0}
+                  </span>
+                  <span className="t-title3 ml-1 text-label-2">日</span>
+                </p>
+
+                {/* Request Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowLeaveModal(true)}
+                  className="btn btn-filled btn-block mt-6"
+                >
+                  有給休暇を申請する
+                </button>
+              </div>
+            </section>
 
             {/* History */}
-            <div className="card !p-5 sm:!p-7">
-              <h3 className="font-semibold text-secondary-800 mb-3 sm:mb-4">取得履歴</h3>
-
-              {isLoading ? (
-                <Loading />
-              ) : !paidLeave?.history || paidLeave.history.length === 0 ? (
-                <p className="text-center text-secondary-500 py-4 text-sm">
-                  取得履歴はありません
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {paidLeave.history.map(request => (
-                    <div
-                      key={request.id}
-                      className="flex items-center justify-between gap-2 py-2.5 border-b border-secondary-100 last:border-0"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium text-secondary-800 text-sm sm:text-base truncate">{request.leaveDate}</p>
-                        <p className="text-xs text-secondary-500 truncate">
+            <section className="section">
+              <h2 className="section-header">取得履歴</h2>
+              <div className="list-group">
+                {isLoading ? (
+                  <div className="py-6">
+                    <Loading />
+                  </div>
+                ) : !paidLeave?.history || paidLeave.history.length === 0 ? (
+                  <div className="list-row">
+                    <span className="t-body text-label-2">取得履歴はありません</span>
+                  </div>
+                ) : (
+                  paidLeave.history.map(request => (
+                    <div key={request.id} className="list-row">
+                      <div className="list-row-title">
+                        <p className="t-body tabular truncate">{request.leaveDate}</p>
+                        <p className="t-footnote tabular text-label-2 truncate">
                           申請日: {request.requestDate}
                         </p>
                       </div>
                       <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border flex-shrink-0 ${
+                        className={`pill flex-shrink-0 ${
                           request.status === 'approved'
-                            ? 'bg-green-100 text-green-700 border-green-200'
+                            ? 'pill-success'
                             : request.status === 'rejected'
-                            ? 'bg-red-100 text-red-700 border-red-200'
-                            : 'bg-amber-100 text-amber-700 border-amber-200'
+                            ? 'pill-danger'
+                            : 'pill-warning'
                         }`}
                       >
                         {request.status === 'approved'
@@ -459,50 +458,95 @@ export function MyPage() {
                           : '申請中'}
                       </span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+                  ))
+                )}
+              </div>
+            </section>
+          </>
         )}
 
         {activeTab === 'salary' && (
-          <div className="card !p-4 sm:!p-7">
+          <>
             {/* Month Selector */}
-            <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
-              <button
-                onClick={handlePreviousMonth}
-                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
-                aria-label="前月"
-              >
-                <ChevronLeft className="w-5 h-5 text-secondary-600" />
-              </button>
-              <h2 className="text-base sm:text-lg font-semibold text-secondary-800 text-center">
-                {selectedYear}年{selectedMonth}月分
-              </h2>
-              <button
-                onClick={handleNextMonth}
-                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors flex-shrink-0"
-                aria-label="次月"
-              >
-                <ChevronRight className="w-5 h-5 text-secondary-600" />
-              </button>
-            </div>
+            <section className="section">
+              <div className="card !p-1.5 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={handlePreviousMonth}
+                  className={monthButtonClass}
+                  aria-label="前月"
+                >
+                  <ChevronLeft className="h-6 w-6" strokeWidth={2.2} aria-hidden="true" />
+                </button>
+                <h2 className="t-headline tabular text-center">
+                  {selectedYear}年{selectedMonth}月分
+                </h2>
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  className={monthButtonClass}
+                  aria-label="次月"
+                >
+                  <ChevronRight className="h-6 w-6" strokeWidth={2.2} aria-hidden="true" />
+                </button>
+              </div>
+            </section>
 
-            <div className="text-center py-6 sm:py-8">
-              <Wallet className="w-14 h-14 sm:w-16 sm:h-16 text-secondary-300 mx-auto mb-3 sm:mb-4" />
-              <p className="text-secondary-500 mb-4 text-sm">
-                給与明細をPDFでダウンロードできます
-              </p>
-              <button
-                onClick={handleDownloadPdf}
-                className="btn btn-primary"
-              >
-                PDFをダウンロード
-              </button>
-            </div>
-          </div>
+            <section className="section">
+              <div className="card py-8 text-center">
+                <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-icon-purple text-white">
+                  <Wallet className="h-7 w-7" aria-hidden="true" />
+                </span>
+                <p className="t-subhead mt-3 text-label-2">
+                  給与明細をPDFでダウンロードできます
+                </p>
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  className="btn btn-filled mt-5"
+                >
+                  <Download aria-hidden="true" />
+                  PDFをダウンロード
+                </button>
+              </div>
+            </section>
+          </>
         )}
+
+        {/* 出勤簿・申請一覧へ */}
+        <section className="section">
+          <div className="list-group">
+            <Link to="/attendance" className="list-row list-row-with-icon">
+              <span className="row-icon bg-icon-blue">
+                <CalendarDays aria-hidden="true" />
+              </span>
+              <span className="list-row-title t-body">出勤簿</span>
+              <ChevronRight className="list-chevron !w-4 !h-4" strokeWidth={2.5} aria-hidden="true" />
+            </Link>
+            <Link to="/applications" className="list-row list-row-with-icon">
+              <span className="row-icon bg-icon-orange">
+                <FileText aria-hidden="true" />
+              </span>
+              <span className="list-row-title t-body">申請一覧</span>
+              <ChevronRight className="list-chevron !w-4 !h-4" strokeWidth={2.5} aria-hidden="true" />
+            </Link>
+          </div>
+        </section>
+
+        {/* アカウント */}
+        <section className="section">
+          <h2 className="section-header">アカウント</h2>
+          <div className="list-group">
+            <div className="list-row">
+              <span className="list-row-title t-body truncate">{staff?.name}</span>
+              <span className="t-subhead text-label-2 truncate max-w-[55%]">{staff?.email}</span>
+            </div>
+            <button type="button" onClick={logout} className="list-row justify-center text-danger">
+              <LogOut className="h-5 w-5" aria-hidden="true" />
+              <span className="t-body">ログアウト</span>
+            </button>
+          </div>
+        </section>
       </main>
 
       {/* Paid Leave Request Modal */}
@@ -512,29 +556,31 @@ export function MyPage() {
         title="有給休暇申請"
         size="sm"
       >
-        <div className="space-y-4">
-          <div>
-            <label className="label">取得希望日</label>
+        <div className="pt-2">
+          <label className="block">
+            <span className="label">取得希望日</span>
             <input
               type="date"
               value={leaveDate}
               onChange={e => setLeaveDate(e.target.value)}
-              className="input h-12"
+              className="input"
               min={new Date().toISOString().split('T')[0]}
             />
-          </div>
+          </label>
 
-          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-4">
+          <div className="mt-6 grid grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => { setShowLeaveModal(false); setLeaveDate(''); }}
-              className="btn btn-secondary flex-1"
+              className="btn btn-gray"
             >
               キャンセル
             </button>
             <button
+              type="button"
               onClick={handleRequestPaidLeave}
               disabled={!leaveDate || isRequesting}
-              className="btn btn-primary flex-1"
+              className="btn btn-filled"
             >
               {isRequesting ? '申請中...' : '申請する'}
             </button>

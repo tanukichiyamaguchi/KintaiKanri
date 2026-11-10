@@ -1,18 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import {
-  ArrowLeft,
-  Palmtree,
-  Check,
-  X,
-  Clock,
-  AlertCircle,
-  CheckCircle,
-} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Check, X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, paidLeaveApi } from '../../api';
 import type { StaffInfo, PaidLeaveRequest, Staff } from '../../types';
 import { Header, Loading } from '../../components/common';
+
+// 小さいボタン（見た目は高さ 32px）の押せる範囲を、上下に広げて 44px にする
+const SMALL_BUTTON_HIT = "relative after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-['']";
 
 export function PaidLeaveManagement() {
   const navigate = useNavigate();
@@ -107,26 +102,11 @@ export function PaidLeaveManagement() {
   const getStatusBadge = (status: PaidLeaveRequest['status']) => {
     switch (status) {
       case 'pending':
-        return (
-          <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full text-xs font-semibold">
-            <Clock className="w-3.5 h-3.5" />
-            申請中
-          </span>
-        );
+        return <span className="pill pill-warning flex-shrink-0">申請中</span>;
       case 'approved':
-        return (
-          <span className="inline-flex items-center gap-1 text-green-700 bg-green-100 border border-green-200 px-2.5 py-1 rounded-full text-xs font-semibold">
-            <CheckCircle className="w-3.5 h-3.5" />
-            承認済
-          </span>
-        );
+        return <span className="pill pill-success flex-shrink-0">承認済</span>;
       case 'rejected':
-        return (
-          <span className="inline-flex items-center gap-1 text-red-700 bg-red-100 border border-red-200 px-2.5 py-1 rounded-full text-xs font-semibold">
-            <X className="w-3.5 h-3.5" />
-            却下
-          </span>
-        );
+        return <span className="pill pill-danger flex-shrink-0">却下</span>;
     }
   };
 
@@ -134,193 +114,113 @@ export function PaidLeaveManagement() {
   const processedRequests = requests.filter(r => r.status !== 'pending');
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="有給管理" />
+    <div className="page">
+      <Header title="有給休暇" backTo="/admin/more" backLabel="その他" backMobileOnly />
 
-      <main className="max-w-4xl mx-auto p-4 sm:p-6">
-        {/* Back Link */}
-        <Link
-          to="/admin"
-          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">ダッシュボードへ戻る</span>
-        </Link>
-
-        {/* Message */}
+      <main className="page-content">
+        {/* 結果のお知らせ */}
         {message && (
           <div
-            className={`flex items-center gap-3 px-5 py-4 rounded-xl mb-5 border ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-red-50 text-red-700 border-red-200'
-            }`}
+            className={`callout mt-2 ${message.type === 'success' ? 'callout-success' : 'callout-danger'}`}
+            role={message.type === 'error' ? 'alert' : 'status'}
           >
-            {message.type === 'success' ? (
-              <CheckCircle className="w-5 h-5 flex-shrink-0" />
-            ) : (
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            )}
-            <p className="text-sm font-medium">{message.text}</p>
+            {message.type === 'success' ? <CheckCircle2 aria-hidden="true" /> : <AlertCircle aria-hidden="true" />}
+            <p className="font-medium break-words">{message.text}</p>
           </div>
         )}
 
         {isLoading ? (
-          <div className="card">
+          <div className="card mt-2">
             <Loading message="読み込み中..." />
           </div>
         ) : (
           <>
-            {/* Staff Balance Overview */}
-            <div className="card mb-6">
-              <h2 className="text-base sm:text-lg font-semibold text-secondary-800 mb-4 flex items-center gap-2">
-                <Palmtree className="w-5 h-5 text-primary-500" />
-                スタッフ別有給残日数
-              </h2>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-                {staffList.map(staff => (
-                  <div
-                    key={staff.staffId}
-                    className="p-3 sm:p-4 bg-secondary-50 border border-secondary-100 rounded-xl text-center"
-                  >
-                    <p className="text-sm sm:text-base font-medium text-secondary-800 truncate">{staff.name}</p>
-                    <p className="text-2xl sm:text-3xl font-bold text-primary-600 mt-2">
-                      {staff.paidLeaveBalance}
-                      <span className="text-base sm:text-lg ml-1">日</span>
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Pending Requests */}
-            <div className="card mb-6">
-              <h2 className="text-base sm:text-lg font-semibold text-secondary-800 mb-4 flex items-center gap-2">
+            {/* 承認待ちの申請（このページで主に行う操作なので先頭に置く） */}
+            <section className="section">
+              <h2 className="section-header">
                 承認待ち申請
-                {pendingRequests.length > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold rounded-full">
-                    {pendingRequests.length}
-                  </span>
-                )}
+                {pendingRequests.length > 0 && <span className="tabular">{pendingRequests.length}件</span>}
               </h2>
-
-              {pendingRequests.length === 0 ? (
-                <p className="text-center text-secondary-500 py-4 text-sm">
-                  承認待ちの申請はありません
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {pendingRequests.map(request => (
-                    <div
-                      key={request.id}
-                      className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium text-secondary-800 truncate">{request.name}</p>
-                        <p className="text-sm text-secondary-600 mt-0.5">
-                          取得希望日: {formatDate(request.leaveDate)}
-                        </p>
-                        <p className="text-xs text-secondary-500">
-                          申請日: {formatDate(request.requestDate)}
-                        </p>
+              <div className="list-group">
+                {pendingRequests.length === 0 ? (
+                  <div className="list-row">
+                    <span className="t-body text-label-2">承認待ちの申請はありません</span>
+                  </div>
+                ) : (
+                  pendingRequests.map(request => (
+                    <div key={request.id} className="list-row">
+                      <div className="list-row-title">
+                        <p className="t-body truncate">{request.name}</p>
+                        <p className="t-footnote text-label-2 tabular">取得希望日: {formatDate(request.leaveDate)}</p>
+                        <p className="t-footnote text-label-2 tabular">申請日: {formatDate(request.requestDate)}</p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-shrink-0 items-center gap-2">
                         <button
+                          type="button"
                           onClick={() => handleApprove(request.id)}
-                          className="btn btn-success flex-1 sm:flex-none !py-2.5 !px-4 !text-sm"
+                          className={`btn btn-sm btn-filled ${SMALL_BUTTON_HIT}`}
                         >
-                          <Check className="w-4 h-4" />
+                          <Check aria-hidden="true" />
                           承認
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleReject(request.id)}
-                          className="btn btn-danger flex-1 sm:flex-none !py-2.5 !px-4 !text-sm"
+                          className={`btn btn-sm btn-danger-tinted ${SMALL_BUTTON_HIT}`}
                         >
-                          <X className="w-4 h-4" />
+                          <X aria-hidden="true" />
                           却下
                         </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Processed Requests */}
-            <div>
-              <div className="mb-3 sm:mb-0 sm:px-6 sm:py-5 sm:card sm:rounded-b-none">
-                <h2 className="text-base sm:text-lg font-semibold text-secondary-800">
-                  処理済み申請履歴
-                </h2>
+                  ))
+                )}
               </div>
+            </section>
 
-              {processedRequests.length === 0 ? (
-                <div className="card sm:rounded-t-none">
-                  <p className="text-center text-secondary-500 py-4 text-sm">
-                    処理済みの申請はありません
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {/* Mobile: Card list */}
-                  <div className="sm:hidden space-y-3">
-                    {processedRequests.map(request => (
-                      <div key={request.id} className="card !p-4">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <p className="font-semibold text-secondary-800 truncate">
-                            {request.name}
-                          </p>
-                          {getStatusBadge(request.status)}
-                        </div>
-                        <div className="text-xs text-secondary-600 space-y-0.5">
-                          <p>取得日: {formatDate(request.leaveDate)}</p>
-                          <p className="text-secondary-500">申請日: {formatDate(request.requestDate)}</p>
-                        </div>
+            {/* スタッフ別の残日数 */}
+            <section className="section">
+              <h2 className="section-header">スタッフ別有給残日数</h2>
+              <div className="list-group">
+                {staffList.length === 0 ? (
+                  <div className="list-row">
+                    <span className="t-body text-label-2">有効なスタッフがいません</span>
+                  </div>
+                ) : (
+                  staffList.map(staff => (
+                    <div key={staff.staffId} className="list-row">
+                      <span className="list-row-title t-body truncate">{staff.name}</span>
+                      <span className="list-row-detail tabular">{staff.paidLeaveBalance}日</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            {/* 処理済みの申請 */}
+            <section className="section">
+              <h2 className="section-header">処理済み申請履歴</h2>
+              <div className="list-group">
+                {processedRequests.length === 0 ? (
+                  <div className="list-row">
+                    <span className="t-body text-label-2">処理済みの申請はありません</span>
+                  </div>
+                ) : (
+                  processedRequests.map(request => (
+                    <div key={request.id} className="list-row">
+                      <div className="list-row-title">
+                        <p className="t-body truncate">{request.name}</p>
+                        <p className="t-footnote text-label-2 tabular flex flex-wrap gap-x-3">
+                          <span>取得日: {formatDate(request.leaveDate)}</span>
+                          <span>申請日: {formatDate(request.requestDate)}</span>
+                        </p>
                       </div>
-                    ))}
-                  </div>
-
-                  {/* Desktop: Table */}
-                  <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden rounded-t-none">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
-                          <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
-                            氏名
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
-                            取得日
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
-                            申請日
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider">
-                            ステータス
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-secondary-100">
-                        {processedRequests.map(request => (
-                          <tr key={request.id} className="hover:bg-primary-50/30 transition-colors">
-                            <td className="px-4 py-3 font-medium text-secondary-800">
-                              {request.name}
-                            </td>
-                            <td className="px-4 py-3 text-secondary-700">
-                              {formatDate(request.leaveDate)}
-                            </td>
-                            <td className="px-4 py-3 text-secondary-700">
-                              {formatDate(request.requestDate)}
-                            </td>
-                            <td className="px-4 py-3">{getStatusBadge(request.status)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
+                      {getStatusBadge(request.status)}
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
           </>
         )}
       </main>

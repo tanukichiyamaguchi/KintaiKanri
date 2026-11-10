@@ -1,19 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   AlertCircle,
   CheckCircle,
-  CalendarDays,
   Send,
-  Loader2,
   Lock,
   Info,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { shiftRequestApi } from '../../api';
 import type { ShiftRequest, ShiftRequestOffDay } from '../../types';
-import { Header, Loading } from '../../components/common';
+import { Header, Loading, Spinner } from '../../components/common';
 import {
   shiftRequestDeadline,
   isShiftRequestOpen,
@@ -146,16 +143,13 @@ export function ShiftRequestPage() {
 
   if (!targetYearMonth) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
+      <div className="page">
         <Header title="希望休" />
-        <main className="max-w-3xl mx-auto p-3 sm:p-6">
-          <Link to="/clock" className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 mb-4 text-sm font-medium min-h-11">
-            <ArrowLeft className="w-4 h-4" /> 打刻画面へ戻る
-          </Link>
-          <div className="card text-center py-10">
-            <Lock className="w-10 h-10 mx-auto mb-3 text-secondary-300" />
-            <p className="font-semibold text-secondary-700 mb-1">提出可能な対象月がありません</p>
-            <p className="text-sm text-secondary-500">
+        <main className="page-content">
+          <div className="card mt-2 py-10 text-center">
+            <Lock className="mx-auto h-10 w-10 text-label-3" strokeWidth={1.75} aria-hidden="true" />
+            <p className="t-headline mt-3">提出可能な対象月がありません</p>
+            <p className="t-subhead mt-1 text-label-2">
               希望休は対象月の2ヶ月前の7日までに提出してください。
             </p>
           </div>
@@ -165,33 +159,22 @@ export function ShiftRequestPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
+    <div className="page">
       <Header title="希望休" />
 
-      <main className="max-w-3xl mx-auto p-3 sm:p-6">
-        <Link to="/clock" className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 mb-4 text-sm font-medium min-h-11">
-          <ArrowLeft className="w-4 h-4" />
-          <span>打刻画面へ戻る</span>
-        </Link>
-
-        {/* ヘッダーカード */}
-        <div className="card mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <CalendarDays className="w-5 h-5 text-primary-500" />
-                <h2 className="text-lg font-bold text-secondary-800">希望休 申請</h2>
-              </div>
-              <p className="text-xs text-secondary-500">
-                対象月の2ヶ月前の7日までに提出（例: 7月分は5/7まで）
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:items-end">
-              <label className="text-xs text-secondary-500">対象月</label>
+      <main className="page-content">
+        {/* 対象月 */}
+        <section className="section">
+          <div className="list-group">
+            <div className="list-row !py-[3px] !pr-2">
+              <label htmlFor="shift-request-target-month" className="list-row-title t-body">
+                対象月
+              </label>
               <select
+                id="shift-request-target-month"
                 value={targetYearMonth}
                 onChange={e => setTargetYearMonth(e.target.value)}
-                className="input min-h-11 sm:w-44"
+                className="input !w-auto !min-h-11 !bg-transparent !py-0 !pl-2 text-label-2 tabular"
                 disabled={isSubmitting}
               >
                 {targets.map(ym => (
@@ -200,52 +183,56 @@ export function ShiftRequestPage() {
               </select>
             </div>
           </div>
-        </div>
+          <p className="section-footer">
+            対象月の2ヶ月前の7日までに提出（例: 7月分は5/7まで）
+          </p>
+        </section>
 
         {/* ステータス */}
-        <div className="card mb-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <div className="text-xs text-secondary-500 mb-1">提出期限</div>
-              <div className={`text-sm font-semibold ${isOpen ? 'text-secondary-800' : 'text-red-600'}`}>{deadline}</div>
-              {!isOpen && <div className="text-xs text-red-600 mt-0.5">期限切れ</div>}
-            </div>
-            <div>
-              <div className="text-xs text-secondary-500 mb-1">未承認</div>
-              <div className="text-sm font-semibold text-amber-600">{pendingCount}日</div>
-            </div>
-            <div>
-              <div className="text-xs text-secondary-500 mb-1">承認済</div>
-              <div className="text-sm font-semibold text-green-600">{approvedCount}日</div>
-            </div>
-            <div>
-              <div className="text-xs text-secondary-500 mb-1">却下</div>
-              <div className="text-sm font-semibold text-red-600">{rejectedCount}日</div>
-            </div>
+        <section className="section">
+          <div className="card">
+            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="tile">
+                <dt className="t-footnote text-label-2">提出期限</dt>
+                <dd className={`t-headline tabular mt-0.5 ${isOpen ? '' : 'text-danger'}`}>{deadline}</dd>
+                {!isOpen && <dd className="t-caption text-danger mt-0.5">期限切れ</dd>}
+              </div>
+              <div className="tile">
+                <dt className="t-footnote text-label-2">未承認</dt>
+                <dd className="t-headline tabular mt-0.5 text-warning">{pendingCount}日</dd>
+              </div>
+              <div className="tile">
+                <dt className="t-footnote text-label-2">承認済</dt>
+                <dd className="t-headline tabular mt-0.5 text-success">{approvedCount}日</dd>
+              </div>
+              <div className="tile">
+                <dt className="t-footnote text-label-2">却下</dt>
+                <dd className="t-headline tabular mt-0.5 text-danger">{rejectedCount}日</dd>
+              </div>
+            </dl>
+            {existing && (
+              <p className="t-footnote tabular text-label-2 mt-3">
+                前回提出: {new Date(existing.submittedAt).toLocaleString('ja-JP')}
+              </p>
+            )}
           </div>
-          {existing && (
-            <div className="mt-3 text-xs text-secondary-500">
-              前回提出: {new Date(existing.submittedAt).toLocaleString('ja-JP')}
-            </div>
-          )}
-        </div>
+        </section>
 
         {/* メッセージ */}
         {message && (
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-4 border ${
-            message.type === 'success'
-              ? 'bg-green-50 text-green-700 border-green-200'
-              : 'bg-red-50 text-red-700 border-red-200'
-          }`}>
-            {message.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 flex-shrink-0" />}
-            <p className="text-sm font-medium">{message.text}</p>
+          <div
+            className={`callout mt-4 ${message.type === 'success' ? 'callout-success' : 'callout-danger'}`}
+            role={message.type === 'error' ? 'alert' : 'status'}
+          >
+            {message.type === 'success' ? <CheckCircle aria-hidden="true" /> : <AlertCircle aria-hidden="true" />}
+            <p className="font-medium break-words">{message.text}</p>
           </div>
         )}
 
         {/* 入力ガイド */}
-        <div className="bg-primary-50/60 border border-primary-200/60 rounded-2xl px-4 py-3 mb-4 flex items-start gap-3 text-sm">
-          <Info className="w-4 h-4 text-primary-600 flex-shrink-0 mt-1" />
-          <div className="text-secondary-700 space-y-1">
+        <div className="callout callout-tint mt-4">
+          <Info aria-hidden="true" />
+          <div className="space-y-1">
             <p>休みを希望する日をタップして選択してください（複数選択可）。</p>
             <p>承認済みの日は変更できません。却下された日も再度タップすれば再申請できます。</p>
           </div>
@@ -253,30 +240,33 @@ export function ShiftRequestPage() {
 
         {/* 却下理由のサマリ */}
         {existing && existing.offDays.some(d => d.status === 'rejected') && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-4">
-            <div className="font-semibold text-red-700 text-sm mb-2">却下された日</div>
-            <ul className="text-xs text-red-700 space-y-1">
-              {existing.offDays.filter(d => d.status === 'rejected').map(d => (
-                <li key={d.date}>
-                  ・{formatJpDate(d.date)}{d.rejectionReason ? `: ${d.rejectionReason}` : ''}
-                </li>
-              ))}
-            </ul>
+          <div className="callout callout-danger mt-3">
+            <AlertCircle aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="font-semibold">却下された日</p>
+              <ul className="t-footnote mt-1 space-y-0.5">
+                {existing.offDays.filter(d => d.status === 'rejected').map(d => (
+                  <li key={d.date} className="break-words">
+                    ・{formatJpDate(d.date)}{d.rejectionReason ? `: ${d.rejectionReason}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         )}
 
         {/* カレンダー型 多選択 */}
         {isLoading ? (
-          <div className="card"><Loading message="読み込み中..." /></div>
+          <div className="card mt-4 py-8"><Loading message="読み込み中..." /></div>
         ) : (
-          <div className="card !p-3 sm:!p-4">
+          <div className="card mt-4 !px-2 !py-3 sm:!p-4">
             {/* 曜日ヘッダー */}
-            <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-1">
               {WEEKDAYS.map((dow, i) => (
                 <div
                   key={dow}
-                  className={`text-center text-xs font-semibold py-1 ${
-                    i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-secondary-500'
+                  className={`text-center t-caption font-semibold py-1 ${
+                    i === 0 ? 'text-danger' : i === 6 ? 'text-info' : 'text-label-2'
                   }`}
                 >
                   {dow}
@@ -303,20 +293,20 @@ export function ShiftRequestPage() {
                 const isLocked = !!locked; // approved のみ
                 const cellDisabled = isLocked || !isOpen || isSubmitting;
 
-                let cellClass = 'min-h-12 sm:min-h-14 rounded-xl border-2 p-1 flex flex-col items-center justify-center transition-all relative ';
+                let cellClass = 'min-h-[52px] sm:min-h-14 rounded-[10px] p-1 flex flex-col items-center justify-center transition-colors relative ';
                 if (isApproved) {
-                  cellClass += 'bg-green-50 border-green-300 text-green-700 cursor-not-allowed';
+                  cellClass += 'bg-success-fill text-success cursor-not-allowed';
                 } else if (wasRejected && isSelected) {
                   // 再申請中（却下→再選択）
-                  cellClass += 'bg-amber-100 border-red-400 text-red-700 shadow-sm shadow-amber-500/20';
+                  cellClass += 'bg-tint-solid text-on-tint ring-2 ring-inset ring-danger';
                 } else if (wasRejected) {
-                  cellClass += 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100 active:scale-95 cursor-pointer';
+                  cellClass += 'bg-danger-fill text-danger active:opacity-60 cursor-pointer';
                 } else if (isSelected) {
-                  cellClass += 'bg-amber-100 border-amber-400 text-amber-700 shadow-sm shadow-amber-500/20';
+                  cellClass += 'bg-tint-solid text-on-tint';
                 } else if (!isOpen || isSubmitting) {
-                  cellClass += 'bg-secondary-50 border-secondary-100 text-secondary-300 cursor-not-allowed';
+                  cellClass += 'text-label-3 cursor-not-allowed';
                 } else {
-                  cellClass += 'bg-white border-secondary-200 text-secondary-700 hover:border-amber-300 hover:bg-amber-50/40 active:scale-95 cursor-pointer';
+                  cellClass += `${dow === 0 ? 'text-danger' : dow === 6 ? 'text-info' : 'text-label'} hover:bg-fill active:bg-fill-2 cursor-pointer`;
                 }
 
                 return (
@@ -328,16 +318,11 @@ export function ShiftRequestPage() {
                     className={cellClass}
                     aria-label={`${formatJpDate(date)}${isSelected ? ' 選択中' : ''}${isApproved ? ' 承認済' : ''}${wasRejected ? ' 却下' : ''}`}
                   >
-                    <div className={`text-xs font-medium ${
-                      dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : ''
-                    }`}>
-                      {WEEKDAYS[dow]}
-                    </div>
-                    <div className="text-base font-bold">{day}</div>
-                    {isApproved && <div className="text-[9px] mt-0.5 leading-none">承認</div>}
-                    {wasRejected && isSelected && <div className="text-[9px] mt-0.5 leading-none font-bold">再申請</div>}
-                    {wasRejected && !isSelected && <div className="text-[9px] mt-0.5 leading-none">却下</div>}
-                    {!wasRejected && isSelected && !isLocked && <div className="text-[9px] mt-0.5 leading-none">希望</div>}
+                    <span className="t-headline tabular leading-none">{day}</span>
+                    {isApproved && <span className="t-caption2 mt-1 leading-none">承認</span>}
+                    {wasRejected && isSelected && <span className="t-caption2 mt-1 leading-none font-semibold">再申請</span>}
+                    {wasRejected && !isSelected && <span className="t-caption2 mt-1 leading-none">却下</span>}
+                    {!wasRejected && isSelected && !isLocked && <span className="t-caption2 mt-1 leading-none">希望</span>}
                   </button>
                 );
               })}
@@ -346,30 +331,34 @@ export function ShiftRequestPage() {
         )}
 
         {/* 備考 */}
-        <div className="card mt-4">
-          <label className="label">備考</label>
-          <textarea
-            value={remarks}
-            onChange={e => setRemarks(e.target.value)}
-            rows={3}
-            className="input min-h-24 resize-y"
-            placeholder="連絡事項があれば入力してください"
-            disabled={!isOpen || isSubmitting}
-          />
-        </div>
+        <section className="section">
+          <label htmlFor="shift-request-remarks" className="section-header">備考</label>
+          <div className="list-group">
+            <textarea
+              id="shift-request-remarks"
+              value={remarks}
+              onChange={e => setRemarks(e.target.value)}
+              rows={3}
+              className="block w-full min-h-24 resize-y bg-transparent px-4 py-3 t-body outline-none placeholder:text-label-3 disabled:text-label-3"
+              placeholder="連絡事項があれば入力してください"
+              disabled={!isOpen || isSubmitting}
+            />
+          </div>
+        </section>
 
         {/* 送信ボタン */}
-        <div className="sticky bottom-0 left-0 right-0 mt-4 bg-gradient-to-t from-white via-white to-transparent pt-4 pb-2">
+        <div className="sticky bottom-[calc(var(--tabbar-height)+var(--safe-bottom))] lg:bottom-0 z-20 -mx-4 mt-6 px-4 py-3 material-bar hairline-top">
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={!isOpen || isSubmitting || isLoading}
-            className="btn btn-primary w-full sm:w-auto sm:px-12 mx-auto flex items-center justify-center gap-2 min-h-12"
+            className="btn btn-filled btn-lg btn-block"
           >
-            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {isSubmitting ? <Spinner size={18} className="!text-current" /> : <Send aria-hidden="true" />}
             {existing ? '希望休を更新する' : '希望休を提出する'}
           </button>
           {!isOpen && (
-            <p className="mt-2 text-center text-xs text-red-600">
+            <p className="mt-2 text-center t-footnote text-danger">
               {formatTargetMonthLabel(targetYearMonth)}分の提出期限（{deadline}）を過ぎています。
             </p>
           )}

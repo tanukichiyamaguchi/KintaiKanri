@@ -1,24 +1,19 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   Plus,
-  Edit2,
+  Pencil,
   Trash2,
-  User,
   AlertCircle,
-  Mail,
-  Lock,
   Eye,
   EyeOff,
-  Key,
-  Shield,
+  KeyRound,
   CheckCircle2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, adminApi } from '../../api';
 import type { Staff, StaffInfo, AdminInfo } from '../../types';
-import { Header, Loading, Modal } from '../../components/common';
+import { Header, Loading, Modal, Spinner } from '../../components/common';
 import { formatCurrency } from '../../utils/calculations';
 
 type StaffFormData = {
@@ -54,6 +49,16 @@ const emptyAdminForm: AdminFormData = {
   email: '',
   password: '',
 };
+
+// ===== 見た目だけの部品（クラス名） =====
+// 行の右端に並べるアイコンだけのボタン（押せる範囲は 44 × 44）
+const ICON_BUTTON =
+  'grid h-11 w-11 flex-shrink-0 place-items-center rounded-full transition-colors hover:bg-fill active:opacity-60';
+// パスワード欄の右端に重ねる「表示 / 隠す」ボタン
+const PASSWORD_TOGGLE =
+  'absolute inset-y-0 right-0 grid w-12 place-items-center rounded-r-[10px] text-label-3 active:opacity-60';
+// 入力欄の下の補足
+const FIELD_HINT = 'mt-1.5 px-1 t-footnote text-label-2';
 
 export function StaffManagement() {
   const navigate = useNavigate();
@@ -444,341 +449,170 @@ export function StaffManagement() {
 
   // ===== Render =====
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="スタッフ管理" />
-
-      <main className="max-w-4xl mx-auto p-4 sm:p-6">
-        {/* Back Link */}
-        <Link
-          to="/admin"
-          className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors mb-5"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">ダッシュボードへ戻る</span>
-        </Link>
-
-        {/* Staff Section Header */}
-        <div className="flex items-center justify-between gap-3 mb-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-secondary-800">スタッフ一覧</h2>
+    <div className="page">
+      <Header
+        title="スタッフ"
+        actions={
           <button
+            type="button"
             onClick={() => handleOpenModal()}
-            className="btn btn-primary !py-2.5 !px-3 sm:!px-5"
+            className="btn btn-plain min-w-11"
+            aria-label="スタッフを追加"
           >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">新規登録</span>
-            <span className="sm:hidden">追加</span>
+            <Plus className="!h-[22px] !w-[22px] sm:!h-[18px] sm:!w-[18px]" strokeWidth={2.2} aria-hidden="true" />
+            <span className="hidden sm:inline">スタッフを追加</span>
           </button>
-        </div>
+        }
+      />
 
-        {/* Error */}
+      <main className="page-content">
         {error && (
-          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm font-medium">{error}</p>
+          <div className="callout callout-danger mt-2" role="alert">
+            <AlertCircle aria-hidden="true" />
+            <p className="font-medium break-words">{error}</p>
           </div>
         )}
 
-        {/* Staff List */}
-        {isLoading ? (
-          <div className="card">
-            <Loading message="読み込み中..." />
-          </div>
-        ) : staffList.length === 0 ? (
-          <div className="card text-center py-10">
-            <User className="w-12 h-12 text-secondary-300 mx-auto mb-2" />
-            <p className="text-secondary-500">スタッフが登録されていません</p>
-          </div>
-        ) : (
-          <>
-            {/* Mobile: Card list */}
-            <div className="sm:hidden space-y-3">
-              {staffList.map(staff => (
-                <div key={staff.staffId} className="card !p-4">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold text-secondary-800 truncate">{staff.name}</p>
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${
-                            staff.status === 'active'
-                              ? 'bg-green-50 text-green-700 border-green-200'
-                              : 'bg-secondary-50 text-secondary-600 border-secondary-200'
-                          }`}
+        {/* スタッフ一覧 */}
+        <section className="section">
+          <h2 className="section-header">スタッフ一覧</h2>
+          <div className="list-group">
+            {isLoading ? (
+              <div className="list-row justify-center py-5">
+                <Loading message="読み込み中..." />
+              </div>
+            ) : staffList.length === 0 ? (
+              <div className="list-row">
+                <span className="t-body text-label-2">スタッフが登録されていません</span>
+              </div>
+            ) : (
+              staffList.map(staff => (
+                <div key={staff.staffId} className="list-row">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="t-body min-w-0 truncate">{staff.name}</span>
+                      <span className={`pill flex-shrink-0 ${staff.status === 'active' ? 'pill-success' : 'pill-neutral'}`}>
+                        {staff.status === 'active' ? '有効' : '無効'}
+                      </span>
+                      {/* 操作（見た目は 1 行目の高さに収め、押せる範囲は 44 × 44 のまま） */}
+                      <div className="-my-2.5 -mr-3 ml-auto flex flex-shrink-0 items-center">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPasswordReset(staff)}
+                          className={`${ICON_BUTTON} text-tint`}
+                          aria-label={`${staff.name}さんのパスワードをリセット`}
+                          title="パスワードリセット"
                         >
-                          {staff.status === 'active' ? '有効' : '無効'}
-                        </span>
+                          <KeyRound className="h-5 w-5" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenModal(staff)}
+                          className={`${ICON_BUTTON} text-tint`}
+                          aria-label={`${staff.name}さんを編集`}
+                          title="編集"
+                        >
+                          <Pencil className="h-5 w-5" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(staff)}
+                          className={`${ICON_BUTTON} text-danger`}
+                          aria-label={`${staff.name}さんを削除`}
+                          title="削除"
+                        >
+                          <Trash2 className="h-5 w-5" aria-hidden="true" />
+                        </button>
                       </div>
-                      <p className="text-xs text-secondary-500 flex items-center gap-1 truncate">
-                        <Mail className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{staff.email || '-'}</span>
-                      </p>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-secondary-600 border-t border-secondary-100 pt-3">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] text-secondary-400">月給</span>
-                      <span className="font-medium text-secondary-700">{formatCurrency(staff.monthlySalary)}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleOpenPasswordReset(staff)}
-                        className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                        aria-label="パスワードリセット"
-                      >
-                        <Key className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleOpenModal(staff)}
-                        className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                        aria-label="編集"
-                      >
-                        <Edit2 className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(staff)}
-                        className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        aria-label="削除"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
+                    <p className="t-footnote text-label-2 truncate">{staff.email || '-'}</p>
+                    <p className="t-footnote text-label-2 tabular flex flex-wrap gap-x-3">
+                      <span>月給 {formatCurrency(staff.monthlySalary)}</span>
+                      <span>入社日 {staff.hireDate || '-'}</span>
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-
-            {/* Desktop: Table */}
-            <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-secondary-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
-                      氏名
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
-                      メール
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden md:table-cell">
-                      月給
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden lg:table-cell">
-                      入社日
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider hidden md:table-cell">
-                      ステータス
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-secondary-600 tracking-wider">
-                      操作
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-secondary-100">
-                  {staffList.map(staff => (
-                    <tr key={staff.staffId} className="hover:bg-primary-50/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-secondary-800">{staff.name}</p>
-                          <p className="text-xs text-secondary-500 md:hidden mt-0.5">
-                            {formatCurrency(staff.monthlySalary)}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-secondary-700">
-                        <span className="inline-flex items-center gap-1.5 text-sm">
-                          <Mail className="w-3.5 h-3.5 text-secondary-400" />
-                          {staff.email || '-'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-secondary-700 hidden md:table-cell">
-                        {formatCurrency(staff.monthlySalary)}
-                      </td>
-                      <td className="px-4 py-3 text-secondary-700 hidden lg:table-cell">
-                        {staff.hireDate || '-'}
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                            staff.status === 'active'
-                              ? 'bg-green-50 text-green-700 border-green-200'
-                              : 'bg-secondary-50 text-secondary-600 border-secondary-200'
-                          }`}
-                        >
-                          {staff.status === 'active' ? '有効' : '無効'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleOpenPasswordReset(staff)}
-                            className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                            aria-label="パスワードリセット"
-                            title="パスワードリセット"
-                          >
-                            <Key className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenModal(staff)}
-                            className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                            aria-label="編集"
-                            title="編集"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(staff)}
-                            className="p-2 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            aria-label="削除"
-                            title="削除"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {/* ===== Admin Section ===== */}
-        <div className="mt-12">
-          <div className="flex items-center justify-between gap-3 mb-6">
-            <div className="flex items-center gap-2 min-w-0">
-              <Shield className="w-5 h-5 text-secondary-700 flex-shrink-0" />
-              <h2 className="text-lg sm:text-xl font-semibold text-secondary-800 truncate">管理者アカウント</h2>
-            </div>
-            <button
-              onClick={() => handleOpenAdminModal()}
-              className="btn btn-primary !py-2.5 !px-3 sm:!px-5 flex-shrink-0"
-            >
-              <Plus className="w-5 h-5" />
-              <span className="hidden sm:inline">管理者を追加</span>
-              <span className="sm:hidden">追加</span>
-            </button>
+              ))
+            )}
           </div>
+        </section>
+
+        {/* 管理者アカウント */}
+        <section className="section">
+          <h2 className="section-header">管理者アカウント</h2>
 
           {adminError && (
-            <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm font-medium">{adminError}</p>
+            <div className="callout callout-danger mb-3" role="alert">
+              <AlertCircle aria-hidden="true" />
+              <p className="font-medium break-words">{adminError}</p>
             </div>
           )}
 
-          {isLoadingAdmins ? (
-            <div className="card">
-              <Loading message="読み込み中..." />
-            </div>
-          ) : adminList.length === 0 ? (
-            <div className="card text-center py-10">
-              <Shield className="w-12 h-12 text-secondary-300 mx-auto mb-2" />
-              <p className="text-secondary-500">管理者が登録されていません</p>
-            </div>
-          ) : (
-            <>
-              {/* Mobile: Card list */}
-              <div className="sm:hidden space-y-3">
-                {adminList.map(admin => (
-                  <div key={admin.adminId} className="card !p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-secondary-800 truncate">{admin.name}</p>
-                        <p className="text-xs text-secondary-500 flex items-center gap-1 mt-0.5 truncate">
-                          <Mail className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{admin.email}</span>
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button
-                          onClick={() => handleOpenAdminModal(admin)}
-                          className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                          aria-label="編集"
-                        >
-                          <Edit2 className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteAdmin(admin)}
-                          className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          aria-label="削除"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
+          <div className="list-group">
+            {isLoadingAdmins ? (
+              <div className="list-row justify-center py-5">
+                <Loading message="読み込み中..." />
+              </div>
+            ) : adminList.length === 0 ? (
+              <div className="list-row">
+                <span className="t-body text-label-2">管理者が登録されていません</span>
+              </div>
+            ) : (
+              adminList.map(admin => (
+                <div key={admin.adminId} className="list-row">
+                  <div className="list-row-title">
+                    <p className="t-body truncate">{admin.name}</p>
+                    <p className="t-footnote text-label-2 truncate">{admin.email}</p>
                   </div>
-                ))}
-              </div>
-
-              {/* Desktop: Table */}
-              <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-secondary-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
-                        氏名
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-secondary-600 tracking-wider">
-                        メール
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-secondary-600 tracking-wider">
-                        操作
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-secondary-100">
-                    {adminList.map(admin => (
-                      <tr key={admin.adminId} className="hover:bg-primary-50/30 transition-colors">
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-secondary-800">{admin.name}</p>
-                        </td>
-                        <td className="px-4 py-3 text-secondary-700">
-                          <span className="inline-flex items-center gap-1.5 text-sm">
-                            <Mail className="w-3.5 h-3.5 text-secondary-400" />
-                            {admin.email}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => handleOpenAdminModal(admin)}
-                              className="p-2 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                              aria-label="編集"
-                              title="編集"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteAdmin(admin)}
-                              className="p-2 text-secondary-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              aria-label="削除"
-                              title="削除"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
+                  <div className="-mr-3 flex flex-shrink-0 items-center">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAdminModal(admin)}
+                      className={`${ICON_BUTTON} text-tint`}
+                      aria-label={`管理者「${admin.name}」を編集`}
+                      title="編集"
+                    >
+                      <Pencil className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAdmin(admin)}
+                      className={`${ICON_BUTTON} text-danger`}
+                      aria-label={`管理者「${admin.name}」を削除`}
+                      title="削除"
+                    >
+                      <Trash2 className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+            <button type="button" onClick={() => handleOpenAdminModal()} className="list-row text-tint">
+              <Plus className="h-5 w-5 flex-shrink-0" strokeWidth={2.2} aria-hidden="true" />
+              <span className="t-body">管理者を追加</span>
+            </button>
+          </div>
+        </section>
       </main>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-          <div className="flex items-center gap-2 bg-secondary-900 text-white px-4 py-2.5 rounded-xl shadow-lg">
-            <CheckCircle2 className="w-4 h-4 text-green-400" />
-            <span className="text-sm font-medium">{toast}</span>
+      {/* 完了のお知らせ（iPhone ではタブバーの上、PC では左側メニューを除いた中央に出す） */}
+      <div
+        className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--tabbar-height)+var(--safe-bottom)+12px)] z-50 flex justify-center px-4 lg:bottom-6 lg:pl-[280px]"
+        role="status"
+        aria-live="polite"
+      >
+        {toast && (
+          <div
+            className="material-bar flex items-center gap-2 rounded-full px-4 py-2.5 animate-fade-in"
+            style={{ boxShadow: 'var(--ios-shadow-raised), 0 0 0 0.5px var(--ios-separator)' }}
+          >
+            <CheckCircle2 className="h-[18px] w-[18px] flex-shrink-0 text-success" aria-hidden="true" />
+            <span className="t-subhead font-medium">{toast}</span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Staff Add/Edit Modal */}
+      {/* スタッフの登録・編集 */}
       <Modal
         isOpen={showModal}
         onClose={handleCloseModal}
@@ -788,8 +622,9 @@ export function StaffManagement() {
         <form onSubmit={handleStaffSubmit}>
           <div className="space-y-4">
             <div>
-              <label className="label">氏名 *</label>
+              <label htmlFor="staff-form-name" className="label">氏名 *</label>
               <input
+                id="staff-form-name"
                 type="text"
                 name="name"
                 value={staffForm.name}
@@ -800,77 +635,79 @@ export function StaffManagement() {
             </div>
 
             <div>
-              <label className="label">メールアドレス *</label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
-                <input
-                  type="email"
-                  name="email"
-                  value={staffForm.email}
-                  onChange={handleStaffInputChange}
-                  className="input pl-10"
-                  placeholder="staff@example.com"
-                  autoComplete="off"
-                />
-              </div>
+              <label htmlFor="staff-form-email" className="label">メールアドレス *</label>
+              <input
+                id="staff-form-email"
+                type="email"
+                name="email"
+                value={staffForm.email}
+                onChange={handleStaffInputChange}
+                className="input"
+                placeholder="staff@example.com"
+                autoComplete="off"
+              />
             </div>
 
             {!editingStaff && (
               <div>
-                <label className="label">初期パスワード *</label>
+                <label htmlFor="staff-form-password" className="label">初期パスワード *</label>
                 <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
                   <input
+                    id="staff-form-password"
                     type={showStaffPassword ? 'text' : 'password'}
                     name="password"
                     value={staffForm.password}
                     onChange={handleStaffInputChange}
-                    className="input pl-10 pr-10"
+                    className="input pr-12"
                     placeholder="8文字以上"
                     autoComplete="new-password"
+                    aria-describedby="staff-form-password-hint"
                   />
                   <button
                     type="button"
                     onClick={() => setShowStaffPassword(s => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-secondary-400 hover:text-primary-600 transition-colors"
+                    className={PASSWORD_TOGGLE}
                     aria-label={showStaffPassword ? 'パスワードを隠す' : 'パスワードを表示'}
                   >
-                    {showStaffPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showStaffPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
                   </button>
                 </div>
-                <p className="text-xs text-secondary-500 mt-1">8文字以上を推奨します</p>
+                <p id="staff-form-password-hint" className={FIELD_HINT}>8文字以上を推奨します</p>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="label">月給 *</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <label htmlFor="staff-form-salary" className="label">月給 *</label>
                 <input
+                  id="staff-form-salary"
                   type="number"
                   name="monthlySalary"
                   value={staffForm.monthlySalary}
                   onChange={handleStaffInputChange}
-                  className="input"
+                  className="input tabular"
                   placeholder="250000"
                 />
               </div>
-              <div>
-                <label className="label">交通費（月額）</label>
+              <div className="min-w-0">
+                <label htmlFor="staff-form-transportation" className="label">交通費（月額）</label>
                 <input
+                  id="staff-form-transportation"
                   type="number"
                   name="transportation"
                   value={staffForm.transportation}
                   onChange={handleStaffInputChange}
-                  className="input"
+                  className="input tabular"
                   placeholder="15000"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="label">入社日</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <label htmlFor="staff-form-hire-date" className="label">入社日</label>
                 <input
+                  id="staff-form-hire-date"
                   type="date"
                   name="hireDate"
                   value={staffForm.hireDate}
@@ -878,9 +715,10 @@ export function StaffManagement() {
                   className="input"
                 />
               </div>
-              <div>
-                <label className="label">生年月日</label>
+              <div className="min-w-0">
+                <label htmlFor="staff-form-birth-date" className="label">生年月日</label>
                 <input
+                  id="staff-form-birth-date"
                   type="date"
                   name="birthDate"
                   value={staffForm.birthDate}
@@ -891,61 +729,55 @@ export function StaffManagement() {
             </div>
 
             <div>
-              <label className="label">有給休暇残日数</label>
+              <label htmlFor="staff-form-paid-leave" className="label">有給休暇残日数</label>
               <input
+                id="staff-form-paid-leave"
                 type="number"
                 name="paidLeaveBalance"
                 value={staffForm.paidLeaveBalance}
                 onChange={handleStaffInputChange}
-                className="input"
+                className="input tabular"
                 placeholder="10"
               />
             </div>
 
             {editingStaff && (
-              <div className="border-t border-secondary-100 pt-4">
+              <div className="border-t-[0.5px] border-separator pt-2">
                 <button
                   type="button"
                   onClick={() => {
                     handleCloseModal();
                     handleOpenPasswordReset(editingStaff);
                   }}
-                  className="inline-flex items-center gap-2 text-sm text-primary-600 hover:text-primary-700 font-medium"
+                  className="btn btn-plain !px-1"
                 >
-                  <Key className="w-4 h-4" />
+                  <KeyRound aria-hidden="true" />
                   パスワードリセット
                 </button>
               </div>
             )}
 
             {error && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm font-medium">{error}</p>
+              <div className="callout callout-danger" role="alert">
+                <AlertCircle aria-hidden="true" />
+                <p className="font-medium break-words">{error}</p>
               </div>
             )}
           </div>
 
-          <div className="flex gap-3 mt-6">
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              className="btn btn-secondary flex-1"
-            >
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button type="button" onClick={handleCloseModal} className="btn btn-gray">
               キャンセル
             </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="btn btn-primary flex-1"
-            >
+            <button type="submit" disabled={isSaving} className="btn btn-filled">
+              {isSaving && <Spinner size={18} className="!text-current" />}
               {isSaving ? '保存中...' : '保存'}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* Password Reset Modal */}
+      {/* パスワードリセット */}
       <Modal
         isOpen={showPasswordResetModal}
         onClose={handleClosePasswordReset}
@@ -955,68 +787,62 @@ export function StaffManagement() {
         <form onSubmit={handleSubmitPasswordReset}>
           <div className="space-y-4">
             {passwordResetTarget && (
-              <div className="text-sm text-secondary-600 bg-secondary-50 border border-secondary-100 px-4 py-3 rounded-xl">
-                <p>
-                  対象スタッフ: <span className="font-medium text-secondary-800">{passwordResetTarget.name}</span>
+              <div className="tile">
+                <p className="t-subhead text-label-2">
+                  対象スタッフ: <span className="font-semibold text-label">{passwordResetTarget.name}</span>
                 </p>
                 {passwordResetTarget.email && (
-                  <p className="text-xs text-secondary-500 mt-0.5">{passwordResetTarget.email}</p>
+                  <p className="t-footnote text-label-2 mt-0.5 break-all">{passwordResetTarget.email}</p>
                 )}
               </div>
             )}
 
             <div>
-              <label className="label">新しいパスワード *</label>
+              <label htmlFor="staff-reset-password" className="label">新しいパスワード *</label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
                 <input
+                  id="staff-reset-password"
                   type={showResetPassword ? 'text' : 'password'}
                   value={resetPassword}
                   onChange={e => setResetPassword(e.target.value)}
-                  className="input pl-10 pr-10"
+                  className="input pr-12"
                   placeholder="8文字以上"
                   autoComplete="new-password"
+                  aria-describedby="staff-reset-password-hint"
                 />
                 <button
                   type="button"
                   onClick={() => setShowResetPassword(s => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-secondary-400 hover:text-primary-600 transition-colors"
+                  className={PASSWORD_TOGGLE}
                   aria-label={showResetPassword ? 'パスワードを隠す' : 'パスワードを表示'}
                 >
-                  {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showResetPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
                 </button>
               </div>
-              <p className="text-xs text-secondary-500 mt-1">8文字以上を推奨します</p>
+              <p id="staff-reset-password-hint" className={FIELD_HINT}>8文字以上を推奨します</p>
             </div>
 
             {resetError && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm font-medium">{resetError}</p>
+              <div className="callout callout-danger" role="alert">
+                <AlertCircle aria-hidden="true" />
+                <p className="font-medium break-words">{resetError}</p>
               </div>
             )}
           </div>
 
-          <div className="flex gap-3 mt-6">
-            <button
-              type="button"
-              onClick={handleClosePasswordReset}
-              className="btn btn-secondary flex-1"
-            >
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button type="button" onClick={handleClosePasswordReset} className="btn btn-gray">
               キャンセル
             </button>
-            <button
-              type="submit"
-              disabled={isResetting}
-              className="btn btn-primary flex-1"
-            >
+            <button type="submit" disabled={isResetting} className="btn btn-filled">
+              {isResetting && <Spinner size={18} className="!text-current" />}
               {isResetting ? '更新中...' : 'パスワードを更新'}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* Admin Add/Edit Modal */}
+      {/* 管理者の登録・編集 */}
       <Modal
         isOpen={showAdminModal}
         onClose={handleCloseAdminModal}
@@ -1026,8 +852,9 @@ export function StaffManagement() {
         <form onSubmit={handleAdminSubmit}>
           <div className="space-y-4">
             <div>
-              <label className="label">氏名 *</label>
+              <label htmlFor="admin-form-name" className="label">氏名 *</label>
               <input
+                id="admin-form-name"
                 type="text"
                 name="name"
                 value={adminForm.name}
@@ -1038,69 +865,61 @@ export function StaffManagement() {
             </div>
 
             <div>
-              <label className="label">メールアドレス *</label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
-                <input
-                  type="email"
-                  name="email"
-                  value={adminForm.email}
-                  onChange={handleAdminInputChange}
-                  className="input pl-10"
-                  placeholder="admin@example.com"
-                  autoComplete="off"
-                />
-              </div>
+              <label htmlFor="admin-form-email" className="label">メールアドレス *</label>
+              <input
+                id="admin-form-email"
+                type="email"
+                name="email"
+                value={adminForm.email}
+                onChange={handleAdminInputChange}
+                className="input"
+                placeholder="admin@example.com"
+                autoComplete="off"
+              />
             </div>
 
             <div>
-              <label className="label">
+              <label htmlFor="admin-form-password" className="label">
                 {editingAdmin ? 'パスワード（変更する場合のみ）' : '初期パスワード *'}
               </label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-400" />
                 <input
+                  id="admin-form-password"
                   type={showAdminPassword ? 'text' : 'password'}
                   name="password"
                   value={adminForm.password}
                   onChange={handleAdminInputChange}
-                  className="input pl-10 pr-10"
+                  className="input pr-12"
                   placeholder={editingAdmin ? '変更する場合のみ入力' : '8文字以上'}
                   autoComplete="new-password"
+                  aria-describedby="admin-form-password-hint"
                 />
                 <button
                   type="button"
                   onClick={() => setShowAdminPassword(s => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-secondary-400 hover:text-primary-600 transition-colors"
+                  className={PASSWORD_TOGGLE}
                   aria-label={showAdminPassword ? 'パスワードを隠す' : 'パスワードを表示'}
                 >
-                  {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showAdminPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
                 </button>
               </div>
-              <p className="text-xs text-secondary-500 mt-1">8文字以上を推奨します</p>
+              <p id="admin-form-password-hint" className={FIELD_HINT}>8文字以上を推奨します</p>
             </div>
 
             {adminError && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm font-medium">{adminError}</p>
+              <div className="callout callout-danger" role="alert">
+                <AlertCircle aria-hidden="true" />
+                <p className="font-medium break-words">{adminError}</p>
               </div>
             )}
           </div>
 
-          <div className="flex gap-3 mt-6">
-            <button
-              type="button"
-              onClick={handleCloseAdminModal}
-              className="btn btn-secondary flex-1"
-            >
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button type="button" onClick={handleCloseAdminModal} className="btn btn-gray">
               キャンセル
             </button>
-            <button
-              type="submit"
-              disabled={isSavingAdmin}
-              className="btn btn-primary flex-1"
-            >
+            <button type="submit" disabled={isSavingAdmin} className="btn btn-filled">
+              {isSavingAdmin && <Spinner size={18} className="!text-current" />}
               {isSavingAdmin ? '保存中...' : '保存'}
             </button>
           </div>
