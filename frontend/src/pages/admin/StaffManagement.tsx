@@ -199,15 +199,21 @@ export function StaffManagement() {
 
     try {
       if (editingStaff) {
-        const updateData: Partial<Staff> & { password?: string } = {
+        const updateData: Partial<Staff> & { password?: string; paidLeaveBalanceBefore?: number } = {
           name: staffForm.name.trim(),
           email: staffForm.email.trim(),
           monthlySalary: Number(staffForm.monthlySalary),
           transportation: Number(staffForm.transportation) || 0,
           hireDate: staffForm.hireDate,
           birthDate: staffForm.birthDate,
-          paidLeaveBalance: Number(staffForm.paidLeaveBalance) || 0,
         };
+        // 有給残日数は自動付与・承認でも変わるため、変更したときだけ送る（開いたときの値も送り、
+        // その間に変わっていたらサーバーが上書きせずに知らせる）
+        const nextBalance = Number(staffForm.paidLeaveBalance) || 0;
+        if (nextBalance !== Number(editingStaff.paidLeaveBalance)) {
+          updateData.paidLeaveBalance = nextBalance;
+          updateData.paidLeaveBalanceBefore = Number(editingStaff.paidLeaveBalance) || 0;
+        }
         if (staffForm.password) {
           updateData.password = staffForm.password;
         }
@@ -737,8 +743,14 @@ export function StaffManagement() {
                 value={staffForm.paidLeaveBalance}
                 onChange={handleStaffInputChange}
                 className="input tabular"
-                placeholder="10"
+                placeholder="0"
+                aria-describedby="staff-form-paid-leave-help"
               />
+              <p id="staff-form-paid-leave-help" className="t-footnote text-label-2 mt-1.5 px-1">
+                {editingStaff
+                  ? '入社日をもとに、6ヶ月で10日・以降1年ごとに法定の日数が自動で付与されます。ここで変更すると「調整」として記録されます。'
+                  : '入社日をもとに、登録日より後の付与（6ヶ月で10日など）は自動で行われます。入社から6ヶ月以上たっている方は、今の残日数を入力してください。'}
+              </p>
             </div>
 
             {editingStaff && (

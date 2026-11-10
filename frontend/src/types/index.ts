@@ -266,7 +266,58 @@ export interface PaidLeaveBalance {
   balance: number;              // 残日数（承認済みの分は差し引き済み）
   pending?: number;             // 承認待ちの日数（全期間）
   available?: number;           // あと何日申請できるか = balance − pending
+  nextGrant?: PaidLeaveNextGrant | null; // 次の付与（入社日が無い場合は null）
   history: PaidLeaveRequest[];
+}
+
+// 次の有給の付与（入社日をもとに法定どおり自動で付与される）
+export interface PaidLeaveNextGrant {
+  date: string;           // 付与日 YYYY-MM-DD
+  days: number;           // 付与日数
+  serviceLength: string;  // その時点の勤続期間（例: 1年6ヶ月）
+}
+
+// 有給付与履歴の種類: 付与 / 時効による消滅 / 登録時の開始 / 管理者の調整
+export type PaidLeaveLedgerKind = 'grant' | 'lapse' | 'start' | 'adjust';
+
+export interface PaidLeaveLedgerEntry {
+  kind: PaidLeaveLedgerKind;
+  date: string;              // 付与日・消滅日・開始日・調整日
+  days: number;              // 増えた日数（消滅・減らす調整はマイナス）
+  grantNo?: number;          // 何回目の付与か（付与・消滅）
+  serviceLength?: string;    // 勤続期間（付与・消滅）
+  expiresOn?: string;        // 有効期限（付与のみ。この日まで使える）
+  balanceAfter?: number | null; // 処理後の残日数
+  remarks?: string;
+}
+
+// 年 5 日の取得義務（10 日以上付与された方。付与日から 1 年の期間）
+export interface PaidLeaveObligation {
+  periodStart: string;
+  periodEnd: string;
+  taken: number;     // 期間内の承認済みの有給（これからの予定を含む）
+  required: number;  // 5
+}
+
+// 管理者の「有給休暇」画面用（スタッフごと）
+export interface PaidLeaveOverviewItem {
+  staffId: string;
+  name: string;
+  hireDate: string;
+  balance: number;
+  pending: number;
+  available: number;
+  nextGrant: PaidLeaveNextGrant | null;
+  obligation: PaidLeaveObligation | null;
+  ledger: PaidLeaveLedgerEntry[];  // 新しい順
+}
+
+// 管理者による有給の登録の結果
+export interface PaidLeaveRegisterResult {
+  requestId: string;
+  balance: number;           // 登録後の残日数
+  convertedPending: boolean; // 同じ日の承認待ちの申請を承認済みにした
+  removedOffDays: number;    // 取り消した同じ日の希望休の数
 }
 
 // ============================================================

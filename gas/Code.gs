@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-11-10 (speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
+const CODE_VERSION = '2026-11-10.2 (有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -39,6 +39,8 @@ const SHEETS = {
   SUBMISSIONS: '月次提出',
   ATTENDANCE_HISTORY: '編集履歴',
   SHIFT_REQUESTS: '希望休申請',
+  // 有給の付与・時効消滅・管理者による調整の記録（有給の自動付与で使う）
+  PAID_LEAVE_GRANTS: '有給付与履歴',
 };
 
 // 旧シート名 → 新シート名のマッピング（移行ヘルパで使用）
@@ -147,6 +149,15 @@ const HEADER_LABELS = {
   'net_pay': '差引支給額',
   'item_name': '項目',
   'amount': '金額',
+  // 有給付与履歴
+  'kind': '区分',
+  'target_date': '対象日',
+  'days': '日数',
+  'grant_no': '付与回数',
+  'service_length': '勤続期間',
+  'expires_on': '有効期限',
+  'balance_after': '処理後の残日数',
+  'recorded_at': '記録日時',
 };
 
 // 日本語 → 英語の逆引き（実行時に1回だけ構築）
@@ -333,6 +344,10 @@ function setupSystem() {
     {
       name: SHEETS.SHIFT_REQUESTS,
       headers: ['id', 'staff_id', 'staff_name', 'target_year_month', 'days_json', 'remarks', 'submitted_at']
+    },
+    {
+      name: SHEETS.PAID_LEAVE_GRANTS,
+      headers: PAID_LEAVE_GRANT_HEADERS
     }
   ];
 
@@ -639,6 +654,7 @@ function initializeSheet(sheet, sheetName) {
       'status', 'rejection_reason', 'reviewed_at', 'reviewed_by',
       'submitted_at', 'remarks'
     ],
+    [SHEETS.PAID_LEAVE_GRANTS]: PAID_LEAVE_GRANT_HEADERS,
   };
 
   if (headers[sheetName]) {
@@ -1087,6 +1103,12 @@ function handleRequest(e, method) {
       case 'paid-leave/update':
         result = handleUpdatePaidLeaveStatus(body);
         break;
+      case 'paid-leave/register':
+        result = handleRegisterPaidLeaveByAdmin(body);
+        break;
+      case 'paid-leave/overview':
+        result = handleGetPaidLeaveOverview();
+        break;
 
       // Salary
       case 'salary':
@@ -1369,6 +1391,8 @@ function handleRegister(body) {
     staffId, email, hash, salt, name,
     0, 0, today, 0, localizeEnumValue_('active'), ''
   ]);
+  // 有給: 登録日より後の付与（入社 6 ヶ月など）を入社日をもとに自動で行う
+  recordPaidLeaveStart_(staffId, name, 0);
 
   return {
     success: true,
@@ -1815,6 +1839,9 @@ function handleGetStaffDetail(params) {
     return { success: false, error: 'スタッフIDが指定されていません' };
   }
 
+  // 有給残日数を表示するので、付与日が来ていれば先に反映する（1 日 1 回だけ実際に処理する）
+  ensurePaidLeaveGrantsCurrent_();
+
   const sheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const data = sheetToObjects(sheet);
   const staff = data.find(s => s.staff_id === staffId);
@@ -1831,10 +1858,12 @@ function handleGetStaffDetail(params) {
       name: staff.name,
       monthlySalary: staff.monthly_salary,
       transportation: staff.transportation,
-      hireDate: staff.hire_date,
-      paidLeaveBalance: staff.paid_leave_balance,
+      // シートの日付セルはそのまま返すと「2026-01-13T15:00:00.000Z」（UTC）になり、
+      // 画面で 1 日前に見えたり、入力欄に表示されなかったりするため 'YYYY-MM-DD' にそろえる
+      hireDate: toYmdString_(staff.hire_date) || (staff.hire_date ? String(staff.hire_date) : ''),
+      paidLeaveBalance: safeNumber_(staff.paid_leave_balance, 0),
       status: staff.status,
-      birthDate: staff.birth_date
+      birthDate: toYmdString_(staff.birth_date) || (staff.birth_date ? String(staff.birth_date) : '')
     }
   };
 }
@@ -1860,20 +1889,33 @@ function handleCreateStaff(body) {
   sheet.appendRow([
     staffId, normalizedEmail, hash, salt, name,
     monthlySalary || 0, transportation || 0,
-    hireDate || '', paidLeaveBalance || 0, localizeEnumValue_('active'), birthDate || ''
+    toYmdString_(hireDate) || hireDate || '', paidLeaveBalance || 0, localizeEnumValue_('active'),
+    toYmdString_(birthDate) || birthDate || ''
   ]);
+  // 有給: 登録時に入力した残日数に、これまでの付与分が含まれているとみなし、
+  // これより後の付与だけを入社日をもとに自動で行う
+  recordPaidLeaveStart_(staffId, name, paidLeaveBalance || 0);
 
   return { success: true, staffId };
 }
 
 function handleUpdateStaff(body) {
-  const { staffId } = body;
-  const updates = {};
-  Object.keys(body).forEach(k => { if (k !== 'staffId') updates[k] = body[k]; });
-
+  const staffId = body && body.staffId ? String(body.staffId) : '';
   if (!staffId) {
     return { success: false, error: 'スタッフIDが指定されていません' };
   }
+  // 有給残日数を変える場合は、承認・自動付与と同時に書き換えないよう有給のロックの中で行う
+  const hasBalance = body.paidLeaveBalance !== undefined && body.paidLeaveBalance !== null && body.paidLeaveBalance !== '';
+  if (hasBalance) {
+    return withPaidLeaveLock_(function () { return updateStaffCore_(body); });
+  }
+  return updateStaffCore_(body);
+}
+
+function updateStaffCore_(body) {
+  const staffId = String(body.staffId);
+  const updates = {};
+  Object.keys(body).forEach(k => { if (k !== 'staffId' && k !== 'paidLeaveBalanceBefore') updates[k] = body[k]; });
 
   const sheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const rowIndex = findRowIndex(sheet, 'staff_id', staffId);
@@ -1883,6 +1925,46 @@ function handleUpdateStaff(body) {
   }
 
   const headers = getHeaderRow_(sheet);
+
+  // 有給残日数: 画面を開いた後に自動付与・承認で変わっていたら、古い値で上書きせずに知らせる。
+  // 値が変わる場合は「調整」として有給付与履歴に記録する。
+  let balanceChange = null;
+  if (updates.paidLeaveBalance !== undefined && updates.paidLeaveBalance !== null && updates.paidLeaveBalance !== '') {
+    const next = Number(updates.paidLeaveBalance);
+    if (isNaN(next)) {
+      return { success: false, error: '有給残日数は数字で入力してください' };
+    }
+    const current = safeNumber_(getCellByColumnName_(sheet, rowIndex, headers, 'paid_leave_balance'), 0);
+    const before = body.paidLeaveBalanceBefore;
+    if (before !== undefined && before !== null && before !== '' && Number(before) !== current) {
+      return {
+        success: false,
+        error: '有給残日数が、画面を開いた後に付与や承認で変わっています（現在 ' + current + ' 日）。画面を開き直してから、もう一度変更してください',
+      };
+    }
+    if (next === current) {
+      delete updates.paidLeaveBalance;
+    } else {
+      updates.paidLeaveBalance = next;
+      balanceChange = { from: current, to: next };
+    }
+  } else {
+    delete updates.paidLeaveBalance;
+  }
+
+  // 日付は 'YYYY-MM-DD' にそろえて書く（時刻付きの文字列のまま書くと日付がずれるため）。
+  // 入社日・在籍状況が変わったら、有給の付与予定が変わるので今日の処理をやり直す。
+  let regrant = false;
+  if (updates.hireDate !== undefined) {
+    const prevHire = toYmdString_(getCellByColumnName_(sheet, rowIndex, headers, 'hire_date'));
+    const nextHire = toYmdString_(updates.hireDate);
+    updates.hireDate = nextHire || (updates.hireDate ? String(updates.hireDate) : '');
+    if (prevHire !== nextHire) regrant = true;
+  }
+  if (updates.birthDate !== undefined) {
+    updates.birthDate = toYmdString_(updates.birthDate) || (updates.birthDate ? String(updates.birthDate) : '');
+  }
+  if (updates.status !== undefined) regrant = true;
   // body のキーから sheet のカラム名へのマッピング
   const fieldToColumn = {
     email: 'email',
@@ -1907,6 +1989,30 @@ function handleUpdateStaff(body) {
       setCellByColumnName_(sheet, rowIndex, headers, fieldToColumn[key], updates[key]);
     }
   });
+
+  if (balanceChange) {
+    try {
+      const ctx = readPaidLeaveGrantRows_();
+      const name = updates.name || getCellByColumnName_(sheet, rowIndex, headers, 'name') || '';
+      appendPaidLeaveGrantEntries_(ctx, [{
+        id: generateId(),
+        staff_id: staffId,
+        name: String(name),
+        kind: 'adjust',
+        target_date: todayYmd_(),
+        days: balanceChange.to - balanceChange.from,
+        grant_no: '',
+        service_length: '',
+        expires_on: '',
+        balance_after: balanceChange.to,
+        recorded_at: new Date().toISOString(),
+        remarks: '管理者が有給残日数を ' + balanceChange.from + ' 日 → ' + balanceChange.to + ' 日に変更',
+      }]);
+    } catch (e) {
+      Logger.log('updateStaffCore_: adjust record failed: ' + (e && e.message ? e.message : e));
+    }
+  }
+  if (regrant) invalidatePaidLeaveGrantMarker_();
 
   return { success: true };
 }
@@ -1976,20 +2082,25 @@ function readPaidLeaveRows_() {
   return { sheet: sheet, headers: headers, rows: rows };
 }
 
-/** 有給休暇シートに承認待ちの申請を 1 行追加する（列は見出し名で合わせる）。 */
-function appendPaidLeaveRow_(ctx, staff, leaveDate, requestedAt) {
+/**
+ * 有給休暇シートに申請を 1 行追加する（列は見出し名で合わせる）。
+ * opts（任意）: { status: 'approved', approvedDate, remarks } — 管理者が登録する場合に使う。
+ * 省略時は従来どおり承認待ち。
+ */
+function appendPaidLeaveRow_(ctx, staff, leaveDate, requestedAt, opts) {
   const headers = ctx.headers && ctx.headers.length ? ctx.headers : getHeaderRow_(ctx.sheet);
   const width = Math.max(headers.length, 8);
   const row = new Array(width).fill('');
+  const o = opts || {};
   const values = {
     id: generateId(),
     staff_id: staff.staff_id,
     name: staff.name,
     request_date: requestedAt,
     leave_date: leaveDate,
-    status: localizeEnumValue_('pending'),
-    approved_date: '',
-    remarks: '',
+    status: localizeEnumValue_(o.status || 'pending'),
+    approved_date: o.approvedDate || '',
+    remarks: o.remarks || '',
   };
   // 見出しが見つからない場合は従来の列順（id, staff_id, name, request_date, leave_date, status, approved_date, remarks）
   const fallbackOrder = ['id', 'staff_id', 'name', 'request_date', 'leave_date', 'status', 'approved_date', 'remarks'];
@@ -2015,6 +2126,9 @@ function handleGetPaidLeaveBalance(params) {
     return { success: false, error: 'スタッフIDが指定されていません' };
   }
 
+  // 付与日・時効の日が来ていれば、先に反映する（1 日 1 回だけ実際に処理する）
+  ensurePaidLeaveGrantsCurrent_();
+
   // Get balance from staff master
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const staffData = sheetToObjects(staffSheet);
@@ -2031,12 +2145,22 @@ function handleGetPaidLeaveBalance(params) {
   const balance = safeNumber_(staff.paid_leave_balance, 0);
   const pending = history.filter(h => (h.status || 'pending') === 'pending').length;
 
+  // 次の付与（日付・日数）。取得に失敗しても残日数の表示は妨げない
+  let nextGrant = null;
+  try {
+    const ledger = readPaidLeaveGrantRows_().rows.filter(function (r) { return r.staffId === staffId; });
+    nextGrant = nextPaidLeaveGrant_(staff, ledger, todayYmd_());
+  } catch (e) {
+    Logger.log('handleGetPaidLeaveBalance: nextGrant failed: ' + (e && e.message ? e.message : e));
+  }
+
   return {
     success: true,
     data: {
       balance: balance,
       pending: pending,
       available: balance - pending,
+      nextGrant: nextGrant,
       history: history.map(h => ({
         id: h.id,
         staffId: h.staff_id,
@@ -2063,6 +2187,9 @@ function handlePaidLeaveRequest(body) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
     return { success: false, error: '日付の形式が正しくありません' };
   }
+
+  // 付与日が来ていれば先に反映してから残日数を確認する（ロックの外で行う）
+  ensurePaidLeaveGrantsCurrent_();
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
   const staffData = sheetToObjects(staffSheet);
@@ -2232,6 +2359,629 @@ function handleUpdatePaidLeaveStatus(body) {
 
     return { success: true };
   });
+}
+
+// ============================================================
+// 有給の自動付与（法定どおり）と時効による消滅
+//
+//   付与の規則（労働基準法 39 条。週 5 日以上 または 週 30 時間以上働く方の日数）:
+//     入社日から 6 ヶ月 → 10 日。以降 1 年ごとに 11・12・14・16・18・20 日（6 年 6 ヶ月以降は毎年 20 日）。
+//     付与日 = 入社日の 6 ヶ月後（以降 1 年ごと）の同じ日。その月に同じ日が無いときは翌月 1 日
+//     （例: 1/14 入社 → 7/14、8/31 入社 → 翌年 3/1。期間の数え方の決まりどおり）。
+//   時効: 付与日から 2 年で、使わなかった分が消える（有効期限 = 2 年後の同じ日の前日）。
+//     どの付与分から使ったかは「古い付与分から先に使う」とみなして計算する。
+//   前提: 出勤率 8 割以上を満たしている（自動では判定しない）。週 4 日以下かつ週 30 時間未満の
+//         パートの方の少ない日数（比例付与）には対応していない（その場合は管理者が残日数を調整する）。
+//
+//   仕組み:
+//   - 「有給残日数」（スタッフマスター）は今までどおり「残っている日数」そのもの。
+//     承認で −1、承認済みを取り消すと +1（今までどおり）。
+//   - 付与日が来たら残日数に付与日数を足し、「有給付与履歴」シートに記録する。
+//     何回目の付与か（付与回数）で判定するので、同じ付与を二度足すことはない（入社日を直しても）。
+//   - 時効の日が来たら、その付与分の残りを残日数から引き、記録する。
+//   - 処理は 1 日 1 回（その日の最初の読み込み、または 10 分ごとのトリガー）。何度呼んでも結果は同じ。
+//   - この仕組みを入れる前から登録されているスタッフは、まだ有効期限内の過去の付与分も一度だけ付与する。
+//     これ以降に登録されたスタッフには「開始」の記録を付け、登録日より後の付与だけを自動で行う
+//     （登録時に入力した残日数に、それより前の付与分が含まれているとみなすため）。
+//   - 管理者がスタッフ管理で残日数を変えた場合は「調整」として記録する。
+// ============================================================
+
+const STATUTORY_PAID_LEAVE_DAYS = [10, 11, 12, 14, 16, 18, 20];
+const PAID_LEAVE_FIRST_GRANT_MONTHS = 6;
+const PAID_LEAVE_VALID_MONTHS = 24;
+const PAID_LEAVE_OBLIGATION_DAYS = 5; // 年 10 日以上付与される方は、付与日から 1 年以内に 5 日取得させる義務
+const PAID_LEAVE_GRANT_DONE_PROP = 'PAID_LEAVE_GRANT_DATE';
+const PAID_LEAVE_GRANT_CACHE_PREFIX = 'plgrant:v1:';
+const PAID_LEAVE_GRANT_HEADERS = [
+  'id', 'staff_id', 'name', 'kind', 'target_date', 'days', 'grant_no',
+  'service_length', 'expires_on', 'balance_after', 'recorded_at', 'remarks'
+];
+const PAID_LEAVE_GRANT_KIND_LABELS = { grant: '付与', lapse: '失効', start: '開始', adjust: '調整' };
+
+function pad2_(n) {
+  return String(n).padStart(2, '0');
+}
+
+/** 今日（スクリプトのタイムゾーン）を 'YYYY-MM-DD' で返す。 */
+function todayYmd_() {
+  return Utilities.formatDate(new Date(), scriptTimeZone_(), 'yyyy-MM-dd');
+}
+
+function daysInMonth_(y, m) {
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/**
+ * 日付の値を 'YYYY-MM-DD' にそろえる。読めない値は ''。
+ *  - Date（シートの日付セル）→ スクリプトのタイムゾーンの日付
+ *  - 'YYYY-MM-DD' / 'YYYY/M/D'
+ *  - 時刻付き（'2026-01-13T15:00:00.000Z' など）→ 日時として読み、スクリプトのタイムゾーンの日付
+ */
+function toYmdString_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return '';
+    return Utilities.formatDate(value, scriptTimeZone_(), 'yyyy-MM-dd');
+  }
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const dt = new Date(s);
+    return isNaN(dt.getTime()) ? '' : Utilities.formatDate(dt, scriptTimeZone_(), 'yyyy-MM-dd');
+  }
+  const m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+  if (!m) return '';
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > daysInMonth_(y, mo)) return '';
+  return y + '-' + pad2_(mo) + '-' + pad2_(d);
+}
+
+/** 'YYYY-MM-DD' の months ヶ月後の同じ日。その月に同じ日が無いときは翌月 1 日。 */
+function addMonthsLegal_(ymd, months) {
+  const p = String(ymd).split('-').map(Number);
+  const idx = p[0] * 12 + (p[1] - 1) + months;
+  const y = Math.floor(idx / 12);
+  const m = idx - y * 12 + 1;
+  if (p[2] <= daysInMonth_(y, m)) return y + '-' + pad2_(m) + '-' + pad2_(p[2]);
+  const idx2 = idx + 1;
+  const y2 = Math.floor(idx2 / 12);
+  return y2 + '-' + pad2_(idx2 - y2 * 12 + 1) + '-01';
+}
+
+function addDaysYmd_(ymd, n) {
+  const p = String(ymd).split('-').map(Number);
+  const dt = new Date(Date.UTC(p[0], p[1] - 1, p[2] + n));
+  return dt.getUTCFullYear() + '-' + pad2_(dt.getUTCMonth() + 1) + '-' + pad2_(dt.getUTCDate());
+}
+
+/** n 回目（1 = 入社 6 ヶ月）の付与日数。 */
+function paidLeaveGrantDays_(grantNo) {
+  return STATUTORY_PAID_LEAVE_DAYS[Math.min(Math.max(grantNo, 1), STATUTORY_PAID_LEAVE_DAYS.length) - 1];
+}
+
+/** n 回目の付与時点の勤続期間（表示用）。 */
+function paidLeaveServiceLabel_(grantNo) {
+  return grantNo <= 1 ? '6ヶ月' : (grantNo - 1) + '年6ヶ月';
+}
+
+/** n 回目の付与日。 */
+function paidLeaveGrantDate_(hireYmd, grantNo) {
+  return addMonthsLegal_(hireYmd, PAID_LEAVE_FIRST_GRANT_MONTHS + 12 * (grantNo - 1));
+}
+
+/** 時効で消える日（この日からは使えない）。 */
+function paidLeaveLapseDate_(grantYmd) {
+  return addMonthsLegal_(grantYmd, PAID_LEAVE_VALID_MONTHS);
+}
+
+/** 有効期限（この日まで使える）。 */
+function paidLeaveExpiresOn_(grantYmd) {
+  return addDaysYmd_(paidLeaveLapseDate_(grantYmd), -1);
+}
+
+function paidLeaveKindFromCell_(value) {
+  const s = String(value == null ? '' : value).trim();
+  for (const k in PAID_LEAVE_GRANT_KIND_LABELS) {
+    if (Object.prototype.hasOwnProperty.call(PAID_LEAVE_GRANT_KIND_LABELS, k)) {
+      if (PAID_LEAVE_GRANT_KIND_LABELS[k] === s || k === s) return k;
+    }
+  }
+  return '';
+}
+
+/** 有給付与履歴シートを読む（日付は 'YYYY-MM-DD'、区分は英語キー）。 */
+function readPaidLeaveGrantRows_() {
+  const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE_GRANTS);
+  const values = sheet.getDataRange().getValues();
+  const first = values && values[0] ? values[0] : [];
+  const headers = first.some(function (h) { return h !== '' && h != null; })
+    ? first
+    : localizeHeaders_(PAID_LEAVE_GRANT_HEADERS);
+  const rows = [];
+  for (let i = 1; i < values.length; i++) {
+    const o = rowToObject_(headers, values[i]);
+    const kind = paidLeaveKindFromCell_(o.kind);
+    if (!o.staff_id || !kind) continue;
+    rows.push({
+      rowIndex: i + 1,
+      id: String(o.id || ''),
+      staffId: String(o.staff_id),
+      kind: kind,
+      date: toYmdString_(o.target_date),
+      days: safeNumber_(o.days, 0),
+      grantNo: safeNumber_(o.grant_no, 0),
+      serviceLength: String(o.service_length || ''),
+      expiresOn: toYmdString_(o.expires_on),
+      balanceAfter: (o.balance_after === '' || o.balance_after == null) ? null : safeNumber_(o.balance_after, 0),
+      recordedAt: toIsoString_(o.recorded_at),
+      remarks: String(o.remarks || ''),
+    });
+  }
+  return { sheet: sheet, headers: headers, rows: rows };
+}
+
+/** 有給付与履歴シートに記録を追加する（entry は英語キーのオブジェクト）。 */
+function appendPaidLeaveGrantEntries_(ctx, entries) {
+  if (!entries || !entries.length) return;
+  const headers = ctx.headers;
+  const width = Math.max(headers.length, PAID_LEAVE_GRANT_HEADERS.length);
+  entries.forEach(function (e) {
+    const row = new Array(width).fill('');
+    PAID_LEAVE_GRANT_HEADERS.forEach(function (key, i) {
+      const idx = findHeaderIndex_(headers, key);
+      let v = e[key];
+      if (key === 'kind') v = PAID_LEAVE_GRANT_KIND_LABELS[v] || v;
+      row[idx === -1 ? i : idx] = (v === undefined || v === null) ? '' : v;
+    });
+    ctx.sheet.appendRow(row);
+  });
+}
+
+/**
+ * 1 人分の付与・時効を、今日の時点まで計算する（シートには書かない）。
+ *  staff:  スタッフマスターの 1 行（英語キー）
+ *  ledger: このスタッフの付与履歴（readPaidLeaveGrantRows_ の rows）
+ * 戻り値: { entries: 追加する記録, balance: 処理後の残日数, startBalance: 処理前の残日数 }
+ */
+function planPaidLeaveGrantsForStaff_(staff, ledger, todayYmd) {
+  const startBalance = safeNumber_(staff.paid_leave_balance, 0);
+  const result = { entries: [], balance: startBalance, startBalance: startBalance };
+  const hire = toYmdString_(staff.hire_date);
+  if (!hire || hire > todayYmd) return result;
+
+  // 「開始」の記録があれば、その日より後の付与だけを自動で行う
+  let baseline = '';
+  ledger.forEach(function (r) {
+    if (r.kind === 'start' && r.date && r.date > baseline) baseline = r.date;
+  });
+
+  // これまでの付与（付与回数ごと）と、時効の処理済みかどうか
+  const grants = {};
+  ledger.forEach(function (r) {
+    if (r.kind === 'grant' && r.grantNo > 0 && !grants[r.grantNo]) {
+      grants[r.grantNo] = { grantNo: r.grantNo, date: r.date, days: r.days, active: true, lapsed: false };
+    }
+  });
+  ledger.forEach(function (r) {
+    if (r.kind === 'lapse' && r.grantNo > 0 && grants[r.grantNo]) grants[r.grantNo].lapsed = true;
+  });
+  const positiveAdjusts = ledger.filter(function (r) { return r.kind === 'adjust' && r.days > 0 && r.date; });
+
+  // 今日までに来た付与のうち、まだ足していないもの
+  const events = [];
+  for (let n = 1; n <= 100; n++) {
+    const gd = paidLeaveGrantDate_(hire, n);
+    if (gd > todayYmd) break;
+    if (grants[n]) continue;
+    if (baseline) {
+      if (gd <= baseline) continue; // 登録日までの分は、登録時の残日数に含まれている
+    } else if (paidLeaveLapseDate_(gd) <= todayYmd) {
+      continue; // 既に有効期限が過ぎた昔の付与は足さない
+    }
+    grants[n] = { grantNo: n, date: gd, days: paidLeaveGrantDays_(n), active: false, lapsed: false };
+    events.push({ type: 'grant', date: gd, grantNo: n });
+  }
+  // 今日までに時効の日が来た付与のうち、まだ処理していないもの
+  Object.keys(grants).forEach(function (k) {
+    const g = grants[k];
+    if (g.lapsed || !g.date) return;
+    const ld = paidLeaveLapseDate_(g.date);
+    if (ld <= todayYmd) events.push({ type: 'lapse', date: ld, grantNo: g.grantNo });
+  });
+  // 日付順。同じ日は「時効 → 付与」の順（2 年前の付与分が消えてから新しい付与が入る）
+  events.sort(function (a, b) {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.type !== b.type) return a.type === 'lapse' ? -1 : 1;
+    return a.grantNo - b.grantNo;
+  });
+
+  const recordedAt = new Date().toISOString();
+  let balance = startBalance;
+  events.forEach(function (ev) {
+    const g = grants[ev.grantNo];
+    if (ev.type === 'grant') {
+      balance += g.days;
+      g.active = true;
+      result.entries.push({
+        id: generateId(),
+        staff_id: String(staff.staff_id),
+        name: staff.name || '',
+        kind: 'grant',
+        target_date: g.date,
+        days: g.days,
+        grant_no: g.grantNo,
+        service_length: paidLeaveServiceLabel_(g.grantNo),
+        expires_on: paidLeaveExpiresOn_(g.date),
+        balance_after: balance,
+        recorded_at: recordedAt,
+        remarks: '法定の付与（入社 ' + hire + '）' + (g.date < todayYmd ? '。付与日の後にまとめて反映' : ''),
+      });
+      return;
+    }
+    // 時効: 古い付与分から先に使ったとみなし、この付与分の残りを消す。
+    // 残日数のうち、これより新しい付与分（と、それ以降に管理者が足した分）を除いた部分がこの付与分の残り。
+    let newer = 0;
+    Object.keys(grants).forEach(function (k) {
+      const o = grants[k];
+      if (o.grantNo > g.grantNo && o.active && !o.lapsed && o.date <= ev.date) newer += o.days;
+    });
+    positiveAdjusts.forEach(function (a) {
+      if (a.date > g.date && a.date <= ev.date) newer += a.days;
+    });
+    const remaining = Math.min(g.days, Math.max(0, balance - newer));
+    balance -= remaining;
+    g.lapsed = true;
+    result.entries.push({
+      id: generateId(),
+      staff_id: String(staff.staff_id),
+      name: staff.name || '',
+      kind: 'lapse',
+      target_date: ev.date,
+      days: remaining > 0 ? -remaining : 0,
+      grant_no: g.grantNo,
+      service_length: paidLeaveServiceLabel_(g.grantNo),
+      expires_on: '',
+      balance_after: balance,
+      recorded_at: recordedAt,
+      remarks: remaining > 0
+        ? g.date + ' 付与分のうち、使わなかった ' + remaining + ' 日が時効により消滅'
+        : g.date + ' 付与分は使い切り（消滅する日数なし）',
+    });
+  });
+  result.balance = balance;
+  return result;
+}
+
+/**
+ * 全スタッフ（退職者を除く）の付与・時効を今日の時点まで反映する。
+ * 呼ぶ側でロックを取ること（ensurePaidLeaveGrantsCurrent_ / menuProcessPaidLeaveGrants）。
+ * 戻り値: { changes: [{ staffId, name, entries }] }
+ */
+function processPaidLeaveGrants_(todayYmd) {
+  const today = todayYmd || todayYmd_();
+  const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+  const staffValues = staffSheet.getDataRange().getValues();
+  const staffHeaders = staffValues && staffValues[0] ? staffValues[0] : [];
+  const ledgerCtx = readPaidLeaveGrantRows_();
+  const changes = [];
+  for (let i = 1; i < staffValues.length; i++) {
+    const s = rowToObject_(staffHeaders, staffValues[i]);
+    if (!s.staff_id || s.status === 'inactive') continue;
+    const sid = String(s.staff_id);
+    const mine = ledgerCtx.rows.filter(function (r) { return r.staffId === sid; });
+    const plan = planPaidLeaveGrantsForStaff_(s, mine, today);
+    if (!plan.entries.length) continue;
+    // 記録 → 残日数の順に書く（記録があれば同じ付与を二度足さない）
+    appendPaidLeaveGrantEntries_(ledgerCtx, plan.entries);
+    const delta = plan.balance - plan.startBalance;
+    if (delta !== 0) {
+      // 計算の間に残日数が変わっていても取りこぼさないよう、書く直前の値に差分を足す
+      const fresh = safeNumber_(getCellByColumnName_(staffSheet, i + 1, staffHeaders, 'paid_leave_balance'), 0);
+      setCellByColumnName_(staffSheet, i + 1, staffHeaders, 'paid_leave_balance', fresh + delta);
+    }
+    changes.push({ staffId: sid, name: s.name || '', entries: plan.entries });
+  }
+  if (changes.length) SpreadsheetApp.flush();
+  return { changes: changes };
+}
+
+/**
+ * 付与日・時効の日が来ていれば反映する（1 日 1 回だけ実際に処理する）。
+ * 他のロックの中から呼ばないこと（同じロックを二重に取らないため）。
+ * 処理できなかった場合（ほかの処理が実行中など）は何もしない（次の読み込みで行う）。
+ */
+function ensurePaidLeaveGrantsCurrent_(force) {
+  const today = todayYmd_();
+  const cacheKey = PAID_LEAVE_GRANT_CACHE_PREFIX + today;
+  let cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    if (!force && cache.get(cacheKey) === '1') return null;
+  } catch (e) {
+    cache = null;
+  }
+  const props = PropertiesService.getScriptProperties();
+  const remember = function () {
+    try { if (cache) cache.put(cacheKey, '1', 6 * 60 * 60); } catch (e) { /* ignore */ }
+  };
+  if (!force && props.getProperty(PAID_LEAVE_GRANT_DONE_PROP) === today) {
+    remember();
+    return null;
+  }
+  // 同時に 2 つの処理が付与して二重にならないよう、スクリプト全体のロックを取る。
+  // さらに承認・申請（有給のロック）とも重ならないよう、有給のロックも取る。
+  const scriptLock = LockService.getScriptLock();
+  if (!scriptLock.tryLock(3000)) return null;
+  try {
+    const userLock = LockService.getUserLock();
+    if (!userLock.tryLock(5000)) return null;
+    try {
+      if (!force && props.getProperty(PAID_LEAVE_GRANT_DONE_PROP) === today) {
+        remember();
+        return null;
+      }
+      const summary = processPaidLeaveGrants_(today);
+      props.setProperty(PAID_LEAVE_GRANT_DONE_PROP, today);
+      remember();
+      return summary;
+    } finally {
+      try { userLock.releaseLock(); } catch (e) { /* ignore */ }
+    }
+  } catch (e) {
+    Logger.log('ensurePaidLeaveGrantsCurrent_ failed: ' + (e && e.message ? e.message : e));
+    return null;
+  } finally {
+    try { scriptLock.releaseLock(); } catch (e) { /* ignore */ }
+  }
+}
+
+/** 入社日・在籍状況の変更後に、今日の処理をやり直せるようにする。 */
+function invalidatePaidLeaveGrantMarker_() {
+  try { PropertiesService.getScriptProperties().deleteProperty(PAID_LEAVE_GRANT_DONE_PROP); } catch (e) { /* ignore */ }
+  try { CacheService.getScriptCache().remove(PAID_LEAVE_GRANT_CACHE_PREFIX + todayYmd_()); } catch (e) { /* ignore */ }
+}
+
+/**
+ * 新しく登録したスタッフに「開始」の記録を付ける（これより後の付与だけを自動で行うため）。
+ * 失敗してもスタッフ登録は止めない。
+ */
+function recordPaidLeaveStart_(staffId, name, balance) {
+  try {
+    const ctx = readPaidLeaveGrantRows_();
+    const b = safeNumber_(balance, 0);
+    appendPaidLeaveGrantEntries_(ctx, [{
+      id: generateId(),
+      staff_id: staffId,
+      name: name || '',
+      kind: 'start',
+      target_date: todayYmd_(),
+      days: 0,
+      grant_no: '',
+      service_length: '',
+      expires_on: '',
+      balance_after: b,
+      recorded_at: new Date().toISOString(),
+      remarks: '登録時の有給残日数 ' + b + ' 日（これより前の付与分を含む）。これより後の付与は入社日をもとに自動で行う',
+    }]);
+  } catch (e) {
+    Logger.log('recordPaidLeaveStart_ failed: ' + (e && e.message ? e.message : e));
+  }
+}
+
+/** 次の付与（まだ来ていない最初の付与日と日数）。入社日が無ければ null。 */
+function nextPaidLeaveGrant_(staff, ledger, todayYmd) {
+  const hire = toYmdString_(staff && staff.hire_date);
+  if (!hire) return null;
+  const granted = {};
+  (ledger || []).forEach(function (r) {
+    if (r.kind === 'grant' && r.grantNo > 0) granted[r.grantNo] = true;
+  });
+  for (let n = 1; n <= 100; n++) {
+    const gd = paidLeaveGrantDate_(hire, n);
+    if (gd <= todayYmd || granted[n]) continue;
+    return { date: gd, days: paidLeaveGrantDays_(n), serviceLength: paidLeaveServiceLabel_(n) };
+  }
+  return null;
+}
+
+/**
+ * 年 5 日の取得義務の状況（10 日以上付与された方。付与日から 1 年の期間で数える）。
+ * 承認済みの有給の日（これからの予定の日を含む）を数える。対象の期間が無ければ null。
+ */
+function paidLeaveObligation_(ledger, leaveRows, todayYmd) {
+  let target = null;
+  (ledger || []).forEach(function (r) {
+    if (r.kind !== 'grant' || r.days < 10 || !r.date || r.date > todayYmd) return;
+    const end = addDaysYmd_(addMonthsLegal_(r.date, 12), -1);
+    if (todayYmd > end) return;
+    if (!target || r.date > target.start) target = { start: r.date, end: end };
+  });
+  if (!target) return null;
+  const taken = (leaveRows || []).filter(function (r) {
+    return r.status === 'approved' && r.date >= target.start && r.date <= target.end;
+  }).length;
+  return { periodStart: target.start, periodEnd: target.end, taken: taken, required: PAID_LEAVE_OBLIGATION_DAYS };
+}
+
+/** 指定スタッフ・日付の希望休（承認待ち・承認済み）を削除する。削除した件数を返す。 */
+function removeShiftRequestOffDays_(staffId, ymd) {
+  const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
+  ensureShiftRequestsRowBased_(sheet);
+  const data = sheet.getDataRange().getValues();
+  const headers = data && data[0] ? data[0] : [];
+  const sIdx = findHeaderIndex_(headers, 'staff_id');
+  const dIdx = findHeaderIndex_(headers, 'date');
+  const stIdx = findHeaderIndex_(headers, 'status');
+  if (sIdx === -1 || dIdx === -1) return 0;
+  const rowsToDelete = [];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][sIdx]) !== staffId) continue;
+    if (toYmdString_(data[i][dIdx]) !== ymd) continue;
+    const raw = stIdx === -1 ? '' : data[i][stIdx];
+    const status = REVERSE_ENUM_LABEL_MAP[raw] || raw || 'pending';
+    if (status === 'rejected') continue; // 却下の記録は残す
+    rowsToDelete.push(i + 1);
+  }
+  rowsToDelete.sort(function (a, b) { return b - a; }).forEach(function (r) { sheet.deleteRow(r); });
+  return rowsToDelete.length;
+}
+
+/**
+ * 管理者が有給を登録する（承認済みとして記録）。過去の日・希望休の提出期限を過ぎた月にも使える。
+ * body: { staffId, leaveDate: 'YYYY-MM-DD', remarks? }
+ *  - 同じ日にすでに承認済みの有給があればエラー
+ *  - 同じ日に承認待ちの有給があれば、それを承認済みにする
+ *  - 同じ日の希望休（承認待ち・承認済み）は取り消す（同じ日が希望休と有給の両方にならないように）
+ *  - 残日数から 1 日引く。残日数（ほかの承認待ちを除く）が 1 日未満ならエラー
+ */
+function handleRegisterPaidLeaveByAdmin(body) {
+  const staffId = body && body.staffId ? String(body.staffId) : '';
+  const rawDate = body && body.leaveDate ? String(body.leaveDate).trim() : '';
+  const leaveDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? toYmdString_(rawDate) : '';
+  const note = body && body.remarks ? String(body.remarks).trim().slice(0, 200) : '';
+  if (!staffId || !rawDate) {
+    return { success: false, error: 'スタッフと日付を指定してください' };
+  }
+  if (!leaveDate) {
+    return { success: false, error: '日付の形式が正しくありません' };
+  }
+
+  // 付与日が来ていれば先に反映してから残日数を確認する（ロックの外で行う）
+  ensurePaidLeaveGrantsCurrent_();
+
+  return withPaidLeaveLock_(function () {
+    const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+    const staffRowIndex = findRowIndex(staffSheet, 'staff_id', staffId);
+    if (staffRowIndex === -1) {
+      return { success: false, error: 'スタッフが見つかりません' };
+    }
+    const staffHeaders = getHeaderRow_(staffSheet);
+    const name = String(getCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'name') || '');
+    const balance = safeNumber_(getCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance'), 0);
+
+    const ctx = readPaidLeaveRows_();
+    const mine = ctx.rows.filter(function (r) { return r.staffId === staffId; });
+    if (mine.some(function (r) { return r.date === leaveDate && r.status === 'approved'; })) {
+      return { success: false, error: 'この日はすでに有給（承認済み）として登録されています' };
+    }
+    const pendingSame = mine.filter(function (r) { return r.date === leaveDate && r.status === 'pending'; })[0] || null;
+    const pendingOther = mine.filter(function (r) { return r.status === 'pending' && r !== pendingSame; }).length;
+    if (balance - pendingOther < 1) {
+      return {
+        success: false,
+        error: '有給の残り日数が足りません（残り ' + balance + ' 日'
+          + (pendingOther ? '・ほかの承認待ち ' + pendingOther + ' 日' : '') + '）',
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const remark = '管理者が登録' + (note ? '：' + note : '');
+    let requestId;
+    if (pendingSame) {
+      setCellByColumnName_(ctx.sheet, pendingSame.rowIndex, ctx.headers, 'status', 'approved');
+      setCellByColumnName_(ctx.sheet, pendingSame.rowIndex, ctx.headers, 'approved_date', nowIso);
+      setCellByColumnName_(ctx.sheet, pendingSame.rowIndex, ctx.headers, 'remarks', remark);
+      requestId = pendingSame.id;
+    } else {
+      requestId = appendPaidLeaveRow_(ctx, { staff_id: staffId, name: name }, leaveDate, nowIso, {
+        status: 'approved',
+        approvedDate: nowIso,
+        remarks: remark,
+      });
+    }
+    setCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance', balance - 1);
+
+    let removedOffDays = 0;
+    try {
+      removedOffDays = removeShiftRequestOffDays_(staffId, leaveDate);
+    } catch (e) {
+      Logger.log('handleRegisterPaidLeaveByAdmin: remove off day failed: ' + (e && e.message ? e.message : e));
+    }
+
+    return {
+      success: true,
+      data: {
+        requestId: requestId,
+        balance: balance - 1,
+        convertedPending: !!pendingSame,
+        removedOffDays: removedOffDays,
+      },
+    };
+  });
+}
+
+/**
+ * 管理者の「有給休暇」画面用のまとめ。在籍中のスタッフごとに
+ * 残日数・承認待ち・次の付与・年 5 日の取得状況・付与履歴（新しい順に最大 30 件）を返す。
+ */
+function handleGetPaidLeaveOverview() {
+  ensurePaidLeaveGrantsCurrent_();
+  const today = todayYmd_();
+  const staffList = sheetToObjects(getOrCreateSheet(SHEETS.STAFF_MASTER))
+    .filter(function (s) { return s.staff_id && s.status !== 'inactive'; });
+  const ledger = readPaidLeaveGrantRows_().rows;
+  const leave = readPaidLeaveRows_().rows;
+  const data = staffList.map(function (s) {
+    const sid = String(s.staff_id);
+    const mine = ledger.filter(function (r) { return r.staffId === sid; });
+    const myLeave = leave.filter(function (r) { return r.staffId === sid; });
+    const balance = safeNumber_(s.paid_leave_balance, 0);
+    const pending = myLeave.filter(function (r) { return r.status === 'pending'; }).length;
+    const history = mine.slice().sort(function (a, b) {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      return b.rowIndex - a.rowIndex;
+    }).slice(0, 30).map(function (r) {
+      return {
+        kind: r.kind,
+        date: r.date,
+        days: r.days,
+        grantNo: r.grantNo || undefined,
+        serviceLength: r.serviceLength || undefined,
+        expiresOn: r.expiresOn || undefined,
+        balanceAfter: r.balanceAfter,
+        remarks: r.remarks || undefined,
+      };
+    });
+    return {
+      staffId: sid,
+      name: s.name || '',
+      hireDate: toYmdString_(s.hire_date),
+      balance: balance,
+      pending: pending,
+      available: balance - pending,
+      nextGrant: nextPaidLeaveGrant_(s, mine, today),
+      obligation: paidLeaveObligation_(mine, myLeave, today),
+      ledger: history,
+    };
+  });
+  return { success: true, data: data };
+}
+
+/**
+ * メニュー: 有給の付与・時効を今すぐ反映し、結果を表示する（動作確認用。通常は自動で行われる）。
+ */
+function menuProcessPaidLeaveGrants() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const summary = ensurePaidLeaveGrantsCurrent_(true);
+    if (!summary) {
+      ui.alert('有給の自動付与', 'ほかの処理が実行中のため、今は反映できませんでした。少し待ってからもう一度お試しください。', ui.ButtonSet.OK);
+      return;
+    }
+    const lines = [];
+    summary.changes.forEach(function (c) {
+      c.entries.forEach(function (e) {
+        if (e.kind === 'grant') lines.push(c.name + ': ' + e.target_date + ' に ' + e.days + ' 日を付与（勤続' + e.service_length + '）');
+        if (e.kind === 'lapse') lines.push(c.name + ': ' + e.target_date + ' に ' + (-e.days) + ' 日が時効で消滅');
+      });
+    });
+    ui.alert('有給の自動付与',
+      lines.length ? lines.join('\n') + '\n\n「有給付与履歴」シートに記録しました。' : '新しく付与・消滅する分はありませんでした（反映済みです）。',
+      ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('反映に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+  }
 }
 
 function handleGetInsuranceRates() {
@@ -4210,6 +4960,12 @@ function hasAttendanceLogTrigger_() {
  * 10 分ごとのトリガーから呼ばれる。作り直しが必要と記録された分だけ出勤簿シートを作り直す。
  */
 function attendanceLogRebuildTrigger() {
+  // 有給の付与日・時効の日が来ていれば反映する（1 日 1 回。下のロックを取る前に行う）
+  try {
+    ensurePaidLeaveGrantsCurrent_();
+  } catch (e) {
+    Logger.log('attendanceLogRebuildTrigger: paid leave grants failed: ' + (e && e.message ? e.message : e));
+  }
   const lock = LockService.getScriptLock();
   // 「出勤簿を再生成（今すぐ）」などが実行中なら、今回は何もせず次の回に任せる
   if (!lock.tryLock(1000)) return;
@@ -4337,6 +5093,7 @@ function onOpen() {
     .addItem('翌月のシフト雛形を作成', 'menuGenerateNextMonthShift')
     .addItem('出勤簿を再生成（今すぐ）', 'menuRebuildAttendanceLogs')
     .addItem('出勤簿の自動更新（約10分ごと）を設定', 'menuInstallAttendanceLogTrigger')
+    .addItem('有給の自動付与を今すぐ反映', 'menuProcessPaidLeaveGrants')
     .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
     .addSeparator()
     .addItem('提出期限リマインドを毎月1日に自動送信する設定', 'menuInstallMonthlyReminder')
@@ -5259,6 +6016,8 @@ function normalizeOffDays_(parsed) {
  * 有給の残日数が足りないなど、確認で問題があれば何も書き込まずにエラーを返す。
  */
 function handleSubmitShiftRequest(body) {
+  // 有給も送られてくる場合に備えて、付与日が来ていれば先に反映する（ロックの外で行う）
+  if (body && Array.isArray(body.paidLeaveDates)) ensurePaidLeaveGrantsCurrent_();
   return withPaidLeaveLock_(function () { return submitShiftRequestCore_(body); });
 }
 

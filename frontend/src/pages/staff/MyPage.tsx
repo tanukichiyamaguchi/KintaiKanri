@@ -17,6 +17,7 @@ import { attendanceApi, paidLeaveApi, salaryApi, submissionApi } from '../../api
 import type { AttendanceRecord, PaidLeaveBalance, MonthlySubmission, ClockGate } from '../../types';
 import { Header, Loading, Modal, SubmissionStatusBadge, SubmissionDeadlineBanner } from '../../components/common';
 import { formatMinutesAsTime } from '../../utils/calculations';
+import { formatYmdJp } from '../../utils/paidLeaveGrant';
 
 type Tab = 'attendance' | 'paidLeave' | 'salary';
 
@@ -409,6 +410,11 @@ export function MyPage() {
                   </span>
                   <span className="t-title3 ml-1 text-label-2">日</span>
                 </p>
+                {!isLoading && paidLeave?.nextGrant && (
+                  <p className="t-footnote mt-3 text-label-2 tabular">
+                    次の付与: {formatYmdJp(paidLeave.nextGrant.date)}に{paidLeave.nextGrant.days}日
+                  </p>
+                )}
 
                 {/* Request Button */}
                 <button
