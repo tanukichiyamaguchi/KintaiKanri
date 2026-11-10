@@ -1,15 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
-  Edit2,
-  Save,
-  X,
+  Pencil,
   AlertCircle,
-  ClipboardList,
-  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { staffApi, attendanceApi, submissionApi } from '../../api';
@@ -21,6 +16,13 @@ import type {
 } from '../../types';
 import { Header, Loading } from '../../components/common';
 import { formatMinutesAsTime, formatLocalDate } from '../../utils/calculations';
+
+// 表（iPad・PC）の見出しセル
+const TH = 't-footnote text-label-2 font-medium px-4 py-2.5 bg-surface sticky top-0 whitespace-nowrap';
+// 表の中で使う小さめの入力欄
+const CELL_INPUT = 'input !min-h-9 !py-1.5 !px-2.5 !text-[15px]';
+// 前月・次月の丸いボタン
+const STEP_BTN = 'grid h-11 w-11 place-items-center rounded-full text-tint transition-colors hover:bg-fill active:bg-fill-2';
 
 export function AttendanceManagement() {
   const navigate = useNavigate();
@@ -204,13 +206,13 @@ export function AttendanceManagement() {
   ): { label: string; cls: string } | null => {
     switch (status) {
       case 'submitted':
-        return { label: '提出済み（承認待ち）', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+        return { label: '提出済み（承認待ち）', cls: 'pill-warning' };
       case 'approved':
-        return { label: '承認済み', cls: 'bg-green-50 text-green-700 border-green-200' };
+        return { label: '承認済み', cls: 'pill-success' };
       case 'rejected':
-        return { label: '差戻し', cls: 'bg-red-50 text-red-700 border-red-200' };
+        return { label: '差戻し', cls: 'pill-danger' };
       case 'draft':
-        return { label: '未提出', cls: 'bg-secondary-50 text-secondary-600 border-secondary-200' };
+        return { label: '未提出', cls: 'pill-neutral' };
       default:
         return null;
     }
@@ -255,46 +257,34 @@ export function AttendanceManagement() {
   const allDays = getDaysInMonth();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="勤怠管理" />
-
-      <main className="max-w-7xl mx-auto p-4 sm:p-6">
-        {/* Back Link + Bulk Entry */}
-        <div className="flex items-center justify-between gap-3 mb-5">
-          <Link
-            to="/admin"
-            className="inline-flex items-center gap-1.5 text-secondary-500 hover:text-primary-600 transition-colors min-w-0"
-          >
-            <ArrowLeft className="w-4 h-4 flex-shrink-0" />
-            <span className="text-sm font-medium truncate">
-              <span className="hidden sm:inline">ダッシュボードへ戻る</span>
-              <span className="sm:hidden">戻る</span>
-            </span>
-          </Link>
-          <Link
-            to="/admin/attendance/edit"
-            className="btn btn-primary !py-2 !px-3 sm:!px-4 !text-sm !rounded-xl flex-shrink-0"
-          >
-            <ClipboardList className="w-4 h-4" />
+    <div className="page">
+      <Header
+        title="勤怠"
+        wide
+        actions={
+          <Link to="/admin/attendance/edit" className="btn btn-plain !font-normal">
             出勤簿編集
           </Link>
-        </div>
+        }
+      />
 
+      <main className="page-content page-content-wide">
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-5 py-4 rounded-xl mb-5">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm font-medium">{error}</p>
+          <div className="callout callout-danger mb-4" role="alert">
+            <AlertCircle aria-hidden="true" />
+            <p className="font-medium break-words">{error}</p>
           </div>
         )}
 
-        {/* Filters */}
-        <div className="card card-gold gold-border mb-5">
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4">
+        {/* スタッフと月の選択・出勤簿の提出状況 */}
+        <section className="card" aria-label="表示するスタッフと月">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
             {/* Staff Selector */}
-            <div className="sm:flex-1 sm:min-w-[200px]">
-              <label className="label">スタッフ</label>
+            <div className="sm:w-72 sm:flex-shrink-0">
+              <label htmlFor="attendance-staff" className="label">スタッフ</label>
               <select
+                id="attendance-staff"
                 value={selectedStaff}
                 onChange={e => setSelectedStaff(e.target.value)}
                 className="input"
@@ -307,269 +297,108 @@ export function AttendanceManagement() {
               </select>
             </div>
 
-            {/* Month Selector */}
-            <div className="flex items-center justify-center gap-1">
-              <button
-                onClick={handlePreviousMonth}
-                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors"
-                aria-label="前月"
-              >
-                <ChevronLeft className="w-5 h-5 text-secondary-600" />
-              </button>
-              <span className="text-base sm:text-lg font-semibold min-w-[120px] sm:min-w-[140px] text-center text-secondary-800">
-                {selectedYear}年{selectedMonth}月
-              </span>
-              <button
-                onClick={handleNextMonth}
-                className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-primary-50 transition-colors"
-                aria-label="次月"
-              >
-                <ChevronRight className="w-5 h-5 text-secondary-600" />
-              </button>
-            </div>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              {/* Month Selector */}
+              <div className="-mx-2 flex items-center">
+                <button type="button" onClick={handlePreviousMonth} className={STEP_BTN} aria-label="前月">
+                  <ChevronLeft className="h-6 w-6" strokeWidth={2.4} aria-hidden="true" />
+                </button>
+                <p className="t-headline tabular min-w-[7.5em] text-center" aria-live="polite">
+                  {selectedYear}年{selectedMonth}月
+                </p>
+                <button type="button" onClick={handleNextMonth} className={STEP_BTN} aria-label="次月">
+                  <ChevronRight className="h-6 w-6" strokeWidth={2.4} aria-hidden="true" />
+                </button>
+              </div>
 
-            {/* Submission Status */}
-            {(() => {
-              const info = submissionStatusInfo(submission?.status);
-              if (!info) return null;
-              return (
-                <span
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border self-start sm:self-auto ${info.cls}`}
-                >
-                  {info.label}
-                </span>
-              );
-            })()}
-          </div>
-        </div>
-
-        {/* Attendance Table / Cards */}
-        {isLoading ? (
-          <div className="card">
-            <Loading message="読み込み中..." />
-          </div>
-        ) : (
-          <>
-            {/* Mobile: Card list */}
-            <div className="sm:hidden space-y-2">
-              {allDays.map(date => {
-                const record = attendance.find(r => r.date === date);
-                const isEditing = editingRow === date;
-                const dateObj = new Date(date);
-                const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                const dateColor =
-                  dateObj.getDay() === 0
-                    ? 'text-red-500'
-                    : dateObj.getDay() === 6
-                    ? 'text-blue-500'
-                    : 'text-secondary-800';
-
+              {/* Submission Status */}
+              {(() => {
+                const info = submissionStatusInfo(submission?.status);
+                if (!info) return null;
                 return (
-                  <div
-                    key={date}
-                    className={`card !p-3 ${isWeekend ? '!bg-secondary-50/60' : ''}`}
-                  >
-                    {isEditing ? (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className={`text-base font-semibold ${dateColor}`}>
-                            {formatDate(date)}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-xs text-secondary-500 mb-1 block">出勤</label>
-                            <input
-                              type="time"
-                              value={extractTime(editData.clockIn)}
-                              onChange={e =>
-                                setEditData(prev => ({
-                                  ...prev,
-                                  clockIn: e.target.value
-                                    ? `${date}T${e.target.value}:00`
-                                    : undefined,
-                                }))
-                              }
-                              className="input !py-2 !px-3 !text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs text-secondary-500 mb-1 block">退勤</label>
-                            <input
-                              type="time"
-                              value={extractTime(editData.clockOut)}
-                              onChange={e =>
-                                setEditData(prev => ({
-                                  ...prev,
-                                  clockOut: e.target.value
-                                    ? `${date}T${e.target.value}:00`
-                                    : undefined,
-                                }))
-                              }
-                              className="input !py-2 !px-3 !text-sm"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-secondary-500 mb-1 block">休憩（分）</label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={editData.breakMinutes ?? 0}
-                            onChange={e =>
-                              setEditData(prev => ({
-                                ...prev,
-                                breakMinutes: Number(e.target.value) || 0,
-                              }))
-                            }
-                            className="input !py-2 !px-3 !text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-secondary-500 mb-1 block">備考</label>
-                          <input
-                            type="text"
-                            value={editData.remarks || ''}
-                            onChange={e =>
-                              setEditData(prev => ({
-                                ...prev,
-                                remarks: e.target.value,
-                              }))
-                            }
-                            className="input !py-2 !px-3 !text-sm"
-                            placeholder="備考"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleCancelEdit}
-                            className="btn btn-secondary flex-1 !py-2.5 !text-sm"
-                          >
-                            <X className="w-4 h-4" />
-                            キャンセル
-                          </button>
-                          <button
-                            onClick={() => handleSaveEdit(date)}
-                            className="btn btn-primary flex-1 !py-2.5 !text-sm"
-                          >
-                            <Save className="w-4 h-4" />
-                            保存
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <span className={`text-base font-semibold ${dateColor}`}>
-                              {formatDate(date)}
-                            </span>
-                            <span className="text-sm font-medium text-secondary-900">
-                              {record?.workMinutes
-                                ? formatMinutesAsTime(record.workMinutes)
-                                : '-'}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                            <div className="flex items-center gap-1">
-                              <span className="text-secondary-400">出勤:</span>
-                              <span className="text-secondary-700 font-mono">
-                                {formatTime(record?.clockIn)}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-secondary-400">退勤:</span>
-                              <span className="text-secondary-700 font-mono">
-                                {formatTime(record?.clockOut)}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-secondary-400">休憩:</span>
-                              <span className="text-secondary-700">
-                                {record?.breakMinutes ? `${record.breakMinutes}分` : '-'}
-                              </span>
-                            </div>
-                            {record?.remarks && (
-                              <div className="col-span-2 flex items-center gap-1">
-                                <span className="text-secondary-400">備考:</span>
-                                <span className="text-secondary-500 truncate">
-                                  {record.remarks}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() =>
-                            record
-                              ? handleEdit(record)
-                              : handleEdit({
-                                  date,
-                                  staffId: selectedStaff,
-                                  name: '',
-                                  breakMinutes: 0,
-                                  workMinutes: 0,
-                                  lateMinutes: 0,
-                                  earlyLeaveMinutes: 0,
-                                  isHoliday: isWeekend,
-                                })
-                          }
-                          className="flex items-center justify-center w-11 h-11 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors flex-shrink-0"
-                          aria-label="編集"
-                        >
-                          <Edit2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <span className="flex items-center gap-2">
+                    <span className="t-footnote text-label-2">出勤簿</span>
+                    <span className={`pill ${info.cls}`}>{info.label}</span>
+                  </span>
                 );
-              })}
+              })()}
             </div>
+          </div>
+        </section>
 
-            {/* Desktop: Table */}
-            <div className="hidden sm:block card overflow-x-auto p-0 overflow-hidden">
-              <table className="w-full min-w-[800px]">
-                <thead>
-                  <tr className="bg-gradient-to-r from-secondary-800 to-secondary-900 text-white">
-                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">日付</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">出勤</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">退勤</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">休憩(分)</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">実働</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold tracking-wider">備考</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold tracking-wider">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-secondary-100">
-                  {allDays.map(date => {
-                    const record = attendance.find(r => r.date === date);
-                    const isEditing = editingRow === date;
-                    const dateObj = new Date(date);
-                    const isWeekend =
-                      dateObj.getDay() === 0 || dateObj.getDay() === 6;
+        {/* Summary */}
+        {!isLoading && attendance.length > 0 && (
+          <section className="section">
+            <h2 className="section-header">月間サマリー</h2>
+            <div className="card grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+              <div className="tile">
+                <p className="t-footnote text-label-2">出勤日数</p>
+                <p className="t-title2 tabular mt-0.5">
+                  {attendance.filter(r => r.workMinutes > 0).length}<span className="t-subhead font-medium text-label-2 ml-0.5">日</span>
+                </p>
+              </div>
+              <div className="tile">
+                <p className="t-footnote text-label-2">総労働時間</p>
+                <p className="t-title2 tabular mt-0.5">
+                  {formatMinutesAsTime(
+                    attendance.reduce((sum, r) => sum + r.workMinutes, 0)
+                  )}
+                </p>
+              </div>
+              <div className="tile">
+                <p className="t-footnote text-label-2">遅刻時間</p>
+                <p className={`t-title2 tabular mt-0.5 ${
+                  attendance.reduce((sum, r) => sum + r.lateMinutes, 0) > 0 ? 'text-danger' : 'text-label'
+                }`}>
+                  {attendance.reduce((sum, r) => sum + r.lateMinutes, 0)}<span className="t-subhead font-medium ml-0.5">分</span>
+                </p>
+              </div>
+              <div className="tile">
+                <p className="t-footnote text-label-2">早退時間</p>
+                <p className={`t-title2 tabular mt-0.5 ${
+                  attendance.reduce((sum, r) => sum + r.earlyLeaveMinutes, 0) > 0 ? 'text-danger' : 'text-label'
+                }`}>
+                  {attendance.reduce((sum, r) => sum + r.earlyLeaveMinutes, 0)}<span className="t-subhead font-medium ml-0.5">分</span>
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
-                    return (
-                      <tr
-                        key={date}
-                        className={`${
-                          isWeekend ? 'bg-secondary-50/60' : ''
-                        } hover:bg-primary-50/30 transition-colors`}
-                      >
-                        <td
-                          className={`px-3 py-2 text-sm font-medium ${
-                            dateObj.getDay() === 0
-                              ? 'text-red-500'
-                              : dateObj.getDay() === 6
-                              ? 'text-blue-500'
-                              : 'text-secondary-800'
-                          }`}
-                        >
-                          {formatDate(date)}
-                        </td>
+        {/* Attendance Table / List */}
+        <section className="section">
+          <h2 className="section-header">日別の記録</h2>
+          {isLoading ? (
+            <div className="card">
+              <Loading message="読み込み中..." />
+            </div>
+          ) : (
+            <>
+              {/* iPhone: list */}
+              <div className="sm:hidden list-group">
+                {allDays.map(date => {
+                  const record = attendance.find(r => r.date === date);
+                  const isEditing = editingRow === date;
+                  const dateObj = new Date(date);
+                  const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+                  const dateColor =
+                    dateObj.getDay() === 0
+                      ? 'text-danger'
+                      : dateObj.getDay() === 6
+                      ? 'text-info'
+                      : 'text-label';
 
-                        {isEditing ? (
-                          <>
-                            <td className="px-3 py-2">
+                  return (
+                    <div
+                      key={date}
+                      className={`list-row !py-2.5 ${isEditing ? 'bg-tint-fill-weak' : '!pr-2'}`}
+                    >
+                      {isEditing ? (
+                        <div className="min-w-0 flex-1 space-y-3 py-1">
+                          <p className={`t-headline ${dateColor}`}>{formatDate(date)}</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="block min-w-0">
+                              <span className="label">出勤</span>
                               <input
                                 type="time"
                                 value={extractTime(editData.clockIn)}
@@ -581,10 +410,11 @@ export function AttendanceManagement() {
                                       : undefined,
                                   }))
                                 }
-                                className="w-24 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
+                                className="input"
                               />
-                            </td>
-                            <td className="px-3 py-2">
+                            </label>
+                            <label className="block min-w-0">
+                              <span className="label">退勤</span>
                               <input
                                 type="time"
                                 value={extractTime(editData.clockOut)}
@@ -596,157 +426,301 @@ export function AttendanceManagement() {
                                       : undefined,
                                   }))
                                 }
-                                className="w-24 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
+                                className="input"
                               />
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="number"
-                                min={0}
-                                value={editData.breakMinutes ?? 0}
-                                onChange={e =>
-                                  setEditData(prev => ({
-                                    ...prev,
-                                    breakMinutes: Number(e.target.value) || 0,
-                                  }))
-                                }
-                                className="w-20 py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-sm text-secondary-400">-</td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                value={editData.remarks || ''}
-                                onChange={e =>
-                                  setEditData(prev => ({
-                                    ...prev,
-                                    remarks: e.target.value,
-                                  }))
-                                }
-                                className="w-full py-1.5 px-2 text-sm border border-secondary-200 rounded-lg focus:border-primary-400 focus:ring-2 focus:ring-primary-200 focus:outline-none"
-                                placeholder="備考"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center justify-end gap-1">
-                                <button
-                                  onClick={() => handleSaveEdit(date)}
-                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                  aria-label="保存"
-                                  title="保存"
-                                >
-                                  <Save className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={handleCancelEdit}
-                                  className="p-1.5 text-secondary-500 hover:bg-secondary-100 rounded-lg transition-colors"
-                                  aria-label="キャンセル"
-                                  title="キャンセル"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </>
-                        ) : (
-                          <>
-                            <td className="px-3 py-2 text-sm text-secondary-700">
-                              {formatTime(record?.clockIn)}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-secondary-700">
-                              {formatTime(record?.clockOut)}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-secondary-700">
-                              {record?.breakMinutes
-                                ? `${record.breakMinutes}分`
-                                : '-'}
-                            </td>
-                            <td className="px-3 py-2 text-sm font-medium text-secondary-900">
-                              {record?.workMinutes
-                                ? formatMinutesAsTime(record.workMinutes)
-                                : '-'}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-secondary-500">
-                              {record?.remarks || '-'}
-                            </td>
-                            <td className="px-3 py-2">
-                              <button
-                                onClick={() =>
-                                  record
-                                    ? handleEdit(record)
-                                    : handleEdit({
-                                        date,
-                                        staffId: selectedStaff,
-                                        name: '',
-                                        breakMinutes: 0,
-                                        workMinutes: 0,
-                                        lateMinutes: 0,
-                                        earlyLeaveMinutes: 0,
-                                        isHoliday: isWeekend,
-                                      })
-                                }
-                                className="p-1.5 text-secondary-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                                aria-label="編集"
-                                title="編集"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+                            </label>
+                          </div>
+                          <label className="block">
+                            <span className="label">休憩（分）</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={editData.breakMinutes ?? 0}
+                              onChange={e =>
+                                setEditData(prev => ({
+                                  ...prev,
+                                  breakMinutes: Number(e.target.value) || 0,
+                                }))
+                              }
+                              className="input tabular"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="label">備考</span>
+                            <input
+                              type="text"
+                              value={editData.remarks || ''}
+                              onChange={e =>
+                                setEditData(prev => ({
+                                  ...prev,
+                                  remarks: e.target.value,
+                                }))
+                              }
+                              className="input"
+                              placeholder="備考"
+                            />
+                          </label>
+                          <div className="grid grid-cols-2 gap-3 pt-1">
+                            <button
+                              type="button"
+                              onClick={handleCancelEdit}
+                              className="btn btn-gray"
+                            >
+                              キャンセル
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEdit(date)}
+                              className="btn btn-filled"
+                            >
+                              保存
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="list-row-title">
+                            <div className="flex items-baseline justify-between gap-3">
+                              <span className={`t-headline ${dateColor}`}>
+                                {formatDate(date)}
+                              </span>
+                              <span className="t-subhead tabular whitespace-nowrap">
+                                <span className="t-footnote text-label-2 mr-1">実働</span>
+                                {record?.workMinutes
+                                  ? formatMinutesAsTime(record.workMinutes)
+                                  : '-'}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 flex flex-wrap gap-x-3.5 t-footnote tabular">
+                              <span>
+                                <span className="text-label-2 mr-1">出勤</span>
+                                {formatTime(record?.clockIn)}
+                              </span>
+                              <span>
+                                <span className="text-label-2 mr-1">退勤</span>
+                                {formatTime(record?.clockOut)}
+                              </span>
+                              <span>
+                                <span className="text-label-2 mr-1">休憩</span>
+                                {record?.breakMinutes ? `${record.breakMinutes}分` : '-'}
+                              </span>
+                            </p>
+                            {record?.remarks && (
+                              <p className="mt-0.5 t-footnote truncate">
+                                <span className="text-label-2 mr-1">備考</span>
+                                {record.remarks}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              record
+                                ? handleEdit(record)
+                                : handleEdit({
+                                    date,
+                                    staffId: selectedStaff,
+                                    name: '',
+                                    breakMinutes: 0,
+                                    workMinutes: 0,
+                                    lateMinutes: 0,
+                                    earlyLeaveMinutes: 0,
+                                    isHoliday: isWeekend,
+                                  })
+                            }
+                            className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full text-tint active:bg-fill"
+                            aria-label="編集"
+                          >
+                            <Pencil className="h-5 w-5" aria-hidden="true" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
-        {/* Summary */}
-        {!isLoading && attendance.length > 0 && (
-          <div className="card card-gold mt-5">
-            <h3 className="font-semibold text-secondary-800 mb-4 flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center">
-                <BarChart3 className="w-4 h-4 text-primary-600" />
+              {/* iPad・PC: Table */}
+              <div className="hidden sm:block card !p-0 overflow-x-auto">
+                <table className="w-full min-w-[760px] t-subhead tabular">
+                  <thead>
+                    <tr>
+                      <th scope="col" className={`${TH} text-left w-[6.5rem]`}>日付</th>
+                      <th scope="col" className={`${TH} text-right w-[9.75rem]`}>出勤</th>
+                      <th scope="col" className={`${TH} text-right w-[9.75rem]`}>退勤</th>
+                      <th scope="col" className={`${TH} text-right w-[6.5rem]`}>休憩(分)</th>
+                      <th scope="col" className={`${TH} text-right w-[8rem]`}>実働</th>
+                      <th scope="col" className={`${TH} text-left`}>備考</th>
+                      <th scope="col" className={`${TH} text-right w-[11rem]`}>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allDays.map(date => {
+                      const record = attendance.find(r => r.date === date);
+                      const isEditing = editingRow === date;
+                      const dateObj = new Date(date);
+                      const isWeekend =
+                        dateObj.getDay() === 0 || dateObj.getDay() === 6;
+
+                      return (
+                        <tr
+                          key={date}
+                          className={`border-t-[0.5px] border-separator ${
+                            isEditing ? 'bg-tint-fill-weak' : ''
+                          }`}
+                        >
+                          <td
+                            className={`px-4 py-3 font-medium whitespace-nowrap ${
+                              dateObj.getDay() === 0
+                                ? 'text-danger'
+                                : dateObj.getDay() === 6
+                                ? 'text-info'
+                                : 'text-label'
+                            }`}
+                          >
+                            {formatDate(date)}
+                          </td>
+
+                          {isEditing ? (
+                            <>
+                              <td className="pl-2 pr-4 py-2">
+                                <input
+                                  type="time"
+                                  value={extractTime(editData.clockIn)}
+                                  onChange={e =>
+                                    setEditData(prev => ({
+                                      ...prev,
+                                      clockIn: e.target.value
+                                        ? `${date}T${e.target.value}:00`
+                                        : undefined,
+                                    }))
+                                  }
+                                  aria-label="出勤"
+                                  className={`${CELL_INPUT} ml-auto w-[8.25rem]`}
+                                />
+                              </td>
+                              <td className="pl-2 pr-4 py-2">
+                                <input
+                                  type="time"
+                                  value={extractTime(editData.clockOut)}
+                                  onChange={e =>
+                                    setEditData(prev => ({
+                                      ...prev,
+                                      clockOut: e.target.value
+                                        ? `${date}T${e.target.value}:00`
+                                        : undefined,
+                                    }))
+                                  }
+                                  aria-label="退勤"
+                                  className={`${CELL_INPUT} ml-auto w-[8.25rem]`}
+                                />
+                              </td>
+                              <td className="pl-2 pr-4 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={editData.breakMinutes ?? 0}
+                                  onChange={e =>
+                                    setEditData(prev => ({
+                                      ...prev,
+                                      breakMinutes: Number(e.target.value) || 0,
+                                    }))
+                                  }
+                                  aria-label="休憩（分）"
+                                  className={`${CELL_INPUT} ml-auto w-[5rem] text-right tabular`}
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-right text-label-3">-</td>
+                              <td className="px-4 py-2">
+                                <input
+                                  type="text"
+                                  value={editData.remarks || ''}
+                                  onChange={e =>
+                                    setEditData(prev => ({
+                                      ...prev,
+                                      remarks: e.target.value,
+                                    }))
+                                  }
+                                  aria-label="備考"
+                                  className={`${CELL_INPUT} min-w-[7rem]`}
+                                  placeholder="備考"
+                                />
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelEdit}
+                                    className="btn btn-plain !text-[15px] !font-normal"
+                                  >
+                                    キャンセル
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveEdit(date)}
+                                    className="btn btn-filled !px-4 !text-[15px]"
+                                  >
+                                    保存
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-3 text-right">
+                                {formatTime(record?.clockIn)}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {formatTime(record?.clockOut)}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {record?.breakMinutes
+                                  ? `${record.breakMinutes}分`
+                                  : '-'}
+                              </td>
+                              <td className="px-4 py-3 text-right font-semibold whitespace-nowrap">
+                                {record?.workMinutes
+                                  ? formatMinutesAsTime(record.workMinutes)
+                                  : '-'}
+                              </td>
+                              <td className="px-4 py-3 text-label-2">
+                                {record?.remarks || '-'}
+                              </td>
+                              <td className="px-2 py-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    record
+                                      ? handleEdit(record)
+                                      : handleEdit({
+                                          date,
+                                          staffId: selectedStaff,
+                                          name: '',
+                                          breakMinutes: 0,
+                                          workMinutes: 0,
+                                          lateMinutes: 0,
+                                          earlyLeaveMinutes: 0,
+                                          isHoliday: isWeekend,
+                                        })
+                                  }
+                                  className="ml-auto grid h-11 w-11 place-items-center rounded-full text-tint transition-colors hover:bg-fill active:bg-fill-2"
+                                  aria-label="編集"
+                                  title="編集"
+                                >
+                                  <Pencil className="h-[18px] w-[18px]" aria-hidden="true" />
+                                </button>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              月間サマリー
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl p-4 border border-secondary-100">
-                <p className="text-xs font-medium text-secondary-500 mb-1">出勤日数</p>
-                <p className="text-2xl font-bold text-secondary-800">
-                  {attendance.filter(r => r.workMinutes > 0).length}<span className="text-sm ml-0.5">日</span>
-                </p>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-secondary-100">
-                <p className="text-xs font-medium text-secondary-500 mb-1">総労働時間</p>
-                <p className="text-2xl font-bold text-secondary-800">
-                  {formatMinutesAsTime(
-                    attendance.reduce((sum, r) => sum + r.workMinutes, 0)
-                  )}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-red-100">
-                <p className="text-xs font-medium text-secondary-500 mb-1">遅刻時間</p>
-                <p className={`text-2xl font-bold ${
-                  attendance.reduce((sum, r) => sum + r.lateMinutes, 0) > 0 ? 'text-red-500' : 'text-secondary-800'
-                }`}>
-                  {attendance.reduce((sum, r) => sum + r.lateMinutes, 0)}<span className="text-sm ml-0.5">分</span>
-                </p>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-red-100">
-                <p className="text-xs font-medium text-secondary-500 mb-1">早退時間</p>
-                <p className={`text-2xl font-bold ${
-                  attendance.reduce((sum, r) => sum + r.earlyLeaveMinutes, 0) > 0 ? 'text-red-500' : 'text-secondary-800'
-                }`}>
-                  {attendance.reduce((sum, r) => sum + r.earlyLeaveMinutes, 0)}<span className="text-sm ml-0.5">分</span>
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+            </>
+          )}
+        </section>
       </main>
     </div>
   );

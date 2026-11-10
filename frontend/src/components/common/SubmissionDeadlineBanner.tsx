@@ -4,8 +4,8 @@ import type { ClockGate } from '../../types';
 
 /**
  * 月次出勤簿の提出リマインドバナー（いずれも打刻はブロックしない非ブロック通知）。
- * - alertActive: 橙バナー（1〜7日・前月未提出 → 期限リマインド / 差戻し時は再提出のお願い）
- * - submitted:   青バナー（承認待ち中）
+ * - alertActive: 橙のお知らせ（1〜7日・前月未提出 → 期限リマインド / 差戻し時は再提出のお願い）
+ * - submitted:   青のお知らせ（承認待ち中）
  * いずれにも該当しない場合は何も描画しない。
  *
  * 注: 以前は clockBlocked による赤い「打刻不可」バナーがあったが、
@@ -39,37 +39,27 @@ export function SubmissionDeadlineBanner({ gate }: { gate: ClockGate | null }) {
       ? `差戻し内容をご確認のうえ、${formatDeadline(gate.deadlineDate)} までに再提出をお願いいたします。`
       : `${formatDeadline(gate.deadlineDate)} が提出期限です。お早めにご提出いただけますと安心です。`;
     return (
-      <Link
-        to={attendanceLink}
-        className="flex items-start gap-3 px-4 py-3.5 rounded-xl mb-4 border bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 transition-colors"
-      >
-        <CalendarClock className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm sm:text-base">{headline}</p>
-          <p className="text-xs sm:text-sm mt-0.5 leading-relaxed">{detail}</p>
+      <Link to={attendanceLink} className="callout callout-warning mb-4 active:opacity-70">
+        <CalendarClock aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="t-subhead font-semibold">{headline}</p>
+          <p className="t-footnote mt-0.5 text-label-2">{detail}</p>
         </div>
-        <ChevronRight className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <ChevronRight className="!mt-0.5 text-label-3" aria-hidden="true" />
       </Link>
     );
   }
 
-  // 提出済み・承認待ちの場合は青い情報バナーで状況を可視化（打刻は通常通り可能）
+  // 提出済み・承認待ちの場合は青のお知らせで状況を可視化（打刻は通常通り可能）
   if (gate.prevStatus === 'submitted') {
     return (
-      <Link
-        to={attendanceLink}
-        className="flex items-start gap-3 px-4 py-3.5 rounded-xl mb-4 border bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors"
-      >
-        <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm sm:text-base">
-            {formatYm(gate.prevYearMonth)}分の出勤簿は承認待ちです
-          </p>
-          <p className="text-xs sm:text-sm mt-0.5 leading-relaxed">
-            管理者の確認をお待ちください。引き続き打刻をご利用いただけます。
-          </p>
+      <Link to={attendanceLink} className="callout callout-info mb-4 active:opacity-70">
+        <CheckCircle aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="t-subhead font-semibold">{formatYm(gate.prevYearMonth)}分の出勤簿は承認待ちです</p>
+          <p className="t-footnote mt-0.5 text-label-2">管理者の確認をお待ちください。引き続き打刻をご利用いただけます。</p>
         </div>
-        <ChevronRight className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <ChevronRight className="!mt-0.5 text-label-3" aria-hidden="true" />
       </Link>
     );
   }

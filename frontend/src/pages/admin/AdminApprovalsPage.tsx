@@ -1,16 +1,15 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  CheckCircle,
+  Check,
+  X,
+  Undo2,
+  CheckCircle2,
   XCircle,
   AlertTriangle,
   FileText,
-  Send,
-  Clock,
-  Filter,
   ChevronLeft,
   ChevronRight,
-  User,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { applicationApi, submissionApi, staffApi } from '../../api';
@@ -24,10 +23,14 @@ import {
   Header,
   Loading,
   Modal,
+  Spinner,
   ApplicationStatusBadge,
   SubmissionStatusBadge,
   ShiftDiffKindBadge,
 } from '../../components/common';
+
+// 小さいボタン（高さ 32px）の見た目はそのままに、押せる範囲だけを上下に広げて 44px にする
+const SMALL_BUTTON_HIT = 'relative before:absolute before:inset-x-0 before:-inset-y-1.5';
 
 type Tab = 'applications' | 'submissions';
 type AppStatusFilter = 'all' | ApplicationStatus;
@@ -365,125 +368,124 @@ export function AdminApprovalsPage() {
     return (
       <div
         key={app.id}
-        className={`rounded-2xl border p-3 sm:p-5 transition-all ${
-          isPending
-            ? 'border-amber-200 bg-amber-50/40'
-            : 'border-secondary-200 bg-white'
-        }`}
+        className="list-row flex-col items-stretch gap-3 py-3.5 sm:flex-row sm:items-start sm:gap-4"
       >
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
-          <div className="flex-1 min-w-0 space-y-2">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-              <div className="flex items-center gap-1.5 text-secondary-800 font-semibold">
-                <User className="w-4 h-4 text-secondary-500" />
-                {app.staffName}
-              </div>
-              <span className="text-secondary-300 hidden sm:inline">·</span>
-              <span className="text-secondary-700 text-sm font-medium">
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <div>
+            <p className="t-headline break-words">{app.staffName}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="t-footnote text-label-2 tabular">
                 {formatDateWithDow(app.date)}
               </span>
               <ShiftDiffKindBadge kind={app.type} />
               <ApplicationStatusBadge status={app.status} />
             </div>
-
-            {app.reason && (
-              <div className="text-sm text-secondary-700 leading-relaxed">
-                <span className="font-semibold text-secondary-600">理由：</span>
-                <span className="whitespace-pre-wrap">{app.reason}</span>
-              </div>
-            )}
-
-            {(app.details.plannedStart ||
-              app.details.actualStart ||
-              app.details.overtimeMinutes !== undefined ||
-              app.details.plannedBreak !== undefined ||
-              app.details.actualBreak !== undefined) && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs text-secondary-600 bg-secondary-50 border border-secondary-100 rounded-xl px-3 py-2">
-                {app.details.plannedStart && app.details.plannedEnd && (
-                  <div>
-                    <span className="text-secondary-500">予定:</span>{' '}
-                    {app.details.plannedStart} - {app.details.plannedEnd}
-                  </div>
-                )}
-                {app.details.actualStart && app.details.actualEnd && (
-                  <div>
-                    <span className="text-secondary-500">実績:</span>{' '}
-                    {app.details.actualStart} - {app.details.actualEnd}
-                  </div>
-                )}
-                {app.details.overtimeMinutes !== undefined &&
-                  app.details.overtimeMinutes > 0 && (
-                    <div>
-                      <span className="text-secondary-500">残業:</span>{' '}
-                      {app.details.overtimeMinutes}分
-                    </div>
-                  )}
-                {app.details.plannedBreak !== undefined && (
-                  <div>
-                    <span className="text-secondary-500">予定休憩:</span>{' '}
-                    {app.details.plannedBreak}分
-                  </div>
-                )}
-                {app.details.actualBreak !== undefined && (
-                  <div>
-                    <span className="text-secondary-500">実績休憩:</span>{' '}
-                    {app.details.actualBreak}分
-                  </div>
-                )}
-              </div>
-            )}
-
-            {app.status === 'rejected' && app.rejectionReason && (
-              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-                <span className="font-semibold">却下理由：</span>
-                {app.rejectionReason}
-              </div>
-            )}
-
-            {app.reviewedAt && (
-              <div className="text-xs text-secondary-400">
-                処理日時: {new Date(app.reviewedAt).toLocaleString('ja-JP')}
-              </div>
-            )}
           </div>
 
-          {isPending && (
-            <div className="flex sm:flex-col gap-2 sm:w-32 shrink-0">
-              <button
-                type="button"
-                onClick={() =>
-                  openApprove({
-                    kind: 'approve',
-                    target: 'application',
-                    applicationId: app.id,
-                    staffName: app.staffName,
-                    date: app.date,
-                  })
-                }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-sm transition-colors"
-              >
-                <CheckCircle className="w-4 h-4" />
-                承認
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  openReject({
-                    kind: 'reject',
-                    target: 'application',
-                    applicationId: app.id,
-                    staffName: app.staffName,
-                    date: app.date,
-                  })
-                }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-2 rounded-xl bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold transition-colors"
-              >
-                <XCircle className="w-4 h-4" />
-                却下
-              </button>
+          {app.reason && (
+            <p className="t-subhead">
+              <span className="text-label-2">理由：</span>
+              <span className="whitespace-pre-wrap break-words">{app.reason}</span>
+            </p>
+          )}
+
+          {(app.details.plannedStart ||
+            app.details.actualStart ||
+            app.details.overtimeMinutes !== undefined ||
+            app.details.plannedBreak !== undefined ||
+            app.details.actualBreak !== undefined) && (
+            <dl className="tile grid grid-cols-2 gap-x-4 gap-y-2 !py-2.5 sm:grid-cols-3">
+              {app.details.plannedStart && app.details.plannedEnd && (
+                <div>
+                  <dt className="t-caption text-label-2">予定</dt>
+                  <dd className="t-subhead tabular">
+                    {app.details.plannedStart} - {app.details.plannedEnd}
+                  </dd>
+                </div>
+              )}
+              {app.details.actualStart && app.details.actualEnd && (
+                <div>
+                  <dt className="t-caption text-label-2">実績</dt>
+                  <dd className="t-subhead tabular">
+                    {app.details.actualStart} - {app.details.actualEnd}
+                  </dd>
+                </div>
+              )}
+              {app.details.overtimeMinutes !== undefined &&
+                app.details.overtimeMinutes > 0 && (
+                  <div>
+                    <dt className="t-caption text-label-2">残業</dt>
+                    <dd className="t-subhead tabular">{app.details.overtimeMinutes}分</dd>
+                  </div>
+                )}
+              {app.details.plannedBreak !== undefined && (
+                <div>
+                  <dt className="t-caption text-label-2">予定休憩</dt>
+                  <dd className="t-subhead tabular">{app.details.plannedBreak}分</dd>
+                </div>
+              )}
+              {app.details.actualBreak !== undefined && (
+                <div>
+                  <dt className="t-caption text-label-2">実績休憩</dt>
+                  <dd className="t-subhead tabular">{app.details.actualBreak}分</dd>
+                </div>
+              )}
+            </dl>
+          )}
+
+          {app.status === 'rejected' && app.rejectionReason && (
+            <div className="callout callout-danger">
+              <XCircle aria-hidden="true" />
+              <p className="break-words">
+                <span className="font-semibold">却下理由：</span>
+                {app.rejectionReason}
+              </p>
             </div>
           )}
+
+          {app.reviewedAt && (
+            <p className="t-caption text-label-2 tabular">
+              処理日時: {new Date(app.reviewedAt).toLocaleString('ja-JP')}
+            </p>
+          )}
         </div>
+
+        {isPending && (
+          <div className="flex justify-end gap-2 sm:shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                openApprove({
+                  kind: 'approve',
+                  target: 'application',
+                  applicationId: app.id,
+                  staffName: app.staffName,
+                  date: app.date,
+                })
+              }
+              className={`btn btn-sm btn-filled ${SMALL_BUTTON_HIT}`}
+            >
+              <Check aria-hidden="true" />
+              承認
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                openReject({
+                  kind: 'reject',
+                  target: 'application',
+                  applicationId: app.id,
+                  staffName: app.staffName,
+                  date: app.date,
+                })
+              }
+              className={`btn btn-sm btn-danger-tinted ${SMALL_BUTTON_HIT}`}
+            >
+              <X aria-hidden="true" />
+              却下
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -496,59 +498,57 @@ export function AdminApprovalsPage() {
     return (
       <div
         key={`${sub.staffId}-${sub.yearMonth}`}
-        className={`rounded-2xl border p-3 sm:p-5 transition-all ${
-          isSubmitted
-            ? 'border-blue-200 bg-blue-50/40'
-            : 'border-secondary-200 bg-white'
-        }`}
+        className="list-row flex-col items-stretch gap-3 py-3.5 sm:flex-row sm:items-center sm:gap-4"
       >
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
-          <div className="flex-1 min-w-0 space-y-2">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-              <div className="flex items-center gap-1.5 text-secondary-800 font-semibold">
-                <User className="w-4 h-4 text-secondary-500" />
-                {sub.staffName}
-              </div>
-              <span className="text-secondary-300 hidden sm:inline">·</span>
-              <span className="text-secondary-700 text-sm font-medium">
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <div>
+            <p className="t-headline break-words">{sub.staffName}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="t-footnote text-label-2 tabular">
                 {formatYearMonth(sub.yearMonth)}
               </span>
               <SubmissionStatusBadge status={sub.status} />
             </div>
-
-            {sub.remarks && (
-              <div className="text-sm text-secondary-700 leading-relaxed">
-                <span className="font-semibold text-secondary-600">備考：</span>
-                <span className="whitespace-pre-wrap">{sub.remarks}</span>
-              </div>
-            )}
-
-            {sub.status === 'rejected' && sub.rejectionReason && (
-              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-                <span className="font-semibold">差戻し理由：</span>
-                {sub.rejectionReason}
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-3 text-xs text-secondary-400">
-              {sub.submittedAt && (
-                <span>提出: {new Date(sub.submittedAt).toLocaleString('ja-JP')}</span>
-              )}
-              {sub.reviewedAt && (
-                <span>処理: {new Date(sub.reviewedAt).toLocaleString('ja-JP')}</span>
-              )}
-              <Link
-                to={`/admin/attendance/edit?staffId=${sub.staffId}&year=${y}&month=${m}`}
-                className="inline-flex items-center gap-1 text-primary-600 hover:text-primary-700 font-medium"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                出勤簿を確認
-              </Link>
-            </div>
           </div>
 
+          {sub.remarks && (
+            <p className="t-subhead">
+              <span className="text-label-2">備考：</span>
+              <span className="whitespace-pre-wrap break-words">{sub.remarks}</span>
+            </p>
+          )}
+
+          {sub.status === 'rejected' && sub.rejectionReason && (
+            <div className="callout callout-danger">
+              <Undo2 aria-hidden="true" />
+              <p className="break-words">
+                <span className="font-semibold">差戻し理由：</span>
+                {sub.rejectionReason}
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 t-caption text-label-2 tabular">
+            {sub.submittedAt && (
+              <span>提出: {new Date(sub.submittedAt).toLocaleString('ja-JP')}</span>
+            )}
+            {sub.reviewedAt && (
+              <span>処理: {new Date(sub.reviewedAt).toLocaleString('ja-JP')}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
+          <Link
+            to={`/admin/attendance/edit?staffId=${sub.staffId}&year=${y}&month=${m}`}
+            className={`btn btn-sm btn-gray ${SMALL_BUTTON_HIT}`}
+          >
+            <FileText aria-hidden="true" />
+            出勤簿を確認
+          </Link>
+
           {isSubmitted && (
-            <div className="flex sm:flex-col gap-2 sm:w-32 shrink-0">
+            <div className="ml-auto flex gap-2">
               <button
                 type="button"
                 onClick={() =>
@@ -560,9 +560,9 @@ export function AdminApprovalsPage() {
                     yearMonth: sub.yearMonth,
                   })
                 }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-sm transition-colors"
+                className={`btn btn-sm btn-filled ${SMALL_BUTTON_HIT}`}
               >
-                <CheckCircle className="w-4 h-4" />
+                <Check aria-hidden="true" />
                 確定
               </button>
               <button
@@ -576,9 +576,9 @@ export function AdminApprovalsPage() {
                     yearMonth: sub.yearMonth,
                   })
                 }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-2 rounded-xl bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold transition-colors"
+                className={`btn btn-sm btn-danger-tinted ${SMALL_BUTTON_HIT}`}
               >
-                <Send className="w-4 h-4" />
+                <Undo2 aria-hidden="true" />
                 差戻し
               </button>
             </div>
@@ -601,121 +601,116 @@ export function AdminApprovalsPage() {
       : '月次提出を差戻し';
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-secondary-100">
-      <Header title="承認管理" />
+    <div className="page">
+      <Header title="承認" />
 
-      <main className="max-w-5xl mx-auto p-3 sm:p-6">
-        {/* Back link */}
-        <Link
-          to="/admin"
-          className="inline-flex items-center gap-1 text-secondary-500 hover:text-primary-600 mb-3 sm:mb-4 text-sm font-medium"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          ダッシュボードへ戻る
-        </Link>
-
+      <main className="page-content">
         {/* Flash message */}
         {message && (
           <div
-            className={`flex items-center gap-2 px-4 py-3 rounded-xl mb-4 border ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-red-50 text-red-700 border-red-200'
+            className={`callout mt-2 mb-3 ${
+              message.type === 'success' ? 'callout-success' : 'callout-danger'
             }`}
+            role={message.type === 'error' ? 'alert' : 'status'}
           >
             {message.type === 'success' ? (
-              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+              <CheckCircle2 aria-hidden="true" />
             ) : (
-              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <AlertTriangle aria-hidden="true" />
             )}
-            <p className="text-sm">{message.text}</p>
+            <p className="font-medium break-words">{message.text}</p>
           </div>
         )}
 
         {/* Tabs */}
-        <div className="card mb-3 sm:mb-4 p-2">
-          <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('applications')}
-              className={`inline-flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 h-11 sm:h-auto sm:py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                activeTab === 'applications'
-                  ? 'bg-gradient-to-r from-primary-400 to-primary-600 text-white shadow-md shadow-primary-500/20'
-                  : 'text-secondary-600 hover:bg-secondary-50'
-              }`}
-            >
-              <FileText className="w-4 h-4 flex-shrink-0" />
-              申請一覧
-              {pendingApps.length > 0 && activeTab !== 'applications' && (
-                <span className="ml-1 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold border border-amber-200">
-                  {pendingApps.length}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('submissions')}
-              className={`inline-flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 h-11 sm:h-auto sm:py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                activeTab === 'submissions'
-                  ? 'bg-gradient-to-r from-primary-400 to-primary-600 text-white shadow-md shadow-primary-500/20'
-                  : 'text-secondary-600 hover:bg-secondary-50'
-              }`}
-            >
-              <Send className="w-4 h-4 flex-shrink-0" />
-              月次提出
-              {submittedSubs.length > 0 && activeTab !== 'submissions' && (
-                <span className="ml-1 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200">
-                  {submittedSubs.length}
-                </span>
-              )}
-            </button>
-          </div>
+        <div className="segmented mt-2" role="tablist" aria-label="承認する内容">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'applications'}
+            onClick={() => setActiveTab('applications')}
+            className="segmented-item flex items-center justify-center gap-1.5"
+          >
+            申請一覧
+            {pendingApps.length > 0 && activeTab !== 'applications' && (
+              <span className="count-badge">{pendingApps.length}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'submissions'}
+            onClick={() => setActiveTab('submissions')}
+            className="segmented-item flex items-center justify-center gap-1.5"
+          >
+            月次提出
+            {submittedSubs.length > 0 && activeTab !== 'submissions' && (
+              <span className="count-badge">{submittedSubs.length}</span>
+            )}
+          </button>
         </div>
 
         {/* Filters */}
-        <div className="card mb-3 sm:mb-4">
-          <div className="flex items-center gap-2 mb-3 sm:mb-4 text-secondary-700">
-            <Filter className="w-4 h-4 text-primary-500" />
-            <span className="text-sm font-semibold">絞り込み</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+        <section className="section">
+          <h2 className="section-header">絞り込み</h2>
+          <div className="card grid gap-4 md:grid-cols-2">
             {/* 期間モード */}
             <div>
-              <label className="label">期間</label>
-              <select
-                value={rangeMode}
-                onChange={e => setRangeMode(e.target.value as RangeMode)}
-                className="input"
-              >
-                <option value="all">全期間</option>
-                <option value="month">月で指定</option>
-                <option value="range">期間で指定</option>
-              </select>
+              <p className="label">期間</p>
+              <div className="segmented" role="tablist" aria-label="期間">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={rangeMode === 'all'}
+                  onClick={() => setRangeMode('all')}
+                  className="segmented-item"
+                >
+                  全期間
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={rangeMode === 'month'}
+                  onClick={() => setRangeMode('month')}
+                  className="segmented-item"
+                >
+                  月で指定
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={rangeMode === 'range'}
+                  onClick={() => setRangeMode('range')}
+                  className="segmented-item"
+                >
+                  期間で指定
+                </button>
+              </div>
             </div>
 
             {/* 月指定モード: 月ピッカー */}
             {rangeMode === 'month' && (
-              <div className="sm:col-span-1 md:col-span-2">
-                <label className="label">対象月</label>
-                <div className="flex items-center gap-1 sm:max-w-xs">
+              <div>
+                <p className="label">対象月</p>
+                <div className="flex items-center rounded-[10px] bg-fill">
                   <button
                     type="button"
                     onClick={goPrevMonth}
-                    className="h-11 w-11 flex items-center justify-center rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600 flex-shrink-0"
+                    className="grid h-11 w-11 flex-shrink-0 place-items-center text-tint active:opacity-60"
                     aria-label="前月へ"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />
                   </button>
-                  <div className="flex-1 text-center font-semibold text-secondary-800">
+                  <p className="flex-1 text-center t-body font-semibold tabular">
                     {filterYear}年{filterMonth}月
-                  </div>
+                  </p>
                   <button
                     type="button"
                     onClick={goNextMonth}
-                    className="h-11 w-11 flex items-center justify-center rounded-xl hover:bg-secondary-50 border border-secondary-200 transition-colors text-secondary-600 flex-shrink-0"
+                    className="grid h-11 w-11 flex-shrink-0 place-items-center text-tint active:opacity-60"
                     aria-label="翌月へ"
                   >
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -723,9 +718,9 @@ export function AdminApprovalsPage() {
 
             {/* 期間指定モード: from / to */}
             {rangeMode === 'range' && (
-              <>
-                <div>
-                  <label className="label">開始日</label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block min-w-0">
+                  <span className="label">開始日</span>
                   <input
                     type="date"
                     value={rangeFrom}
@@ -733,9 +728,9 @@ export function AdminApprovalsPage() {
                     onChange={e => setRangeFrom(e.target.value)}
                     className="input"
                   />
-                </div>
-                <div>
-                  <label className="label">終了日</label>
+                </label>
+                <label className="block min-w-0">
+                  <span className="label">終了日</span>
                   <input
                     type="date"
                     value={rangeTo}
@@ -743,31 +738,59 @@ export function AdminApprovalsPage() {
                     onChange={e => setRangeTo(e.target.value)}
                     className="input"
                   />
-                </div>
-              </>
+                </label>
+              </div>
             )}
 
             {/* ステータス (申請一覧タブのみ) */}
             {activeTab === 'applications' && (
               <div>
-                <label className="label">ステータス</label>
-                <select
-                  value={appStatusFilter}
-                  onChange={e => setAppStatusFilter(e.target.value as AppStatusFilter)}
-                  className="input"
-                >
-                  <option value="all">全て</option>
-                  <option value="pending">承認待ち</option>
-                  <option value="approved">承認済み</option>
-                  <option value="rejected">却下</option>
-                </select>
+                <p className="label">ステータス</p>
+                <div className="segmented" role="tablist" aria-label="ステータス">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={appStatusFilter === 'all'}
+                    onClick={() => setAppStatusFilter('all')}
+                    className="segmented-item"
+                  >
+                    全て
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={appStatusFilter === 'pending'}
+                    onClick={() => setAppStatusFilter('pending')}
+                    className="segmented-item"
+                  >
+                    承認待ち
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={appStatusFilter === 'approved'}
+                    onClick={() => setAppStatusFilter('approved')}
+                    className="segmented-item"
+                  >
+                    承認済み
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={appStatusFilter === 'rejected'}
+                    onClick={() => setAppStatusFilter('rejected')}
+                    className="segmented-item"
+                  >
+                    却下
+                  </button>
+                </div>
               </div>
             )}
 
             {/* スタッフ (申請一覧タブのみ) */}
             {activeTab === 'applications' && (
-              <div>
-                <label className="label">スタッフ</label>
+              <label className="block">
+                <span className="label">スタッフ</span>
                 <select
                   value={staffIdFilter}
                   onChange={e => setStaffIdFilter(e.target.value)}
@@ -781,57 +804,53 @@ export function AdminApprovalsPage() {
                     </option>
                   ))}
                 </select>
-              </div>
+              </label>
             )}
           </div>
-        </div>
+        </section>
 
         {/* Applications tab */}
         {activeTab === 'applications' && (
           <>
-            <section className="card mb-3 sm:mb-4">
-              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0">
-                  <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                  <span className="truncate">承認待ち</span>
-                </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
-                  {pendingApps.length}件
-                </span>
+            <section className="section">
+              <h2 className="section-header">
+                承認待ち
+                <span className="tabular">{pendingApps.length}件</span>
+              </h2>
+              <div className="list-group">
+                {isLoadingApps ? (
+                  <div className="list-row justify-center py-6">
+                    <Loading />
+                  </div>
+                ) : pendingApps.length === 0 ? (
+                  <div className="list-row flex-col gap-2 py-8 text-center">
+                    <CheckCircle2 className="h-9 w-9 text-label-4" aria-hidden="true" />
+                    <p className="t-subhead text-label-2">承認待ちの申請はありません</p>
+                  </div>
+                ) : (
+                  pendingApps.map(renderApplicationCard)
+                )}
               </div>
-
-              {isLoadingApps ? (
-                <Loading />
-              ) : pendingApps.length === 0 ? (
-                <div className="text-center py-10 text-secondary-400">
-                  <CheckCircle className="w-10 h-10 mx-auto mb-2 text-secondary-300" />
-                  <p className="text-sm">承認待ちの申請はありません</p>
-                </div>
-              ) : (
-                <div className="space-y-3">{pendingApps.map(renderApplicationCard)}</div>
-              )}
             </section>
 
-            <section className="card">
-              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0">
-                  <FileText className="w-4 h-4 text-secondary-500 flex-shrink-0" />
-                  <span className="truncate">処理済み</span>
-                </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
-                  {processedApps.length}件
-                </span>
+            <section className="section">
+              <h2 className="section-header">
+                処理済み
+                <span className="tabular">{processedApps.length}件</span>
+              </h2>
+              <div className="list-group">
+                {isLoadingApps ? (
+                  <div className="list-row justify-center py-6">
+                    <Loading />
+                  </div>
+                ) : processedApps.length === 0 ? (
+                  <div className="list-row justify-center py-6 text-center">
+                    <p className="t-subhead text-label-2">処理済みの申請はありません</p>
+                  </div>
+                ) : (
+                  processedApps.map(renderApplicationCard)
+                )}
               </div>
-
-              {isLoadingApps ? (
-                <Loading />
-              ) : processedApps.length === 0 ? (
-                <div className="text-center py-8 text-secondary-400 text-sm">
-                  処理済みの申請はありません
-                </div>
-              ) : (
-                <div className="space-y-3">{processedApps.map(renderApplicationCard)}</div>
-              )}
             </section>
           </>
         )}
@@ -839,53 +858,47 @@ export function AdminApprovalsPage() {
         {/* Submissions tab */}
         {activeTab === 'submissions' && (
           <>
-            <section className="card mb-3 sm:mb-4">
-              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0 flex-wrap">
-                  <Clock className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                  <span>確認待ち</span>
-                  <span className="text-[11px] text-secondary-400 font-normal">（全期間）</span>
-                </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
-                  {submittedSubs.length}件
-                </span>
+            <section className="section">
+              <h2 className="section-header">
+                <span>確認待ち（全期間）</span>
+                <span className="flex-shrink-0 tabular">{submittedSubs.length}件</span>
+              </h2>
+              <div className="list-group">
+                {isLoadingSubs ? (
+                  <div className="list-row justify-center py-6">
+                    <Loading />
+                  </div>
+                ) : submittedSubs.length === 0 ? (
+                  <div className="list-row flex-col gap-2 py-8 text-center">
+                    <CheckCircle2 className="h-9 w-9 text-label-4" aria-hidden="true" />
+                    <p className="t-subhead text-label-2">確認待ちの月次提出はありません</p>
+                  </div>
+                ) : (
+                  submittedSubs.map(renderSubmissionCard)
+                )}
               </div>
-
-              {isLoadingSubs ? (
-                <Loading />
-              ) : submittedSubs.length === 0 ? (
-                <div className="text-center py-10 text-secondary-400">
-                  <CheckCircle className="w-10 h-10 mx-auto mb-2 text-secondary-300" />
-                  <p className="text-sm">確認待ちの月次提出はありません</p>
-                </div>
-              ) : (
-                <div className="space-y-3">{submittedSubs.map(renderSubmissionCard)}</div>
-              )}
             </section>
 
-            <section className="card">
-              <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
-                <h2 className="text-base font-semibold text-secondary-800 flex items-center gap-2 min-w-0 flex-wrap">
-                  <FileText className="w-4 h-4 text-secondary-500 flex-shrink-0" />
-                  <span>処理済み</span>
-                  <span className="text-[11px] text-secondary-400 font-normal">
-                    （{rangeMode === 'all' ? '全期間' : rangeMode === 'month' ? formatYearMonth(yearMonthStr) : `${rangeFrom} 〜 ${rangeTo}`}）
-                  </span>
-                </h2>
-                <span className="text-xs text-secondary-500 bg-secondary-50 border border-secondary-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
-                  {processedSubs.length}件
+            <section className="section">
+              <h2 className="section-header">
+                <span className="min-w-0 tabular">
+                  処理済み（{rangeMode === 'all' ? '全期間' : rangeMode === 'month' ? formatYearMonth(yearMonthStr) : `${rangeFrom} 〜 ${rangeTo}`}）
                 </span>
+                <span className="flex-shrink-0 tabular">{processedSubs.length}件</span>
+              </h2>
+              <div className="list-group">
+                {isLoadingSubs ? (
+                  <div className="list-row justify-center py-6">
+                    <Loading />
+                  </div>
+                ) : processedSubs.length === 0 ? (
+                  <div className="list-row justify-center py-6 text-center">
+                    <p className="t-subhead text-label-2">処理済みの月次提出はありません</p>
+                  </div>
+                ) : (
+                  processedSubs.map(renderSubmissionCard)
+                )}
               </div>
-
-              {isLoadingSubs ? (
-                <Loading />
-              ) : processedSubs.length === 0 ? (
-                <div className="text-center py-8 text-secondary-400 text-sm">
-                  処理済みの月次提出はありません
-                </div>
-              ) : (
-                <div className="space-y-3">{processedSubs.map(renderSubmissionCard)}</div>
-              )}
             </section>
           </>
         )}
@@ -894,30 +907,25 @@ export function AdminApprovalsPage() {
       {/* Confirmation / Rejection Modal */}
       <Modal isOpen={isModalOpen} onClose={closeModal} title={modalTitle} size="md">
         {pendingAction && (
-          <div className="space-y-4 py-1">
-            <div className="bg-secondary-50 border border-secondary-100 rounded-xl px-4 py-3 space-y-1">
-              <div className="flex items-center gap-2 text-sm">
-                <User className="w-4 h-4 text-secondary-500" />
-                <span className="font-semibold text-secondary-800">
-                  {pendingAction.staffName || '-'}
-                </span>
-              </div>
+          <div className="space-y-4 pt-1">
+            <div className="tile">
+              <p className="t-headline break-words">{pendingAction.staffName || '-'}</p>
               {pendingAction.target === 'application' && pendingAction.date && (
-                <div className="text-xs text-secondary-600">
+                <p className="mt-0.5 t-footnote text-label-2 tabular">
                   対象日: {formatDateWithDow(pendingAction.date)}
-                </div>
+                </p>
               )}
               {pendingAction.target === 'submission' && pendingAction.yearMonth && (
-                <div className="text-xs text-secondary-600">
+                <p className="mt-0.5 t-footnote text-label-2 tabular">
                   対象月: {formatYearMonth(pendingAction.yearMonth)}
-                </div>
+                </p>
               )}
             </div>
 
             {modalIsApprove ? (
-              <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-                <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-green-800">
+              <div className="callout callout-success">
+                <CheckCircle2 aria-hidden="true" />
+                <p>
                   {modalIsApplication
                     ? 'この申請を承認します。承認後は取り消せません。'
                     : 'この月次提出を確定します。確定後はスタッフが編集できなくなります。'}
@@ -925,19 +933,19 @@ export function AdminApprovalsPage() {
               </div>
             ) : (
               <>
-                <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                  <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-red-800">
+                <div className="callout callout-danger">
+                  <AlertTriangle aria-hidden="true" />
+                  <p>
                     {modalIsApplication
                       ? '却下理由はスタッフに通知されます。具体的に記載してください。'
                       : '差戻し理由はスタッフに通知されます。修正してほしい内容を記載してください。'}
                   </p>
                 </div>
-                <div>
-                  <label className="label">
+                <label className="block">
+                  <span className="label">
                     {modalIsApplication ? '却下理由' : '差戻し理由'}
-                    <span className="text-red-500 ml-1">*</span>
-                  </label>
+                    <span className="ml-1 text-danger">*</span>
+                  </span>
                   <textarea
                     value={rejectionReason}
                     onChange={e => setRejectionReason(e.target.value)}
@@ -949,23 +957,23 @@ export function AdminApprovalsPage() {
                     className="input min-h-[100px] resize-y"
                     rows={4}
                   />
-                </div>
+                </label>
               </>
             )}
 
             {actionError && (
-              <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
-                <XCircle className="w-4 h-4 flex-shrink-0" />
-                <p className="text-sm font-medium">{actionError}</p>
+              <div className="callout callout-danger" role="alert">
+                <XCircle aria-hidden="true" />
+                <p className="font-medium break-words">{actionError}</p>
               </div>
             )}
 
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
+            <div className="grid grid-cols-2 gap-3 pt-2">
               <button
                 type="button"
                 onClick={closeModal}
                 disabled={isProcessing}
-                className="btn btn-secondary flex-1 min-h-[44px]"
+                className="btn btn-gray"
               >
                 キャンセル
               </button>
@@ -976,13 +984,11 @@ export function AdminApprovalsPage() {
                   isProcessing ||
                   (!modalIsApprove && !rejectionReason.trim())
                 }
-                className={`btn flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 ${
-                  modalIsApprove ? 'btn-success' : 'btn-danger'
-                }`}
+                className={`btn ${modalIsApprove ? 'btn-filled' : 'btn-danger'}`}
               >
                 {modalIsApprove ? (
                   <>
-                    <CheckCircle className="w-4 h-4" />
+                    {isProcessing ? <Spinner size={18} className="!text-current" /> : <Check aria-hidden="true" />}
                     {isProcessing
                       ? '処理中...'
                       : modalIsApplication
@@ -991,7 +997,13 @@ export function AdminApprovalsPage() {
                   </>
                 ) : (
                   <>
-                    <XCircle className="w-4 h-4" />
+                    {isProcessing ? (
+                      <Spinner size={18} className="!text-current" />
+                    ) : modalIsApplication ? (
+                      <X aria-hidden="true" />
+                    ) : (
+                      <Undo2 aria-hidden="true" />
+                    )}
                     {isProcessing
                       ? '処理中...'
                       : modalIsApplication

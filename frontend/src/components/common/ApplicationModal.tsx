@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Send, AlertTriangle, Calendar, X } from 'lucide-react';
+import { Send, AlertTriangle, AlertCircle, Calendar, Check } from 'lucide-react';
 import { Modal } from './Modal';
+import { Spinner } from './Loading';
+import { ShiftDiffKindBadge } from './StatusBadge';
 import type { ApplicationType, ShiftDiff, ShiftDiffKind } from '../../types';
 import { APPLICATION_TYPE_LABEL } from '../../utils/shiftDiff';
 
@@ -79,59 +81,68 @@ export function ApplicationModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="勤怠申請" size="md">
-      <div className="space-y-4 sm:space-y-5 py-1 sm:py-2">
+      <div className="space-y-5 pb-1">
         {/* 対象日 */}
-        <div className="flex items-center gap-2.5 text-secondary-700">
-          <Calendar className="w-5 h-5 text-primary-500 flex-shrink-0" />
-          <span className="font-semibold text-sm sm:text-base">{date}</span>
+        <div className="flex items-center gap-3">
+          <span className="row-icon bg-icon-blue">
+            <Calendar aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="t-caption text-label-2">対象日</p>
+            <p className="t-headline tabular">{date}</p>
+          </div>
         </div>
 
         {/* 差異サマリ */}
         {diff && diff.hasIssue && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4 space-y-2">
-            <div className="flex items-center gap-2 text-amber-700 font-semibold text-sm">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              シフトとの差異
-            </div>
-            <ul className="text-sm text-amber-800 space-y-1 pl-1">
-              {diff.kinds.map(kind => (
-                <li key={kind}>・{APPLICATION_TYPE_LABEL[kind]}</li>
-              ))}
-            </ul>
-            <div className="text-xs text-amber-700 pt-1 border-t border-amber-200/60 grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2">
-              {diff.details.plannedStart && diff.details.plannedEnd && (
-                <div>
-                  予定: {diff.details.plannedStart} - {diff.details.plannedEnd}
-                </div>
-              )}
-              {diff.details.actualStart && diff.details.actualEnd && (
-                <div>
-                  実績: {diff.details.actualStart} - {diff.details.actualEnd}
-                </div>
-              )}
-              {diff.details.overtimeMinutes !== undefined && diff.details.overtimeMinutes > 0 && (
-                <div>残業: {diff.details.overtimeMinutes}分</div>
-              )}
+          <div className="callout callout-warning">
+            <AlertTriangle aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">シフトとの差異</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {diff.kinds.map(kind => (
+                  <ShiftDiffKindBadge key={kind} kind={kind} />
+                ))}
+              </div>
+              <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-0.5 border-t-[0.5px] border-separator pt-2 t-footnote text-label-2 tabular sm:grid-cols-2">
+                {diff.details.plannedStart && diff.details.plannedEnd && (
+                  <div>
+                    予定: {diff.details.plannedStart} - {diff.details.plannedEnd}
+                  </div>
+                )}
+                {diff.details.actualStart && diff.details.actualEnd && (
+                  <div>
+                    実績: {diff.details.actualStart} - {diff.details.actualEnd}
+                  </div>
+                )}
+                {diff.details.overtimeMinutes !== undefined && diff.details.overtimeMinutes > 0 && (
+                  <div>残業: {diff.details.overtimeMinutes}分</div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {/* 種別選択 */}
         <div>
-          <label className="label">申請種別 <span className="text-red-500">*</span></label>
+          <p className="label">
+            申請種別 <span className="text-danger">*</span>
+          </p>
           {availableKinds.length > 0 ? (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="申請種別">
               {availableKinds.map(kind => (
                 <button
                   key={kind}
                   type="button"
                   onClick={() => setSelectedType(kind)}
-                  className={`px-3 min-h-11 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                  aria-pressed={selectedType === kind}
+                  className={`flex min-h-11 items-center justify-center gap-1.5 rounded-[10px] px-3 py-2 t-subhead font-medium transition-colors ${
                     selectedType === kind
-                      ? 'border-primary-400 bg-primary-50 text-primary-700'
-                      : 'border-secondary-200 bg-white text-secondary-600 hover:border-primary-200'
+                      ? 'bg-tint-fill text-tint ring-[1.5px] ring-inset ring-tint'
+                      : 'bg-fill text-label hover:bg-fill-2'
                   }`}
                 >
+                  {selectedType === kind && <Check className="h-4 w-4 flex-shrink-0" strokeWidth={2.6} aria-hidden="true" />}
                   {APPLICATION_TYPE_LABEL[kind]}
                 </button>
               ))}
@@ -141,6 +152,7 @@ export function ApplicationModal({
               value={selectedType || ''}
               onChange={e => setSelectedType(e.target.value as ApplicationType)}
               className="input"
+              aria-label="申請種別"
             >
               <option value="">選択してください</option>
               {(Object.keys(APPLICATION_TYPE_LABEL) as ShiftDiffKind[]).map(k => (
@@ -153,32 +165,28 @@ export function ApplicationModal({
         {/* 会社都合 / 個人都合 (遅刻・早退の場合のみ) */}
         {needsReasonType && (
           <div>
-            <label className="label">理由区分 <span className="text-red-500">*</span></label>
-            <div className="grid grid-cols-2 gap-2">
+            <p className="label">
+              理由区分 <span className="text-danger">*</span>
+            </p>
+            <div className="segmented" role="group" aria-label="理由区分">
               <button
                 type="button"
                 onClick={() => setReasonType('company')}
-                className={`px-3 min-h-11 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
-                  reasonType === 'company'
-                    ? 'border-blue-400 bg-blue-50 text-blue-700'
-                    : 'border-secondary-200 bg-white text-secondary-600 hover:border-blue-200'
-                }`}
+                aria-pressed={reasonType === 'company'}
+                className="segmented-item min-h-11 text-[15px]"
               >
                 会社都合
               </button>
               <button
                 type="button"
                 onClick={() => setReasonType('personal')}
-                className={`px-3 min-h-11 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
-                  reasonType === 'personal'
-                    ? 'border-amber-400 bg-amber-50 text-amber-700'
-                    : 'border-secondary-200 bg-white text-secondary-600 hover:border-amber-200'
-                }`}
+                aria-pressed={reasonType === 'personal'}
+                className="segmented-item min-h-11 text-[15px]"
               >
                 個人都合
               </button>
             </div>
-            <p className="text-xs text-secondary-500 mt-1">
+            <p className="mt-1.5 px-1 t-footnote text-label-2">
               {reasonType === 'company'
                 ? '会社都合のため給与控除は行われません。'
                 : '個人都合のため通常通り給与控除されます。'}
@@ -188,32 +196,36 @@ export function ApplicationModal({
 
         {/* 理由 */}
         <div>
-          <label className="label">理由 <span className="text-red-500">*</span></label>
-          <textarea
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            placeholder="申請理由を入力してください"
-            className="input min-h-[100px] resize-y"
-            rows={4}
-            required
-          />
-          <p className="text-xs text-secondary-500 mt-1">承認者（管理者）に届く理由欄です。具体的に記載してください。</p>
+          <label className="block">
+            <span className="label">
+              理由 <span className="text-danger">*</span>
+            </span>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="申請理由を入力してください"
+              className="input"
+              rows={4}
+              required
+            />
+          </label>
+          <p className="mt-1.5 px-1 t-footnote text-label-2">承認者（管理者）に届く理由欄です。具体的に記載してください。</p>
         </div>
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-3 sm:px-4 py-3 rounded-xl">
-            <X className="w-4 h-4 flex-shrink-0" />
-            <p className="text-sm font-medium break-words">{error}</p>
+          <div className="callout callout-danger" role="alert">
+            <AlertCircle aria-hidden="true" />
+            <p className="font-medium break-words">{error}</p>
           </div>
         )}
 
-        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-2">
+        <div className="grid grid-cols-2 gap-3 pt-1">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="btn btn-secondary flex-1"
+            className="btn btn-gray"
           >
             キャンセル
           </button>
@@ -221,9 +233,9 @@ export function ApplicationModal({
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting || !selectedType || !reason.trim()}
-            className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+            className="btn btn-filled"
           >
-            <Send className="w-4 h-4" />
+            {isSubmitting ? <Spinner size={18} className="!text-current" /> : <Send aria-hidden="true" />}
             {isSubmitting ? '送信中...' : '申請する'}
           </button>
         </div>

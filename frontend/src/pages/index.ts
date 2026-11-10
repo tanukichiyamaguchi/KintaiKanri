@@ -12,3 +12,4 @@ export { AdminShiftRequestsPage } from './admin/AdminShiftRequestsPage';
 export { SalaryManagement } from './admin/SalaryManagement';
 export { PaidLeaveManagement } from './admin/PaidLeaveManagement';
 export { SettingsPage } from './admin/Settings';
+export { MorePage } from './admin/MorePage';

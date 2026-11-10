@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, Mail, Lock, Eye, EyeOff, User as UserIcon } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Loading } from '../components/common';
+import { Spinner } from '../components/common';
 
 type Mode = 'login' | 'signup';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { login, register, isAuthenticated, isAdmin } = useAuth();
+  const ids = useId();
 
   const [mode, setMode] = useState<Mode>('login');
   const [name, setName] = useState('');
@@ -100,80 +101,76 @@ export function LoginPage() {
     || !password
     || (mode === 'signup' && (!name.trim() || !passwordConfirm));
 
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-white via-primary-50/30 to-white px-4 py-6 sm:p-4 relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-gradient-to-br from-primary-200/20 to-transparent rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
-      <div className="absolute bottom-0 right-0 w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-gradient-to-tl from-primary-200/20 to-transparent rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
+  // 1 行 = 見出し + 入力欄（iOS の「設定」アプリのサインイン画面と同じ並び）
+  const fieldRow = (id: string, label: string, input: React.ReactNode, trailing?: React.ReactNode) => (
+    <div className="list-row !py-0 min-h-[50px]">
+      <label htmlFor={id} className="t-body w-[6.2em] flex-shrink-0">
+        {label}
+      </label>
+      {input}
+      {trailing}
+    </div>
+  );
+  const inputClass = 't-body flex-1 min-w-0 h-[50px] bg-transparent outline-none placeholder:text-label-3';
 
-      <div className="w-full max-w-md relative z-10">
-        {/* Logo */}
-        <div className="text-center mb-6 sm:mb-10">
+  return (
+    <div className="min-h-dvh bg-canvas">
+      <main
+        className="mx-auto flex min-h-dvh w-full max-w-[420px] flex-col justify-center px-4 py-10"
+        style={{ paddingTop: 'calc(40px + var(--safe-top))', paddingBottom: 'calc(40px + var(--safe-bottom))' }}
+      >
+        <div className="text-center">
           <img
             src={`${import.meta.env.BASE_URL}logo.png`}
-            alt="KATEstageLASH"
-            className="mx-auto max-h-32 sm:max-h-40 w-auto object-contain"
+            alt="KATE stage LASH kamata"
+            className="logo-adaptive mx-auto h-36 w-36 object-contain"
           />
+          <h1 className="t-title2 mt-1">勤怠管理</h1>
         </div>
 
-        {/* Mode Tabs */}
-        <div className="grid grid-cols-2 gap-2 mb-4 sm:mb-5 bg-white/60 backdrop-blur-sm rounded-2xl p-1.5 border border-secondary-200">
+        <div className="segmented mt-7" role="tablist" aria-label="ログインか新規登録かを選ぶ">
           <button
             type="button"
+            role="tab"
+            aria-selected={isLoginMode}
             onClick={() => handleSwitchMode('login')}
-            className={`min-h-11 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              isLoginMode
-                ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/25'
-                : 'text-secondary-500 hover:text-primary-600'
-            }`}
+            className="segmented-item"
           >
             ログイン
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={!isLoginMode}
             onClick={() => handleSwitchMode('signup')}
-            className={`min-h-11 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              !isLoginMode
-                ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/25'
-                : 'text-secondary-500 hover:text-primary-600'
-            }`}
+            className="segmented-item"
           >
             新規登録
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="card card-gold gold-border !p-5 sm:!p-7">
-          <h2 className="text-base sm:text-lg font-semibold text-center text-secondary-800 mb-5 sm:mb-7 flex items-center justify-center gap-2 sm:gap-3">
-            <span className="w-6 sm:w-8 h-px bg-gradient-to-r from-transparent to-primary-400" />
-            <span>{isLoginMode ? 'ログイン' : 'スタッフ新規登録'}</span>
-            <span className="w-6 sm:w-8 h-px bg-gradient-to-l from-transparent to-primary-400" />
-          </h2>
-
-          {/* Name (signup only) */}
-          {!isLoginMode && (
-            <div className="mb-4 sm:mb-5">
-              <label className="label">氏名</label>
-              <div className="relative">
-                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400 pointer-events-none" />
+        <form onSubmit={handleSubmit} className="mt-5" noValidate>
+          <div className="list-group">
+            {!isLoginMode &&
+              fieldRow(
+                `${ids}-name`,
+                '氏名',
                 <input
+                  id={`${ids}-name`}
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="例: 佐藤 花子"
+                  placeholder="佐藤 花子"
                   disabled={isLoading}
                   autoComplete="name"
-                  className="input pl-11 h-12"
+                  className={inputClass}
                 />
-              </div>
-            </div>
-          )}
-
-          {/* Email */}
-          <div className="mb-4 sm:mb-5">
-            <label className="label">メールアドレス</label>
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400 pointer-events-none" />
+              )}
+            {fieldRow(
+              `${ids}-email`,
+              'メール',
               <input
+                id={`${ids}-email`}
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -181,89 +178,70 @@ export function LoginPage() {
                 disabled={isLoading}
                 autoComplete="email"
                 inputMode="email"
-                className="input pl-11 h-12"
+                autoCapitalize="none"
+                spellCheck={false}
+                className={inputClass}
               />
-            </div>
-          </div>
-
-          {/* Password */}
-          <div className="mb-4 sm:mb-5">
-            <label className="label">
-              パスワード
-              {!isLoginMode && <span className="ml-2 text-xs text-secondary-400 font-normal">（8文字以上）</span>}
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400 pointer-events-none" />
+            )}
+            {fieldRow(
+              `${ids}-password`,
+              'パスワード',
               <input
+                id={`${ids}-password`}
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder={isLoginMode ? 'パスワード' : '新しいパスワード'}
+                placeholder={isLoginMode ? '必須' : '8文字以上'}
                 disabled={isLoading}
                 autoComplete={isLoginMode ? 'current-password' : 'new-password'}
-                className="input pl-11 pr-12 h-12"
-              />
+                className={inputClass}
+              />,
               <button
                 type="button"
                 onClick={() => setShowPassword(s => !s)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-11 h-11 text-secondary-400 hover:text-primary-600 transition-colors"
+                className="-mr-2 grid h-11 w-11 flex-shrink-0 place-items-center text-label-3 active:opacity-60"
                 aria-label={showPassword ? 'パスワードを隠す' : 'パスワードを表示'}
+                aria-pressed={showPassword}
               >
-                {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                {showPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
               </button>
-            </div>
-          </div>
-
-          {/* Password confirm (signup only) */}
-          {!isLoginMode && (
-            <div className="mb-5 sm:mb-6">
-              <label className="label">パスワード（確認）</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-secondary-400 pointer-events-none" />
+            )}
+            {!isLoginMode &&
+              fieldRow(
+                `${ids}-confirm`,
+                '確認用',
                 <input
+                  id={`${ids}-confirm`}
                   type={showPassword ? 'text' : 'password'}
                   value={passwordConfirm}
                   onChange={e => setPasswordConfirm(e.target.value)}
-                  placeholder="同じパスワードをもう一度"
+                  placeholder="もう一度入力"
                   disabled={isLoading}
                   autoComplete="new-password"
-                  className="input pl-11 h-12"
+                  className={inputClass}
                 />
-              </div>
-            </div>
-          )}
+              )}
+          </div>
 
-          {/* Error */}
           {error && (
-            <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 px-4 py-3.5 rounded-xl mb-5">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm font-medium break-words">{error}</p>
+            <div className="callout callout-danger mt-4" role="alert">
+              <AlertCircle aria-hidden="true" />
+              <p className="font-medium break-words">{error}</p>
             </div>
           )}
 
-          {/* Loading */}
-          {isLoading && (
-            <div className="flex justify-center mb-5">
-              <Loading size="sm" message={isLoginMode ? 'ログイン中...' : '登録中...'} />
-            </div>
-          )}
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={submitDisabled}
-            className="btn btn-primary w-full btn-large"
-          >
-            {isLoginMode ? 'ログイン' : '登録してログイン'}
+          <button type="submit" disabled={submitDisabled} className="btn btn-filled btn-lg btn-block mt-5">
+            {isLoading && <Spinner size={18} className="!text-current" />}
+            {isLoading
+              ? isLoginMode ? 'ログインしています…' : '登録しています…'
+              : isLoginMode ? 'ログイン' : '登録してログイン'}
           </button>
 
           {!isLoginMode && (
-            <p className="mt-4 sm:mt-5 text-xs text-center text-secondary-500">
-              管理者アカウントは別途、管理者にて作成されます
-            </p>
+            <p className="t-footnote mt-4 text-center text-label-2">管理者のアカウントは、管理者が作成します</p>
           )}
         </form>
-      </div>
+      </main>
     </div>
   );
 }

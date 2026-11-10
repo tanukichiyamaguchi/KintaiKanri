@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-07-03 (fix 対象年月 label collision; submissions now recognized)';
+const CODE_VERSION = '2026-11-10 (speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -496,11 +496,18 @@ function addTestAdmin() {
 }
 
 // Get spreadsheet
+// 【高速化】1 回の実行（= 1 リクエスト / 1 トリガー実行）の中で openById を何度も
+// 呼ぶと、そのたびにスプレッドシートを開き直すコストがかかる。GAS のグローバル変数は
+// 実行ごとに初期化されるため、実行内だけで使い回す（実行をまたいで古い参照が残ることはない）。
+let SPREADSHEET_MEMO_ = null;
 function getSpreadsheet() {
   if (!SPREADSHEET_ID) {
     throw new Error('SPREADSHEET_ID is not configured. Please set your spreadsheet ID.');
   }
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
+  if (!SPREADSHEET_MEMO_) {
+    SPREADSHEET_MEMO_ = SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+  return SPREADSHEET_MEMO_;
 }
 
 // Get or create sheet
@@ -713,9 +720,36 @@ function applyCheckboxValidation_(sheet, columnKeys) {
   });
 }
 
+// 【高速化】勤怠シートの「列の表示形式 + チェックボックス」を適用済みかどうかの目印。
+// 以前は getAttendanceSheet が呼ばれるたびに（＝勤怠を読むだけのリクエストでも）
+// 約 1000 行 × 5 列へ表示形式・入力規則を書き込んでおり、全リクエストが遅くなっていた。
+// 行数（maxRows）が変わらない限り再適用は不要なので、シート名 + 行数をキーに
+// CacheService へ「適用済み」を記録し、記録がある間は再適用をスキップする。
+// キャッシュが消えても（最大 6 時間）再適用されるだけなので結果は変わらない。
+const ATTENDANCE_FORMAT_CACHE_TTL_SEC = 6 * 60 * 60;
+function attendanceFormatCacheKey_(sheet) {
+  return 'attfmt:v1:' + sheet.getName() + ':' + sheet.getMaxRows();
+}
+function isAttendanceFormatApplied_(sheet) {
+  try {
+    return CacheService.getScriptCache().get(attendanceFormatCacheKey_(sheet)) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+function markAttendanceFormatApplied_(sheet) {
+  try {
+    CacheService.getScriptCache().put(attendanceFormatCacheKey_(sheet), '1', ATTENDANCE_FORMAT_CACHE_TTL_SEC);
+  } catch (e) { /* キャッシュに書けなくても次回再適用されるだけ */ }
+}
+
 // Get attendance sheet for a specific month
 function getAttendanceSheet(year, month) {
   const mm = String(month).padStart(2, '0');
+  // 高速パス: 既存シートで、現在の行数に対して書式適用済みならそのまま返す
+  const existing = getSpreadsheet().getSheetByName(attendanceSheetName_(year, month));
+  if (existing && isAttendanceFormatApplied_(existing)) return existing;
+
   const sheet = getOrCreateMonthlySheet_(year, month, attendanceSheetName_(year, month), 'attendance_' + year + mm, [
     'date', 'staff_id', 'name', 'clock_in', 'clock_out', 'clock_out_type',
     'break_minutes', 'break_minutes_is_manual', 'work_minutes',
@@ -728,6 +762,7 @@ function getAttendanceSheet(year, month) {
   });
   // Boolean 列はチェックボックス表示にする（社労士提出時の可読性のため）
   applyCheckboxValidation_(sheet, ['is_holiday', 'break_minutes_is_manual']);
+  markAttendanceFormatApplied_(sheet);
   return sheet;
 }
 
@@ -860,26 +895,60 @@ function sheetToObjects(sheet) {
   const headers = data[0] || [];
   // ヘッダー行が完全に空なら（=シート初期化失敗）空配列を返す
   if (!headers.length || headers.every(h => h === '' || h == null)) return [];
-  return data.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((header, index) => {
-      if (header !== '' && header != null) {
-        const cellVal = row[index];
-        // 日本語ラベルが複数の英語キーに対応する場合は、その全ての別名キーに値を入れる
-        // （例: 「対象年月」→ year_month と target_year_month の両方）。これを怠ると
-        // 片方のキーで読むコードが undefined になり、月次提出の対象年月が読めず
-        // 「提出済みでも常に下書き扱い」になる不具合が起きる。
-        const keys = (typeof header === 'string' && HEADER_LABEL_TO_KEYS[header])
-          ? HEADER_LABEL_TO_KEYS[header]
-          : [((typeof header === 'string' && REVERSE_HEADER_LABELS[header]) || header)];
-        // enum セルの日本語表示も英語キーへ正規化（status/type/source/clock_out_type/editor_role）
-        keys.forEach(function (key) {
-          obj[key] = normalizeEnumValueFromCell_(key, cellVal);
-        });
-      }
-    });
-    return obj;
+  return data.slice(1).map(row => rowToObject_(headers, row));
+}
+
+// シートの 1 行（値の配列）を、英語キーのオブジェクトに変換する。
+// sheetToObjects と同じ変換規則。シートを読み直さずに、手元の行データから
+// 同じ形のオブジェクトを作りたい場合（打刻直後の応答など）にも使う。
+function rowToObject_(headers, row) {
+  const obj = {};
+  headers.forEach((header, index) => {
+    if (header !== '' && header != null) {
+      const cellVal = row[index];
+      // 日本語ラベルが複数の英語キーに対応する場合は、その全ての別名キーに値を入れる
+      // （例: 「対象年月」→ year_month と target_year_month の両方）。これを怠ると
+      // 片方のキーで読むコードが undefined になり、月次提出の対象年月が読めず
+      // 「提出済みでも常に下書き扱い」になる不具合が起きる。
+      const keys = (typeof header === 'string' && HEADER_LABEL_TO_KEYS[header])
+        ? HEADER_LABEL_TO_KEYS[header]
+        : [((typeof header === 'string' && REVERSE_HEADER_LABELS[header]) || header)];
+      // enum セルの日本語表示も英語キーへ正規化（status/type/source/clock_out_type/editor_role）
+      keys.forEach(function (key) {
+        obj[key] = normalizeEnumValueFromCell_(key, cellVal);
+      });
+    }
   });
+  return obj;
+}
+
+// 【高速化】1 行の複数の列を、1 回の setValues でまとめて書き込む。
+// 以前は setCellByColumnName_ で 1 セルずつ書いていたため、1 行で 9 回、
+// 1 か月分の保存では数百回の書き込みが発生して保存が非常に遅かった。
+//  - values: { 英語キー: 値 }。列はヘッダー名で解決する（列順が変わっても安全）。
+//  - currentRow: その行の現在の値（getValues で読んだ配列）。書き込み範囲は
+//    「対象列の最左〜最右」の連続範囲で、間に挟まる対象外の列は現在値をそのまま書き戻す。
+//  - enum 列は setCellByColumnName_ と同様に日本語ラベルへ変換して書き込む。
+// 戻り値: 書き込み後の行の値（currentRow のコピーに変更を反映したもの）。
+function setRowValuesByColumnNames_(sheet, rowIndex, headers, currentRow, values) {
+  const nextRow = (currentRow || []).slice();
+  let minIdx = -1;
+  let maxIdx = -1;
+  Object.keys(values).forEach(function (key) {
+    const idx = findHeaderIndex_(headers, key);
+    if (idx === -1) {
+      Logger.log('setRowValuesByColumnNames_: column "' + key + '" not found in sheet ' + (sheet && sheet.getName ? sheet.getName() : '?'));
+      return;
+    }
+    while (nextRow.length <= idx) nextRow.push('');
+    nextRow[idx] = ENUM_COLUMNS[key] ? localizeEnumValue_(values[key]) : values[key];
+    if (minIdx === -1 || idx < minIdx) minIdx = idx;
+    if (idx > maxIdx) maxIdx = idx;
+  });
+  if (minIdx === -1 || !rowIndex || rowIndex < 1) return nextRow;
+  sheet.getRange(rowIndex, minIdx + 1, 1, maxIdx - minIdx + 1)
+    .setValues([nextRow.slice(minIdx, maxIdx + 1)]);
+  return nextRow;
 }
 
 // Find row index by column value (英語キー / 日本語ラベル どちらでも検索可能)
@@ -1140,6 +1209,11 @@ function handleRequest(e, method) {
         result = setupSystem();
         break;
 
+      // 管理者ダッシュボードのまとめ取得（複数 API の往復を 1 回に集約）
+      case 'dashboard/summary':
+        result = handleGetDashboardSummary();
+        break;
+
       default:
         result = { success: false, error: '未対応のアクションです: ' + path };
     }
@@ -1368,6 +1442,7 @@ function handleClock(body) {
   // date 列は文字列で書き込んでいるが、Sheets が Date 型に自動変換する場合があるため両対応。
   let rowIndex = -1;
   const data = sheet.getDataRange().getValues();
+  const headers = (data && data[0]) ? data[0] : [];
 
   for (let i = 1; i < data.length; i++) {
     const rowDate = formatDateOnly_(data[i][0]);
@@ -1386,6 +1461,12 @@ function handleClock(body) {
   // 7=break_minutes, 8=break_minutes_is_manual, 9=work_minutes,
   // 10=late_minutes, 11=early_leave_minutes,
   // 12=is_holiday, 13=remarks, 14=source
+  //
+  // 【高速化】以前は判定のたびに getRange().getValue() でセルを 1 つずつ読み、
+  // 書き込みも 1 セルずつ行っていた（読み書きが交互になると毎回シートとの往復が
+  // 発生して遅い）。判定は直前に読んだ data を使い、書き込みは 1 回にまとめる。
+  // 判定内容・書き込む値は以前と同じ。
+  let finalRow; // 書き込み後のこの行の値（応答の組み立てに使う）
 
   if (rowIndex === -1) {
     // Create new record
@@ -1407,51 +1488,66 @@ function handleClock(body) {
 
     sheet.appendRow(newRow);
     rowIndex = sheet.getLastRow();
+    finalRow = newRow;
   } else {
+    const row = data[rowIndex - 1].slice();
     if (type === 'clock_in') {
       // 同日2回目以降の出勤打刻はブロック（誤操作防止）。
-      const existingClockIn = sheet.getRange(rowIndex, 4).getValue();
+      const existingClockIn = row[3];
       if (existingClockIn) {
         return { success: false, error: '本日は既に出勤打刻されています' };
       }
       sheet.getRange(rowIndex, 4).setValue(timeValue);
+      row[3] = timeValue;
     } else if (type === 'clock_out') {
-      const existingClockIn = sheet.getRange(rowIndex, 4).getValue();
+      const existingClockIn = row[3];
       if (!existingClockIn) {
         return { success: false, error: '出勤打刻が記録されていません' };
       }
-      const existingClockOut = sheet.getRange(rowIndex, 5).getValue();
+      const existingClockOut = row[4];
       if (existingClockOut) {
         return { success: false, error: '本日は既に退勤打刻されています' };
       }
-      sheet.getRange(rowIndex, 5).setValue(timeValue);
-      sheet.getRange(rowIndex, 6).setValue(localizeEnumValue_('normal'));
+      row[4] = timeValue;
+      row[5] = localizeEnumValue_('normal');
 
       // Auto-calculate break (legal minimum) + work minutes
       // existingClockIn は Date / 文字列のどちらでもありうる（Sheets が自動変換するため）
       const startTime = toDateOrNull_(existingClockIn);
       if (startTime) {
         const elapsedMinutes = Math.floor((now.getTime() - startTime.getTime()) / 60000);
-        const isManual = sheet.getRange(rowIndex, 8).getValue() === true;
-        let breakMinutes = safeNumber_(sheet.getRange(rowIndex, 7).getValue(), 0);
+        const isManual = row[7] === true;
+        let breakMinutes = safeNumber_(row[6], 0);
         if (!isManual) {
           breakMinutes = computeLegalBreakMinutes_(elapsedMinutes);
-          sheet.getRange(rowIndex, 7).setValue(breakMinutes);
+          row[6] = breakMinutes;
         }
-        const workMinutes = Math.max(0, elapsedMinutes - breakMinutes);
-        sheet.getRange(rowIndex, 9).setValue(workMinutes);
+        row[8] = Math.max(0, elapsedMinutes - breakMinutes);
       }
+      // 退勤(5列目)〜実労働分(9列目)を 1 回で書き込む。間の「休憩手動」(8列目)は
+      // 読んだ値をそのまま書き戻す。休憩・実労働は算出できた場合だけ値が変わる。
+      while (row.length < 9) row.push('');
+      sheet.getRange(rowIndex, 5, 1, 5).setValues([row.slice(4, 9)]);
     }
+    finalRow = row;
   }
 
-  // 出勤簿シートを軽量に再生成（失敗しても打刻成功は維持）。
-  // 対象月は行を書き込んだのと同じサーバ基準の yearMonth を使う
-  // （now=クライアント時刻から再計算すると書込先の月と食い違う恐れがある）。
+  // 【高速化】打刻直後の状態（今日の勤怠 + 提出ゲート）を同梱して返し、
+  // フロントが getToday / clock-gate を追加取得する往復（計2回）を不要にする。
+  // 今日の勤怠はシートを読み直さず、書き込んだ行の値から組み立てる。
+  const result = { success: true };
   try {
-    rebuildAttendanceLogSheet_(staffId, yearMonth);
-  } catch (e) { Logger.log('rebuildAttendanceLogSheet failed: ' + (e && e.message)); }
+    result.today = todayAttendanceFromRecord_(rowToObject_(headers, finalRow));
+  } catch (e) { Logger.log('handleClock: todayAttendanceFromRecord_ failed: ' + (e && e.message)); }
+  try {
+    result.gate = computeClockGate_(staffId, new Date());
+  } catch (e) { Logger.log('handleClock: computeClockGate_ failed: ' + (e && e.message)); }
 
-  return { success: true };
+  // 【高速化】以前はここで出勤簿シート（出勤簿_氏名_年月）を同期で作り直していた。
+  // 大量の書式操作を伴い打刻の応答を大きく遅くしていたため、「作り直しが必要」と
+  // 記録だけして、10 分ごとのトリガーで作り直す方式にした（最大約 10 分遅れで反映）。
+  markAttendanceLogDirty_(staffId, yearMonth);
+  return result;
 }
 
 /**
@@ -1474,30 +1570,33 @@ function computeLegalBreakMinutes_(elapsedMinutes) {
   return 0;
 }
 
-function handleGetTodayAttendance(params) {
-  const staffId = params.staffId;
-
-  if (!staffId) {
-    return { success: false, error: 'スタッフIDが指定されていません' };
-  }
-
+/**
+ * 指定スタッフの「その日」の勤怠状態（status / records / currentRecord）を組み立てる。
+ * handleGetTodayAttendance と handleClock（打刻レスポンス同梱）の両方から使う共通ヘルパ。
+ * @param {string} staffId
+ * @param {string} dateStr 'yyyy-MM-dd'（サーバ基準）。省略時はサーバの本日。
+ */
+function buildTodayAttendance_(staffId, dateStr) {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const dateStr = Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM-dd');
+  const targetDate = dateStr || Utilities.formatDate(now, scriptTimeZone_(), 'yyyy-MM-dd');
+  const parts = String(targetDate).split('-');
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
 
   const sheet = getAttendanceSheet(year, month);
   const data = sheetToObjects(sheet);
-  const todayRecord = data.find(r => formatDateOnly_(r.date) === dateStr && r.staff_id === staffId);
+  const todayRecord = data.find(r => formatDateOnly_(r.date) === targetDate && r.staff_id === staffId);
+  return todayAttendanceFromRecord_(todayRecord);
+}
 
+/**
+ * 勤怠 1 行（sheetToObjects / rowToObject_ 形式）から「その日」の状態を組み立てる。
+ * 行が無ければ未出勤。buildTodayAttendance_ と handleClock（シートを読み直さずに
+ * 打刻直後の状態を返す）の両方から使う。
+ */
+function todayAttendanceFromRecord_(todayRecord) {
   if (!todayRecord) {
-    return {
-      success: true,
-      data: {
-        status: 'not_started',
-        records: []
-      }
-    };
+    return { status: 'not_started', records: [] };
   }
 
   // Build records array (Date オブジェクトは ISO 文字列に正規化)
@@ -1517,14 +1616,17 @@ function handleGetTodayAttendance(params) {
     status = 'working';
   }
 
-  return {
-    success: true,
-    data: {
-      status,
-      records,
-      currentRecord: todayRecord
-    }
-  };
+  return { status: status, records: records, currentRecord: todayRecord };
+}
+
+function handleGetTodayAttendance(params) {
+  const staffId = params.staffId;
+
+  if (!staffId) {
+    return { success: false, error: 'スタッフIDが指定されていません' };
+  }
+
+  return { success: true, data: buildTodayAttendance_(staffId, null) };
 }
 
 function handleGetAttendance(params) {
@@ -1636,6 +1738,74 @@ function handleGetStaffList() {
       status: s.status
     }))
   };
+}
+
+/**
+ * 管理者ダッシュボード用のまとめ取得。
+ *
+ * 【高速化】以前のダッシュボードは「スタッフ一覧 → スタッフ人数分の今日の勤怠 →
+ * 申請・月次提出・有給・希望休」を別々のリクエストで取得していた（4 人なら 9 回、
+ * さらに件数は 30 秒ごとに 4 回）。GAS はリクエストごとに起動とスプレッドシートを開く
+ * コストがかかり、今日の勤怠シートも人数分読み直していたため、1 回にまとめる。
+ * 各値は個別 API と同じ処理・同じ条件で算出する（表示される内容は以前と同じ）。
+ *   staff:  handleGetStaffList と同じ（在籍/退職の絞り込みは画面側で行う）
+ *   today:  { staffId: handleGetTodayAttendance と同じ形 }（今日の勤怠シートは 1 回だけ読む）
+ *   counts: 承認待ちの件数。取得に失敗した項目は null
+ */
+function handleGetDashboardSummary() {
+  const staffRes = handleGetStaffList();
+  const staff = staffRes && staffRes.success ? staffRes.data : [];
+
+  // 今日の勤怠: buildTodayAttendance_ と同じ「今日」判定・同じ行の選び方（最初に一致した行）
+  const todayStr = Utilities.formatDate(new Date(), scriptTimeZone_(), 'yyyy-MM-dd');
+  const parts = todayStr.split('-');
+  const rows = sheetToObjects(getAttendanceSheet(Number(parts[0]), Number(parts[1])));
+  const firstRowByStaff = {};
+  rows.forEach(function (r) {
+    if (formatDateOnly_(r.date) !== todayStr || !r.staff_id) return;
+    if (!firstRowByStaff[r.staff_id]) firstRowByStaff[r.staff_id] = r;
+  });
+  const today = {};
+  staff.forEach(function (s) {
+    const t = todayAttendanceFromRecord_(firstRowByStaff[s.staffId]);
+    // currentRecord は画面で使っていないため、通信量を減らすために省く
+    today[s.staffId] = { status: t.status, records: t.records };
+  });
+
+  const countOf = function (label, fn) {
+    try {
+      return fn();
+    } catch (e) {
+      Logger.log('handleGetDashboardSummary: ' + label + ' failed: ' + (e && e.message ? e.message : e));
+      return null;
+    }
+  };
+  const counts = {
+    // 画面の従来の数え方と同じ条件
+    pendingApplications: countOf('applications', function () {
+      const r = handleListApplications({ status: 'pending' });
+      return r && r.success ? (r.data || []).length : null;
+    }),
+    pendingSubmissions: countOf('submissions', function () {
+      const r = handleListSubmissions({ status: 'submitted' });
+      return r && r.success ? (r.data || []).length : null;
+    }),
+    pendingPaidLeave: countOf('paidLeave', function () {
+      const r = handleGetAllPaidLeave();
+      return r && r.success ? (r.data || []).filter(function (x) { return x.status === 'pending'; }).length : null;
+    }),
+    // 未承認の希望休が 1 日でも残っているリクエスト数
+    pendingShiftRequests: countOf('shiftRequests', function () {
+      const r = handleListShiftRequests({});
+      return r && r.success
+        ? (r.data || []).filter(function (x) {
+          return (x.offDays || []).some(function (d) { return d.status === 'pending'; });
+        }).length
+        : null;
+    }),
+  };
+
+  return { success: true, data: { staff: staff, today: today, counts: counts } };
 }
 
 function handleGetStaffDetail(params) {
@@ -1762,6 +1932,82 @@ function handleDeleteStaff(body) {
   return { success: true };
 }
 
+// ============================================================
+// 有給休暇
+//   - 申請はマイページ（1 日ずつ）と、希望休の画面（月ごとにまとめて）の 2 か所から行える。
+//   - 申請できるのは「残日数 − 承認待ちの日数」まで（サーバーでも確認する）。
+//   - 承認は「有給休暇」画面と「希望シフト」画面のどちらからでも行える。
+//     どちらで承認しても残日数は 1 日だけ減る（同じ状態への変更は何もしない）。
+//     承認済みを却下に変えた場合は残日数を 1 日戻す。
+//   - 有給休暇シートと残日数を書き換える処理は、同時に動いて二重に数えないよう
+//     ロックの中で行う（10 分トリガーのスクリプトロックとは別のユーザーロックを使い、
+//     出勤簿の作り直し中でも待たされないようにする）。
+// ============================================================
+
+function withPaidLeaveLock_(fn) {
+  const lock = LockService.getUserLock();
+  if (!lock.tryLock(10000)) {
+    return { success: false, error: 'ほかの操作と重なりました。少し待ってからもう一度お試しください' };
+  }
+  try {
+    return fn();
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* ignore */ }
+  }
+}
+
+/** 有給休暇シートの全行を読む（取得日は 'YYYY-MM-DD'、状態は英語キーに正規化）。 */
+function readPaidLeaveRows_() {
+  const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
+  const values = sheet.getDataRange().getValues();
+  const headers = (values && values[0]) ? values[0] : [];
+  const rows = [];
+  for (let i = 1; i < values.length; i++) {
+    const o = rowToObject_(headers, values[i]);
+    if (!o.id && !o.staff_id) continue;
+    rows.push({
+      rowIndex: i + 1,
+      id: String(o.id || ''),
+      staffId: String(o.staff_id || ''),
+      date: formatDateOnly_(o.leave_date),
+      status: o.status || 'pending',
+    });
+  }
+  return { sheet: sheet, headers: headers, rows: rows };
+}
+
+/** 有給休暇シートに承認待ちの申請を 1 行追加する（列は見出し名で合わせる）。 */
+function appendPaidLeaveRow_(ctx, staff, leaveDate, requestedAt) {
+  const headers = ctx.headers && ctx.headers.length ? ctx.headers : getHeaderRow_(ctx.sheet);
+  const width = Math.max(headers.length, 8);
+  const row = new Array(width).fill('');
+  const values = {
+    id: generateId(),
+    staff_id: staff.staff_id,
+    name: staff.name,
+    request_date: requestedAt,
+    leave_date: leaveDate,
+    status: localizeEnumValue_('pending'),
+    approved_date: '',
+    remarks: '',
+  };
+  // 見出しが見つからない場合は従来の列順（id, staff_id, name, request_date, leave_date, status, approved_date, remarks）
+  const fallbackOrder = ['id', 'staff_id', 'name', 'request_date', 'leave_date', 'status', 'approved_date', 'remarks'];
+  fallbackOrder.forEach(function (key, i) {
+    const idx = findHeaderIndex_(headers, key);
+    row[idx === -1 ? i : idx] = values[key];
+  });
+  ctx.sheet.appendRow(row);
+  return values.id;
+}
+
+/** スタッフの有給の状況（残日数・承認待ち・あと何日申請できるか）。 */
+function paidLeaveAvailability_(staff, rows) {
+  const balance = safeNumber_(staff.paid_leave_balance, 0);
+  const pending = rows.filter(function (r) { return r.staffId === String(staff.staff_id) && r.status === 'pending'; }).length;
+  return { balance: balance, pending: pending, available: balance - pending };
+}
+
 function handleGetPaidLeaveBalance(params) {
   const staffId = params.staffId;
 
@@ -1782,17 +2028,22 @@ function handleGetPaidLeaveBalance(params) {
   const leaveSheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
   const leaveData = sheetToObjects(leaveSheet);
   const history = leaveData.filter(l => l.staff_id === staffId);
+  const balance = safeNumber_(staff.paid_leave_balance, 0);
+  const pending = history.filter(h => (h.status || 'pending') === 'pending').length;
 
   return {
     success: true,
     data: {
-      balance: staff.paid_leave_balance || 0,
+      balance: balance,
+      pending: pending,
+      available: balance - pending,
       history: history.map(h => ({
         id: h.id,
         staffId: h.staff_id,
         name: h.name,
         requestDate: h.request_date,
-        leaveDate: h.leave_date,
+        // シートが日付型に変換している場合があるため 'YYYY-MM-DD' に揃える
+        leaveDate: formatDateOnly_(h.leave_date) || h.leave_date,
         status: h.status,
         approvedDate: h.approved_date,
         remarks: h.remarks
@@ -1801,11 +2052,16 @@ function handleGetPaidLeaveBalance(params) {
   };
 }
 
+/** マイページからの有給申請（1 日）。 */
 function handlePaidLeaveRequest(body) {
-  const { staffId, leaveDate } = body;
+  const staffId = body && body.staffId ? String(body.staffId) : '';
+  const leaveDate = body && body.leaveDate ? String(body.leaveDate).slice(0, 10) : '';
 
   if (!staffId || !leaveDate) {
     return { success: false, error: '必須項目が入力されていません' };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
+    return { success: false, error: '日付の形式が正しくありません' };
   }
 
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -1816,15 +2072,84 @@ function handlePaidLeaveRequest(body) {
     return { success: false, error: 'スタッフが見つかりません' };
   }
 
-  const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
-  const requestId = generateId();
+  return withPaidLeaveLock_(function () {
+    const ctx = readPaidLeaveRows_();
+    const mine = ctx.rows.filter(function (r) { return r.staffId === staffId; });
+    if (mine.some(function (r) { return r.date === leaveDate && (r.status === 'pending' || r.status === 'approved'); })) {
+      return { success: false, error: 'この日はすでに有給を申請しています' };
+    }
+    const av = paidLeaveAvailability_(staff, ctx.rows);
+    if (av.available < 1) {
+      return {
+        success: false,
+        error: '有給の残り日数が足りません（残り ' + av.balance + ' 日' + (av.pending ? '・承認待ち ' + av.pending + ' 日' : '') + '）',
+      };
+    }
+    const requestId = appendPaidLeaveRow_(ctx, staff, leaveDate, new Date().toISOString());
+    return { success: true, requestId: requestId };
+  });
+}
+
+/**
+ * 希望休の画面から送られた「対象月の有給の日」に合わせて、申請の追加・取り下げを計画する（まだ書き込まない）。
+ *  - 新しく選ばれた日 → 承認待ちで追加
+ *  - 承認待ちのまま選択から外された日 → 取り下げ（行を削除）
+ *  - 承認済みの日 → そのまま（この画面からは取り下げない）
+ *  - 却下された日を再び選んだ → 新しい申請として追加（却下の履歴は残す）
+ * 残日数: 対象月の承認待ち（申請後）が「残日数 − 他の月の承認待ち」を超える場合はエラー。
+ *         ただし既に超えている過去分を減らす・そのままにする操作は妨げない（増やす場合だけ止める）。
+ */
+function planPaidLeaveSync_(staff, targetYearMonth, requestedDates) {
+  const staffId = String(staff.staff_id);
+  const prefix = targetYearMonth + '-';
+  const desired = {};
+  for (let i = 0; i < requestedDates.length; i++) {
+    const d = String(requestedDates[i] || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d.indexOf(prefix) !== 0) {
+      return { ok: false, error: '有給の日付が対象月の範囲外です: ' + requestedDates[i] };
+    }
+    desired[d] = true;
+  }
+
+  const ctx = readPaidLeaveRows_();
+  const mine = ctx.rows.filter(function (r) { return r.staffId === staffId; });
+  const inMonth = function (r) { return r.date.indexOf(prefix) === 0; };
+  const activeByDate = {};
+  mine.filter(inMonth).forEach(function (r) {
+    if (r.status === 'approved' || (r.status === 'pending' && !activeByDate[r.date])) activeByDate[r.date] = r;
+  });
+
+  const toAppend = Object.keys(desired).filter(function (d) { return !activeByDate[d]; }).sort();
+  const toDelete = mine.filter(inMonth)
+    .filter(function (r) { return r.status === 'pending' && !desired[r.date]; })
+    .map(function (r) { return r.rowIndex; });
+
+  const balance = safeNumber_(staff.paid_leave_balance, 0);
+  const pendingOther = mine.filter(function (r) { return r.status === 'pending' && !inMonth(r); }).length;
+  const pendingInMonthNow = mine.filter(function (r) { return r.status === 'pending' && inMonth(r); }).length;
+  const pendingInMonthAfter = Object.keys(desired).filter(function (d) {
+    return !(activeByDate[d] && activeByDate[d].status === 'approved');
+  }).length;
+  const limit = balance - pendingOther;
+  if (pendingInMonthAfter > Math.max(limit, pendingInMonthNow)) {
+    return {
+      ok: false,
+      error: '有給の残り日数が足りません（残り ' + balance + ' 日'
+        + (pendingOther ? '・ほかの月の承認待ち ' + pendingOther + ' 日' : '')
+        + '。この月に申請できるのは ' + Math.max(0, limit) + ' 日までです）',
+    };
+  }
+  return { ok: true, ctx: ctx, desired: desired, toAppend: toAppend, toDelete: toDelete, pendingInMonthAfter: pendingInMonthAfter };
+}
+
+/** planPaidLeaveSync_ の計画を書き込む（追加 → 削除の順。削除は下の行から）。 */
+function applyPaidLeaveSync_(staff, plan) {
   const now = new Date().toISOString();
-
-  sheet.appendRow([
-    requestId, staffId, staff.name, now, leaveDate, localizeEnumValue_('pending'), '', ''
-  ]);
-
-  return { success: true, requestId };
+  plan.toAppend.forEach(function (d) { appendPaidLeaveRow_(plan.ctx, staff, d, now); });
+  plan.toDelete.slice().sort(function (a, b) { return b - a; }).forEach(function (rowIndex) {
+    try { plan.ctx.sheet.deleteRow(rowIndex); } catch (e) { Logger.log('paid leave deleteRow failed: ' + (e && e.message)); }
+  });
+  return { added: plan.toAppend.length, withdrawn: plan.toDelete.length };
 }
 
 function handleGetAllPaidLeave() {
@@ -1838,7 +2163,7 @@ function handleGetAllPaidLeave() {
       staffId: l.staff_id,
       name: l.name,
       requestDate: l.request_date,
-      leaveDate: l.leave_date,
+      leaveDate: formatDateOnly_(l.leave_date) || l.leave_date,
       status: l.status,
       approvedDate: l.approved_date,
       remarks: l.remarks
@@ -1846,42 +2171,67 @@ function handleGetAllPaidLeave() {
   };
 }
 
+/**
+ * 有給の承認・却下（「有給休暇」画面・「希望シフト」画面の両方から呼ばれる）。
+ *  - 同じ状態への変更（二重の承認など）は何もしない → 残日数を二重に減らさない
+ *  - 承認待ち/却下 → 承認: 残日数を 1 日減らす
+ *  - 承認 → 却下: 残日数を 1 日戻す
+ *  - reason（任意）は備考に書く（却下理由など）
+ */
 function handleUpdatePaidLeaveStatus(body) {
-  const { requestId, status } = body;
+  const requestId = body && body.requestId ? String(body.requestId) : '';
+  const status = body && body.status ? String(body.status) : '';
+  const reason = body && body.reason != null ? String(body.reason) : null;
 
   if (!requestId || !status) {
     return { success: false, error: '必須項目が入力されていません' };
   }
-
-  const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
-  const rowIndex = findRowIndex(sheet, 'id', requestId);
-
-  if (rowIndex === -1) {
-    return { success: false, error: '申請が見つかりません' };
+  if (status !== 'approved' && status !== 'rejected') {
+    return { success: false, error: '不正なステータスです' };
   }
 
-  const headers = getHeaderRow_(sheet);
-  setCellByColumnName_(sheet, rowIndex, headers, 'status', status);
+  return withPaidLeaveLock_(function () {
+    const sheet = getOrCreateSheet(SHEETS.PAID_LEAVE);
+    const rowIndex = findRowIndex(sheet, 'id', requestId);
 
-  if (status === 'approved') {
-    setCellByColumnName_(sheet, rowIndex, headers, 'approved_date', new Date().toISOString());
+    if (rowIndex === -1) {
+      return { success: false, error: '申請が見つかりません（取り下げられた可能性があります）' };
+    }
 
-    // Decrease paid leave balance
-    const staffId = getCellByColumnName_(sheet, rowIndex, headers, 'staff_id');
+    const headers = getHeaderRow_(sheet);
+    const prevStatus = normalizeEnumValueFromCell_('status', getCellByColumnName_(sheet, rowIndex, headers, 'status')) || 'pending';
 
-    if (staffId) {
-      const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
-      const staffRowIndex = findRowIndex(staffSheet, 'staff_id', staffId);
+    if (prevStatus === status) {
+      if (reason !== null) setCellByColumnName_(sheet, rowIndex, headers, 'remarks', reason);
+      return { success: true, data: { unchanged: true } };
+    }
 
-      if (staffRowIndex !== -1) {
-        const staffHeaders = getHeaderRow_(staffSheet);
-        const currentBalance = safeNumber_(getCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance'), 0);
-        setCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance', currentBalance - 1);
+    setCellByColumnName_(sheet, rowIndex, headers, 'status', status);
+    let delta = 0;
+    if (status === 'approved') {
+      setCellByColumnName_(sheet, rowIndex, headers, 'approved_date', new Date().toISOString());
+      delta = -1;
+    } else if (prevStatus === 'approved') {
+      setCellByColumnName_(sheet, rowIndex, headers, 'approved_date', '');
+      delta = 1;
+    }
+    if (reason !== null) setCellByColumnName_(sheet, rowIndex, headers, 'remarks', reason);
+
+    if (delta !== 0) {
+      const staffId = getCellByColumnName_(sheet, rowIndex, headers, 'staff_id');
+      if (staffId) {
+        const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+        const staffRowIndex = findRowIndex(staffSheet, 'staff_id', staffId);
+        if (staffRowIndex !== -1) {
+          const staffHeaders = getHeaderRow_(staffSheet);
+          const currentBalance = safeNumber_(getCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance'), 0);
+          setCellByColumnName_(staffSheet, staffRowIndex, staffHeaders, 'paid_leave_balance', currentBalance + delta);
+        }
       }
     }
-  }
 
-  return { success: true };
+    return { success: true };
+  });
 }
 
 function handleGetInsuranceRates() {
@@ -2448,8 +2798,9 @@ function handleUpdateAttendance(body) {
   // Append to history
   appendAttendanceHistory_(date, staffId, field, oldValue, value, editorId, editorRole, reason);
 
-  // 出勤簿シートを再構築（失敗しても更新成功は維持）
-  try { rebuildAttendanceLogSheet_(staffId, yearMonth); } catch (e) { Logger.log('rebuildAttendanceLogSheet failed (single update): ' + (e && e.message)); }
+  // 【高速化】出勤簿シートの同期再生成は廃止。「作り直しが必要」と記録し、
+  // 10 分ごとのトリガーで作り直す（最大約 10 分遅れで反映）。
+  markAttendanceLogDirty_(staffId, yearMonth);
 
   return { success: true };
 }
@@ -2501,12 +2852,15 @@ function handleBulkSaveAttendance(body) {
 
   // 既存行を date でインデックス化（このスタッフの行のみ）
   const dateToRowIndex = {};
+  // 行番号 → その行の現在の値（まとめ書き込み時に、対象外の列を書き戻すために使う）
+  const rowValuesByIndex = {};
   if (data && data.length > 1) {
     for (let i = 1; i < data.length; i++) {
       const rowDate = formatDateOnly_(data[i][0]);
       const rowStaffId = data[i][1];
       if (rowStaffId === staffId && rowDate) {
         dateToRowIndex[rowDate] = i + 1; // 1-indexed
+        rowValuesByIndex[i + 1] = data[i];
       }
     }
   }
@@ -2545,36 +2899,41 @@ function handleBulkSaveAttendance(body) {
       // ヘッダー: date, staff_id, name, clock_in, clock_out, clock_out_type,
       //          break_minutes, break_minutes_is_manual, work_minutes,
       //          late_minutes, early_leave_minutes, is_holiday, remarks, source
-      sheet.appendRow([
+      const newRow = [
         date, staffId, staff.name,
         clockInVal, clockOutVal, hasClockOut ? localizeEnumValue_('normal') : '',
         breakMinutes, breakMinutesIsManual,
         workMinutes, 0, 0,
         isHoliday, remarks,
         localizeEnumValue_('manual')
-      ]);
+      ];
+      sheet.appendRow(newRow);
       rowIndex = sheet.getLastRow();
       dateToRowIndex[date] = rowIndex;
+      rowValuesByIndex[rowIndex] = newRow;
     } else {
-      // 既存行を更新（カラム名指定で安全に書き込み）
-      setCellByColumnName_(sheet, rowIndex, headers, 'clock_in', clockInVal);
-      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out', clockOutVal);
-      setCellByColumnName_(sheet, rowIndex, headers, 'clock_out_type', hasClockOut ? 'normal' : '');
-      setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes', breakMinutes);
-      setCellByColumnName_(sheet, rowIndex, headers, 'break_minutes_is_manual', breakMinutesIsManual);
-      setCellByColumnName_(sheet, rowIndex, headers, 'work_minutes', workMinutes);
-      setCellByColumnName_(sheet, rowIndex, headers, 'is_holiday', isHoliday);
-      setCellByColumnName_(sheet, rowIndex, headers, 'remarks', remarks);
-      setCellByColumnName_(sheet, rowIndex, headers, 'source', 'manual');
+      // 既存行を更新（カラム名指定で安全に書き込み）。
+      // 【高速化】以前は 1 セルずつ 9 回書き込んでいた。値・変換規則は同じまま、
+      // 1 行 1 回の書き込みにまとめる。
+      rowValuesByIndex[rowIndex] = setRowValuesByColumnNames_(sheet, rowIndex, headers, rowValuesByIndex[rowIndex], {
+        clock_in: clockInVal,
+        clock_out: clockOutVal,
+        clock_out_type: hasClockOut ? 'normal' : '',
+        break_minutes: breakMinutes,
+        break_minutes_is_manual: breakMinutesIsManual,
+        work_minutes: workMinutes,
+        is_holiday: isHoliday,
+        remarks: remarks,
+        source: 'manual',
+      });
     }
     savedCount++;
   }
 
-  // 出勤簿シートを再構築（失敗しても更新成功は維持）
-  try {
-    const ym = year + '-' + String(month).padStart(2, '0');
-    rebuildAttendanceLogSheet_(staffId, ym);
-  } catch (e) { Logger.log('rebuildAttendanceLogSheet failed (admin update): ' + (e && e.message)); }
+  // 【高速化】以前はここで出勤簿シートを同期で作り直していた（大量の書式操作で
+  // 保存が遅くなる主因）。「作り直しが必要」と記録し、10 分ごとのトリガーで
+  // 作り直す（最大約 10 分遅れで反映）。
+  if (savedCount > 0) markAttendanceLogDirty_(staffId, yearMonth);
 
   return { success: true, data: { saved: savedCount } };
 }
@@ -3128,10 +3487,16 @@ function computeClockGate_(staffId, now) {
   let hasPrevAttendance = false;
   if (staffId && prevYm) {
     prevStatus = getSubmissionStatus_(staffId, prevYm);
-    hasPrevAttendance = hasAttendanceInMonth_(staffId, prevYm);
   }
   const prevSubmitted = (prevStatus === 'submitted' || prevStatus === 'approved');
-  const alertActive = dayOfMonth >= 1 && dayOfMonth <= MONTHLY_SUBMISSION_DEADLINE_DAY && !prevSubmitted && hasPrevAttendance;
+  const inAlertWindow = dayOfMonth >= 1 && dayOfMonth <= MONTHLY_SUBMISSION_DEADLINE_DAY;
+  // 【高速化】前月の出勤実績の有無は alertActive の判定にしか使わない。前月の勤怠シート
+  // 全体を読むのは重いため、結果に影響する場合（1〜7 日かつ前月未提出）だけ確認する。
+  // それ以外の日は false を返す（alertActive はどのみち false になる）。
+  if (staffId && prevYm && inAlertWindow && !prevSubmitted) {
+    hasPrevAttendance = hasAttendanceInMonth_(staffId, prevYm);
+  }
+  const alertActive = inAlertWindow && !prevSubmitted && hasPrevAttendance;
   // 【撤去】未提出による打刻ブロックは廃止。clockBlocked は常に false を返す。
   // 提出のリマインドは alertActive（非ブロックの通知）のみで行う。
   const clockBlocked = false;
@@ -3743,6 +4108,190 @@ function monthlyDeadlineReminderTrigger() {
   }
 }
 
+// ============================================================
+// 出勤簿シート（出勤簿_氏名_年月）の自動再生成（約 10 分ごと・変更分のみ）
+//
+//   以前は打刻・保存のたびに同期で作り直しており、大量の書式操作が応答時間に
+//   乗って「打刻が遅い」主因になっていた。出勤簿シートは表示・社労士提出用の
+//   派生データで、アプリの画面は元データ（勤怠_YYYYMM）を直接読むため、
+//   作り直しを打刻から切り離しても画面の表示には影響しない。
+//
+//   仕組み:
+//   1. 勤怠を書き換えたリクエストは markAttendanceLogDirty_ で
+//      「スタッフ × 年月 の作り直しが必要」とスクリプトプロパティに記録する。
+//      （記録は 1 件 1 キー。同時に複数のリクエストが記録しても取りこぼさない）
+//   2. 10 分ごとのトリガー attendanceLogRebuildTrigger が、記録のある分だけ作り直す。
+//      作り直す前に記録を消す（作り直し中に新しい変更があれば記録が再作成され、
+//      次の回で再度作り直される）。失敗したら記録を戻して次の回に再試行する。
+//   3. 安全網として 1 日 1 回（深夜 2 時以降の最初の回）、当月・前月に勤怠のある
+//      スタッフ全員分を作り直す（スプレッドシートを直接編集した場合などの反映用）。
+//   4. トリガーは初回の記録時に自動で 1 つだけ設置する。設置できなかった場合は
+//      そのリクエストの中で従来どおり同期で作り直す（出勤簿が古いまま残らないように）。
+// ============================================================
+
+const ATTENDANCE_LOG_DIRTY_PREFIX = 'LOGDIRTY|';
+const ATTENDANCE_LOG_TRIGGER_HANDLER = 'attendanceLogRebuildTrigger';
+const ATTENDANCE_LOG_TRIGGER_MINUTES = 10;
+const ATTENDANCE_LOG_TRIGGER_CACHE_KEY = 'attlogtrigger:ok:v1';
+const ATTENDANCE_LOG_FULL_REFRESH_PROP = 'LOG_FULL_REFRESH_DATE';
+const ATTENDANCE_LOG_FULL_REFRESH_HOUR = 2; // 深夜 2 時以降の最初の回で 1 日 1 回
+// 1 回のトリガー実行の時間上限（GAS の 6 分制限より十分短く）。残りは次の回へ回す。
+const ATTENDANCE_LOG_TRIGGER_BUDGET_MS = 4 * 60 * 1000;
+
+/**
+ * 出勤簿シートの作り直しが必要なことを記録する（勤怠を書き換えた直後に呼ぶ）。
+ * 書き込みを確定させてから記録するので、トリガーが古いデータで作り直すことはない。
+ * 記録やトリガー設置に失敗した場合は、その場で同期で作り直す（従来どおりの動作）。
+ */
+function markAttendanceLogDirty_(staffId, yearMonth) {
+  if (!staffId || !yearMonth) return;
+  try {
+    // このリクエストで行った書き込みを確定させてから記録する
+    SpreadsheetApp.flush();
+    PropertiesService.getScriptProperties().setProperty(
+      ATTENDANCE_LOG_DIRTY_PREFIX + staffId + '|' + yearMonth,
+      String(Date.now())
+    );
+    if (ensureAttendanceLogTrigger_()) return;
+  } catch (e) {
+    Logger.log('markAttendanceLogDirty_ failed: ' + (e && e.message ? e.message : e));
+  }
+  // フォールバック: トリガーを使えない場合は従来どおり同期で作り直す
+  try {
+    rebuildAttendanceLogSheet_(staffId, yearMonth);
+  } catch (e2) {
+    Logger.log('rebuildAttendanceLogSheet failed (fallback): ' + (e2 && e2.message ? e2.message : e2));
+  }
+}
+
+/**
+ * 10 分ごとのトリガーが設置済みであることを保証する。設置済みなら true。
+ * 毎回トリガー一覧を取得すると遅いため、確認できたら 6 時間は CacheService に記録して省略する。
+ */
+function ensureAttendanceLogTrigger_() {
+  const cache = CacheService.getScriptCache();
+  try {
+    if (cache.get(ATTENDANCE_LOG_TRIGGER_CACHE_KEY) === '1') return true;
+  } catch (e) { /* キャッシュが使えない場合は下で確認する */ }
+
+  const remember = function () {
+    try { cache.put(ATTENDANCE_LOG_TRIGGER_CACHE_KEY, '1', 6 * 60 * 60); } catch (e) { /* ignore */ }
+    return true;
+  };
+  if (hasAttendanceLogTrigger_()) return remember();
+
+  // 未設置のときだけロックを取って設置する（同時に複数のリクエストが設置して
+  // 重複しないように）。設置済みの確認ではロックを取らないので、作り直し処理が
+  // ロックを持っていても打刻が待たされることはない。
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return false;
+  try {
+    if (!hasAttendanceLogTrigger_()) {
+      ScriptApp.newTrigger(ATTENDANCE_LOG_TRIGGER_HANDLER)
+        .timeBased()
+        .everyMinutes(ATTENDANCE_LOG_TRIGGER_MINUTES)
+        .create();
+    }
+    return remember();
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* ignore */ }
+  }
+}
+
+function hasAttendanceLogTrigger_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === ATTENDANCE_LOG_TRIGGER_HANDLER) return true;
+  }
+  return false;
+}
+
+/**
+ * 10 分ごとのトリガーから呼ばれる。作り直しが必要と記録された分だけ出勤簿シートを作り直す。
+ */
+function attendanceLogRebuildTrigger() {
+  const lock = LockService.getScriptLock();
+  // 「出勤簿を再生成（今すぐ）」などが実行中なら、今回は何もせず次の回に任せる
+  if (!lock.tryLock(1000)) return;
+  const startedAt = Date.now();
+  let rebuilt = 0;
+  try {
+    queueDailyAttendanceLogRefresh_();
+    const props = PropertiesService.getScriptProperties();
+    const all = props.getProperties();
+    const keys = Object.keys(all).filter(function (k) { return k.indexOf(ATTENDANCE_LOG_DIRTY_PREFIX) === 0; });
+    for (let i = 0; i < keys.length; i++) {
+      if (Date.now() - startedAt > ATTENDANCE_LOG_TRIGGER_BUDGET_MS) break; // 残りは次の回
+      const key = keys[i];
+      const parts = key.split('|'); // [prefix, staffId, yearMonth]
+      if (parts.length !== 3) { props.deleteProperty(key); continue; }
+      // 作り直す前に記録を消す（作り直し中に新しい変更があれば記録が再作成される）
+      props.deleteProperty(key);
+      try {
+        rebuildAttendanceLogSheet_(parts[1], parts[2]);
+        rebuilt++;
+      } catch (e) {
+        // 失敗したら記録を戻して次の回に再試行する
+        props.setProperty(key, String(Date.now()));
+        Logger.log('attendanceLogRebuildTrigger: rebuild failed for ' + parts[1] + '/' + parts[2] + ': ' + (e && e.message ? e.message : e));
+      }
+    }
+    if (rebuilt > 0) Logger.log('attendanceLogRebuildTrigger: rebuilt ' + rebuilt + ' sheet(s)');
+  } catch (e) {
+    Logger.log('attendanceLogRebuildTrigger failed: ' + (e && e.message ? e.message : e));
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* ignore */ }
+  }
+}
+
+/**
+ * 安全網: 1 日 1 回（深夜 2 時以降の最初の回）、当月・前月に勤怠のあるスタッフ全員分を
+ * 「作り直しが必要」として記録する。スプレッドシートを直接編集した場合などの反映用。
+ */
+function queueDailyAttendanceLogRefresh_() {
+  const tz = scriptTimeZone_();
+  const now = new Date();
+  const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const hour = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
+  if (hour < ATTENDANCE_LOG_FULL_REFRESH_HOUR) return;
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(ATTENDANCE_LOG_FULL_REFRESH_PROP) === today) return;
+
+  const curYm = Utilities.formatDate(now, tz, 'yyyy-MM');
+  const months = [curYm, previousYearMonth_(curYm)];
+  const ss = getSpreadsheet();
+  months.forEach(function (ym) {
+    const m = String(ym).match(/^(\d{4})-(\d{2})$/);
+    if (!m) return;
+    // 勤怠シートが無い月は対象外（getAttendanceSheet は空シートを作ってしまうため直接確認）
+    const sheet = ss.getSheetByName(attendanceSheetName_(Number(m[1]), Number(m[2])));
+    if (!sheet) return;
+    const staffIds = {};
+    sheetToObjects(sheet).forEach(function (r) { if (r.staff_id) staffIds[String(r.staff_id)] = true; });
+    Object.keys(staffIds).forEach(function (sid) {
+      props.setProperty(ATTENDANCE_LOG_DIRTY_PREFIX + sid + '|' + ym, String(Date.now()));
+    });
+  });
+  props.setProperty(ATTENDANCE_LOG_FULL_REFRESH_PROP, today);
+}
+
+// メニュー: 出勤簿の自動更新（10 分ごと）トリガーを手動で設置する。
+// 通常は最初の打刻時に自動で設置されるので、操作は不要。動作確認・再設置用。
+function menuInstallAttendanceLogTrigger() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    try { CacheService.getScriptCache().remove(ATTENDANCE_LOG_TRIGGER_CACHE_KEY); } catch (e) { /* ignore */ }
+    const ok = ensureAttendanceLogTrigger_();
+    if (!ok) throw new Error('他の処理が実行中のため設置できませんでした。少し待ってからもう一度お試しください。');
+    ui.alert('出勤簿の自動更新を設定しました',
+      '打刻や出勤簿の修正があったスタッフの出勤簿シートを、約 ' + ATTENDANCE_LOG_TRIGGER_MINUTES + ' 分ごとに自動で最新化します。\n\n' +
+      '（すぐに反映したい場合は「出勤簿を再生成（今すぐ）」をご利用ください）',
+      ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('設定に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+  }
+}
+
 // メニュー: 月初リマインドトリガーを登録
 function menuInstallMonthlyReminder() {
   const ui = SpreadsheetApp.getUi();
@@ -3786,7 +4335,8 @@ function onOpen() {
   ui.createMenu('勤怠管理')
     .addItem('コードのバージョンを確認', 'menuShowCodeVersion')
     .addItem('翌月のシフト雛形を作成', 'menuGenerateNextMonthShift')
-    .addItem('出勤簿を再生成', 'menuRebuildAttendanceLogs')
+    .addItem('出勤簿を再生成（今すぐ）', 'menuRebuildAttendanceLogs')
+    .addItem('出勤簿の自動更新（約10分ごと）を設定', 'menuInstallAttendanceLogTrigger')
     .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
     .addSeparator()
     .addItem('提出期限リマインドを毎月1日に自動送信する設定', 'menuInstallMonthlyReminder')
@@ -4702,7 +5252,17 @@ function normalizeOffDays_(parsed) {
  *
  * body: { staffId, targetYearMonth, offDays: [{date, status?}], remarks? }
  */
+/**
+ * 希望休（と有給）の提出。
+ * body.paidLeaveDates（配列）があれば、対象月の有給の申請も同じリクエストでまとめて反映する
+ * （古い画面から送られた場合は配列が無いので、有給には触れない）。
+ * 有給の残日数が足りないなど、確認で問題があれば何も書き込まずにエラーを返す。
+ */
 function handleSubmitShiftRequest(body) {
+  return withPaidLeaveLock_(function () { return submitShiftRequestCore_(body); });
+}
+
+function submitShiftRequestCore_(body) {
   const staffId = body && body.staffId ? String(body.staffId) : '';
   const targetYearMonth = body && body.targetYearMonth ? String(body.targetYearMonth) : '';
   const incoming = body && Array.isArray(body.offDays) ? body.offDays : (body && Array.isArray(body.days) ? body.days : null);
@@ -4735,6 +5295,16 @@ function handleSubmitShiftRequest(body) {
   const staff = sheetToObjects(staffSheet).find(s => s.staff_id === staffId);
   if (!staff) return { success: false, error: 'スタッフが見つかりません' };
 
+  // 有給（希望休の画面から選ばれた日）。まず確認だけ行い、問題があれば何も書き込まない。
+  let paidPlan = null;
+  if (body && Array.isArray(body.paidLeaveDates)) {
+    if (body.paidLeaveDates.length > 31) {
+      return { success: false, error: '有給の日数が多すぎます（最大 31 日）' };
+    }
+    paidPlan = planPaidLeaveSync_(staff, targetYearMonth, body.paidLeaveDates);
+    if (!paidPlan.ok) return { success: false, error: paidPlan.error };
+  }
+
   const sheet = getOrCreateSheet(SHEETS.SHIFT_REQUESTS);
   ensureShiftRequestsRowBased_(sheet);
   const data = sheet.getDataRange().getValues();
@@ -4762,9 +5332,20 @@ function handleSubmitShiftRequest(body) {
   }
 
   // 受信側を希望休のみに正規化（kind='off' or status を持つ要素のみ採用）
-  const incomingOff = normalizeOffDays_(incoming);
+  // 有給として選ばれた日は希望休には含めない（同じ日が両方になるのを防ぐ）
+  const incomingOff = normalizeOffDays_(incoming).filter(function (d) {
+    return !(paidPlan && paidPlan.desired[d.date]);
+  });
   const newDateSet = {};
   for (let k = 0; k < incomingOff.length; k++) newDateSet[incomingOff[k].date] = true;
+  if (paidPlan) {
+    const conflict = Object.keys(paidPlan.desired).filter(function (d) {
+      return existingByDate[d] && existingByDate[d].status === 'approved';
+    });
+    if (conflict.length > 0) {
+      return { success: false, error: '承認済みの希望休の日は有給にできません: ' + conflict.join(', ') };
+    }
+  }
 
   // 削除対象（pending かつ新セットに無い）の行 index を集める（後で逆順削除）
   const toDelete = [];
@@ -4841,6 +5422,9 @@ function handleSubmitShiftRequest(body) {
     try { sheet.deleteRow(rowIndex); } catch (e) { Logger.log('deleteRow failed: ' + (e && e.message)); }
   });
 
+  // 有給の申請（追加・取り下げ）を反映
+  const paidResult = paidPlan ? applyPaidLeaveSync_(staff, paidPlan) : null;
+
   // 管理者へメール通知（pending 件数のみ伝える）
   try {
     const admins = getAdminEmails_();
@@ -4849,15 +5433,16 @@ function handleSubmitShiftRequest(body) {
       const subject = '【希望休 申請】' + staff.name + ' から ' + targetYearMonth + ' 分の希望が届きました';
       const bodyText = staff.name + 'さんから ' + targetYearMonth + ' 分の希望休が提出されました。\n\n'
         + '未承認の希望休: ' + pendingCount + '日\n'
+        + (paidPlan ? '未承認の有給: ' + paidPlan.pendingInMonthAfter + '日\n' : '')
         + (remarks ? '\n備考: ' + remarks + '\n' : '')
-        + '\n管理画面で承認/却下を行ってください。';
+        + '\n管理画面（希望シフト）で承認/却下を行ってください。';
       admins.forEach(function (email) { safeSendEmail_(email, subject, bodyText); });
     }
   } catch (e) {
     Logger.log('notify shift request failed: ' + (e && e.message));
   }
 
-  return { success: true, data: { id: 'SR-' + staffId + '-' + targetYearMonth } };
+  return { success: true, data: { id: 'SR-' + staffId + '-' + targetYearMonth, paidLeave: paidResult } };
 }
 
 // (staff × month) の pending 件数を数える
