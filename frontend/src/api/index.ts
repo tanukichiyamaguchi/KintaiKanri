@@ -10,6 +10,9 @@ import type {
   ClockEditHistory,
   PaidLeaveRequest,
   PaidLeaveBalance,
+  PaidLeaveOverviewItem,
+  PaidLeaveLedgerEntry,
+  PaidLeaveRegisterResult,
   SalaryRecord,
   InsuranceRates,
   Incentive,
@@ -25,6 +28,16 @@ import type {
   DashboardSummary,
 } from '../types';
 import { invalidateForMutation } from './cache';
+import {
+  addDaysYmd,
+  addMonthsLegal,
+  isYmd,
+  nextPaidLeaveGrant,
+  paidLeaveExpiresOn,
+  paidLeaveGrantDate,
+  paidLeaveGrantDays,
+  paidLeaveServiceLabel,
+} from '../utils/paidLeaveGrant';
 
 export { readCache, writeCache, clearCache, invalidateCache, localDateKey } from './cache';
 
@@ -425,7 +438,17 @@ async function handleDemoRequest<T>(
     const staffId = body?.staffId as string;
     const idx = mockStaffDetails.findIndex(s => s.staffId === staffId);
     if (idx !== -1) {
-      mockStaffDetails[idx] = { ...mockStaffDetails[idx], ...body, staffId } as Staff;
+      // サーバーと同じ: 画面を開いた後に有給残日数が変わっていたら上書きしない
+      const { paidLeaveBalanceBefore, ...fields } = (body || {}) as Record<string, unknown>;
+      const current = mockStaffDetails[idx].paidLeaveBalance;
+      if (fields.paidLeaveBalance !== undefined && paidLeaveBalanceBefore !== undefined && Number(paidLeaveBalanceBefore) !== current) {
+        return {
+          success: false,
+          error: `有給残日数が、画面を開いた後に付与や承認で変わっています（現在 ${current} 日）。画面を開き直してから、もう一度変更してください`,
+        };
+      }
+      if (fields.paidLeaveBalance !== undefined) fields.paidLeaveBalance = Number(fields.paidLeaveBalance);
+      mockStaffDetails[idx] = { ...mockStaffDetails[idx], ...fields, staffId } as Staff;
       const listIdx = mockStaff.findIndex(s => s.staffId === staffId);
       if (listIdx !== -1) {
         if (body?.name) mockStaff[listIdx].name = body.name as string;
@@ -497,9 +520,10 @@ async function handleDemoRequest<T>(
     const history = mockPaidLeaveRequests.filter(r => r.staffId === staffId);
     const balance = staff?.paidLeaveBalance || 0;
     const pending = history.filter(r => r.status === 'pending').length;
+    const nextGrant = staff ? nextPaidLeaveGrant(staff.hireDate, fmtDate(new Date())) : null;
     return {
       success: true,
-      data: { balance, pending, available: balance - pending, history } as unknown as T,
+      data: { balance, pending, available: balance - pending, nextGrant, history } as unknown as T,
     };
   }
 
@@ -553,6 +577,101 @@ async function handleDemoRequest<T>(
       if (staff) staff.paidLeaveBalance += 1;
     }
     return { success: true, data: undefined as unknown as T };
+  }
+
+  if (action === 'paid-leave/overview') {
+    // サーバー（handleGetPaidLeaveOverview）と同じ形。デモでは付与履歴を入社日から作る
+    const today = fmtDate(new Date());
+    const items: PaidLeaveOverviewItem[] = mockStaffDetails
+      .filter(s => s.status === 'active')
+      .map(s => {
+        const mine = mockPaidLeaveRequests.filter(r => r.staffId === s.staffId);
+        const pending = mine.filter(r => r.status === 'pending').length;
+        const ledger: PaidLeaveLedgerEntry[] = [];
+        if (isYmd(s.hireDate)) {
+          for (let n = 1; n <= 100; n++) {
+            const date = paidLeaveGrantDate(s.hireDate, n);
+            if (date > today) break;
+            if (addMonthsLegal(date, 24) <= today) continue; // 有効期限が過ぎたもの
+            ledger.unshift({
+              kind: 'grant',
+              date,
+              days: paidLeaveGrantDays(n),
+              grantNo: n,
+              serviceLength: paidLeaveServiceLabel(n),
+              expiresOn: paidLeaveExpiresOn(date),
+              balanceAfter: null,
+              remarks: `法定の付与（入社 ${s.hireDate}）`,
+            });
+          }
+        }
+        const current = ledger.find(e => e.kind === 'grant' && e.days >= 10 && addDaysYmd(addMonthsLegal(e.date, 12), -1) >= today);
+        const obligation = current
+          ? {
+              periodStart: current.date,
+              periodEnd: addDaysYmd(addMonthsLegal(current.date, 12), -1),
+              taken: mine.filter(r => r.status === 'approved' && r.leaveDate >= current.date && r.leaveDate <= addDaysYmd(addMonthsLegal(current.date, 12), -1)).length,
+              required: 5,
+            }
+          : null;
+        return {
+          staffId: s.staffId,
+          name: s.name,
+          hireDate: s.hireDate,
+          balance: s.paidLeaveBalance,
+          pending,
+          available: s.paidLeaveBalance - pending,
+          nextGrant: nextPaidLeaveGrant(s.hireDate, today),
+          obligation,
+          ledger,
+        };
+      });
+    return { success: true, data: items as unknown as T };
+  }
+
+  if (action === 'paid-leave/register') {
+    // サーバー（handleRegisterPaidLeaveByAdmin）と同じ確認・反映
+    const staffId = String(body?.staffId || '');
+    const leaveDate = String(body?.leaveDate || '').trim();
+    const note = body?.remarks ? String(body.remarks).trim().slice(0, 200) : '';
+    if (!staffId || !leaveDate) return { success: false, error: 'スタッフと日付を指定してください' };
+    if (!isYmd(leaveDate)) return { success: false, error: '日付の形式が正しくありません' };
+    const staff = mockStaffDetails.find(s => s.staffId === staffId);
+    if (!staff) return { success: false, error: 'スタッフが見つかりません' };
+    const mine = mockPaidLeaveRequests.filter(r => r.staffId === staffId);
+    if (mine.some(r => r.leaveDate === leaveDate && r.status === 'approved')) {
+      return { success: false, error: 'この日はすでに有給（承認済み）として登録されています' };
+    }
+    const pendingSame = mine.find(r => r.leaveDate === leaveDate && r.status === 'pending') || null;
+    const pendingOther = mine.filter(r => r.status === 'pending' && r !== pendingSame).length;
+    if (staff.paidLeaveBalance - pendingOther < 1) {
+      return {
+        success: false,
+        error: `有給の残り日数が足りません（残り ${staff.paidLeaveBalance} 日${pendingOther ? `・ほかの承認待ち ${pendingOther} 日` : ''}）`,
+      };
+    }
+    const now = new Date().toISOString();
+    const remarks = `管理者が登録${note ? `：${note}` : ''}`;
+    let requestId: string;
+    if (pendingSame) {
+      pendingSame.status = 'approved';
+      pendingSame.approvedDate = now;
+      pendingSame.remarks = remarks;
+      requestId = pendingSame.id;
+    } else {
+      requestId = 'PL' + Date.now() + Math.random().toString(36).slice(2, 6);
+      mockPaidLeaveRequests.push({ id: requestId, staffId, name: staff.name, requestDate: now, leaveDate, status: 'approved', approvedDate: now, remarks });
+    }
+    staff.paidLeaveBalance -= 1;
+    let removedOffDays = 0;
+    mockShiftRequests.forEach(sr => {
+      if (sr.staffId !== staffId) return;
+      const before = sr.offDays.length;
+      sr.offDays = sr.offDays.filter(d => !(d.date === leaveDate && d.status !== 'rejected'));
+      removedOffDays += before - sr.offDays.length;
+    });
+    const result: PaidLeaveRegisterResult = { requestId, balance: staff.paidLeaveBalance, convertedPending: !!pendingSame, removedOffDays };
+    return { success: true, data: result as unknown as T };
   }
 
   // --- Salary ---
@@ -1081,7 +1200,12 @@ export const staffApi = {
   create: (staff: Omit<Staff, 'staffId'>): Promise<ApiResponse<{ staffId: string }>> =>
     apiRequest('staff', staff as unknown as Record<string, unknown>),
 
-  update: (staffId: string, data: Partial<Staff>): Promise<ApiResponse<void>> =>
+  // paidLeaveBalanceBefore: 画面を開いたときの有給残日数。サーバーの値と違えば（付与・承認で変わっていれば）
+  // 上書きせずにエラーにする。有給残日数を変えないときは paidLeaveBalance を送らないこと。
+  update: (
+    staffId: string,
+    data: Partial<Staff> & { password?: string; paidLeaveBalanceBefore?: number }
+  ): Promise<ApiResponse<void>> =>
     apiRequest('staff/update', { staffId, ...data } as unknown as Record<string, unknown>),
 
   delete: (staffId: string): Promise<ApiResponse<void>> =>
@@ -1155,6 +1279,14 @@ export const paidLeaveApi = {
 
   getAll: (): Promise<ApiResponse<PaidLeaveRequest[]>> =>
     apiRequest('paid-leave/all'),
+
+  // 管理者: スタッフごとの残日数・次の付与・年 5 日の取得状況・付与履歴
+  overview: (): Promise<ApiResponse<PaidLeaveOverviewItem[]>> =>
+    apiRequest('paid-leave/overview'),
+
+  // 管理者: 有給を承認済みとして登録する（過去の日・提出期限を過ぎた月も可）。同じ日の希望休は取り消される
+  register: (staffId: string, leaveDate: string, remarks?: string): Promise<ApiResponse<PaidLeaveRegisterResult>> =>
+    apiRequest('paid-leave/register', remarks ? { staffId, leaveDate, remarks } : { staffId, leaveDate }),
 };
 
 // Salary API
