@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -18,8 +18,12 @@ import {
   shiftApi,
   applicationApi,
   submissionApi,
+  readCache,
+  writeCache,
 } from '../../api';
 import type {
+  AttendanceRecord,
+  Shift,
   BulkAttendanceRow,
   Application,
   ApplicationType,
@@ -54,6 +58,14 @@ const DAY_INPUT_TIME = `${DAY_INPUT_CENTER} [&::-webkit-date-and-time-value]:tex
 // 小さいボタン（高さ 32px）でも指で押しやすいよう、押せる範囲を上下に 6px ずつ広げる
 const SMALL_BTN_HIT = "relative after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-['']";
 
+// 出勤簿の画面を組み立てるために取得する 4 種類のデータ（前回の表示内容として保存もする）
+interface AttendanceLoadData {
+  existing: AttendanceRecord[];
+  shiftList: Shift[];
+  apps: Application[];
+  sub: MonthlySubmission | null;
+}
+
 export function AttendancePage() {
   const navigate = useNavigate();
   const { staff, isAuthenticated, isAdmin } = useAuth();
@@ -78,6 +90,10 @@ export function AttendancePage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [submission, setSubmission] = useState<MonthlySubmission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // 前回の表示内容を出している間（最新を取得中）は編集・保存・提出をできないようにする
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  // 月やスタッフを素早く切り替えたとき、前の取得結果で表示を上書きしないための通し番号
+  const loadSeqRef = useRef(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -135,9 +151,80 @@ export function AttendancePage() {
   }, [selectedYear, selectedMonth]);
 
   // Load all data
+  // 取得した 4 種類のデータ（勤怠・シフト・申請・提出状況）から画面の行を組み立てる
+  const applyLoaded = useCallback((data: AttendanceLoadData) => {
+    const { existing, shiftList, apps, sub } = data;
+    setApplications(apps);
+    setSubmission(sub);
+
+    const newRows: BulkAttendanceRow[] = allDays.map(date => {
+      const ex = existing.find(r => r.date === date);
+      const dateObj = new Date(date);
+      const isHoliday = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+      const shift = shiftList.find(s => s.date === date);
+
+      if (ex && (ex.clockIn || ex.clockOut)) {
+        // 片方だけ入力済み（出勤のみ等）の行も復元する。両方必須にすると、
+        // 片側入力のデータが画面上は空に見え（＝サイレント消失）、detectShiftDiff が
+        // 欠勤と誤判定して提出がブロックされるため。
+        // Parse via Date when ISO so UTC strings (from /clock punches) are
+        // shown as the user's local time.
+        const clockIn = ex.clockIn ? extractLocalTimeHHMM(ex.clockIn) : '';
+        const clockOut = ex.clockOut ? extractLocalTimeHHMM(ex.clockOut) : '';
+        const elapsed = calcElapsedMinutes(clockIn, clockOut);
+        // 手動修正フラグが立っている場合のみ保存値を尊重する。
+        // 立っていなければ常に最新の法定値を再計算（閾値の改訂・古い保存値の自動補正のため）。
+        const breakMin = ex.breakMinutesIsManual && typeof ex.breakMinutes === 'number'
+          ? ex.breakMinutes
+          : getLegalBreakMinutes(elapsed);
+        const { workMinutes, overtimeMinutes } = computeWorkAndOvertime(clockIn, clockOut, breakMin);
+        return {
+          date,
+          clockIn,
+          clockOut,
+          breakMinutes: breakMin,
+          breakMinutesIsManual: ex.breakMinutesIsManual,
+          workMinutes,
+          isHoliday,
+          overtimeMinutes,
+          overtimeReason: '',
+          remarks: ex.remarks || '',
+          shift,
+        };
+      }
+
+      return {
+        date,
+        clockIn: '',
+        clockOut: '',
+        breakMinutes: 0,
+        workMinutes: 0,
+        isHoliday,
+        overtimeMinutes: 0,
+        overtimeReason: '',
+        remarks: '',
+        shift,
+      };
+    });
+
+    setRows(newRows);
+    setHasUnsavedChanges(false);
+  }, [allDays]);
+
+  // 【高速化】前回の表示内容（保存分）があればすぐ表示し、裏で最新を取得して差し替える。
+  // 差し替えまでの間は編集・保存・提出をできないようにする（古い内容に上書きしないため）。
   const loadAll = useCallback(async () => {
     if (!currentStaffId) return;
-    setIsLoading(true);
+    const seq = ++loadSeqRef.current;
+    const cacheKey = `attendance:${currentStaffId}:${yearMonthStr}`;
+    const cached = readCache<AttendanceLoadData>(cacheKey);
+    if (cached) {
+      applyLoaded(cached);
+      setIsLoading(false);
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     try {
       const [attRes, shiftRes, appsRes, subRes] = await Promise.all([
         bulkAttendanceApi.get(currentStaffId, selectedYear, selectedMonth),
@@ -145,73 +232,29 @@ export function AttendancePage() {
         applicationApi.list({ staffId: currentStaffId, yearMonth: yearMonthStr }),
         submissionApi.getStatus(currentStaffId, yearMonthStr),
       ]);
+      if (seq !== loadSeqRef.current) return; // その間に別の月・スタッフに切り替わった
 
-      const existing = attRes.success && attRes.data ? attRes.data : [];
-      const shiftList = shiftRes.success && shiftRes.data ? shiftRes.data.shifts : [];
-      const apps = appsRes.success && appsRes.data ? appsRes.data : [];
-      const sub = subRes.success && subRes.data ? subRes.data : null;
-
-      setApplications(apps);
-      setSubmission(sub);
-
-      const newRows: BulkAttendanceRow[] = allDays.map(date => {
-        const ex = existing.find(r => r.date === date);
-        const dateObj = new Date(date);
-        const isHoliday = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-        const shift = shiftList.find(s => s.date === date);
-
-        if (ex && (ex.clockIn || ex.clockOut)) {
-          // 片方だけ入力済み（出勤のみ等）の行も復元する。両方必須にすると、
-          // 片側入力のデータが画面上は空に見え（＝サイレント消失）、detectShiftDiff が
-          // 欠勤と誤判定して提出がブロックされるため。
-          // Parse via Date when ISO so UTC strings (from /clock punches) are
-          // shown as the user's local time.
-          const clockIn = ex.clockIn ? extractLocalTimeHHMM(ex.clockIn) : '';
-          const clockOut = ex.clockOut ? extractLocalTimeHHMM(ex.clockOut) : '';
-          const elapsed = calcElapsedMinutes(clockIn, clockOut);
-          // 手動修正フラグが立っている場合のみ保存値を尊重する。
-          // 立っていなければ常に最新の法定値を再計算（閾値の改訂・古い保存値の自動補正のため）。
-          const breakMin = ex.breakMinutesIsManual && typeof ex.breakMinutes === 'number'
-            ? ex.breakMinutes
-            : getLegalBreakMinutes(elapsed);
-          const { workMinutes, overtimeMinutes } = computeWorkAndOvertime(clockIn, clockOut, breakMin);
-          return {
-            date,
-            clockIn,
-            clockOut,
-            breakMinutes: breakMin,
-            breakMinutesIsManual: ex.breakMinutesIsManual,
-            workMinutes,
-            isHoliday,
-            overtimeMinutes,
-            overtimeReason: '',
-            remarks: ex.remarks || '',
-            shift,
-          };
-        }
-
-        return {
-          date,
-          clockIn: '',
-          clockOut: '',
-          breakMinutes: 0,
-          workMinutes: 0,
-          isHoliday,
-          overtimeMinutes: 0,
-          overtimeReason: '',
-          remarks: '',
-          shift,
-        };
-      });
-
-      setRows(newRows);
-      setHasUnsavedChanges(false);
+      const fresh: AttendanceLoadData = {
+        existing: attRes.success && attRes.data ? attRes.data : [],
+        shiftList: shiftRes.success && shiftRes.data ? shiftRes.data.shifts : [],
+        apps: appsRes.success && appsRes.data ? appsRes.data : [],
+        sub: subRes.success && subRes.data ? subRes.data : null,
+      };
+      applyLoaded(fresh);
+      // すべて取得できたときだけ保存する（一部の失敗で空になった内容を次回表示しないため）
+      if (attRes.success && shiftRes.success && appsRes.success && subRes.success) {
+        writeCache<AttendanceLoadData>(cacheKey, fresh);
+      }
     } catch {
+      if (seq !== loadSeqRef.current) return;
       setMessage({ type: 'error', text: 'データの取得に失敗しました' });
     } finally {
-      setIsLoading(false);
+      if (seq === loadSeqRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
-  }, [currentStaffId, selectedYear, selectedMonth, allDays, yearMonthStr]);
+  }, [currentStaffId, selectedYear, selectedMonth, yearMonthStr, applyLoaded]);
 
   useEffect(() => {
     loadAll();
@@ -496,7 +539,7 @@ export function AttendancePage() {
       <button
         type="button"
         onClick={handleSave}
-        disabled={isSaving || !currentStaffId}
+        disabled={isSaving || !currentStaffId || isRefreshing}
         className={`btn ${isAdmin ? 'btn-filled' : 'btn-gray'}`}
       >
         {isSaving ? <Spinner size={18} className="!text-current" /> : <Save aria-hidden="true" />}
@@ -506,7 +549,7 @@ export function AttendancePage() {
         <button
           type="button"
           onClick={() => setShowSubmitModal(true)}
-          disabled={!submissionGate.canSubmit || isSubmitting}
+          disabled={!submissionGate.canSubmit || isSubmitting || isRefreshing}
           className="btn btn-filled"
           title={submissionGate.canSubmit ? '月次提出' : submissionGate.blockingReasons[0]}
         >
@@ -557,6 +600,12 @@ export function AttendancePage() {
           </div>
           <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
             <SubmissionStatusBadge status={submissionStatus} />
+            {isRefreshing && (
+              <span className="pill pill-neutral" role="status">
+                <Spinner size={12} />
+                最新の内容を確認しています…
+              </span>
+            )}
             {hasUnsavedChanges && !isLocked && (
               <span className="pill pill-warning">
                 <AlertTriangle className="h-3 w-3" aria-hidden="true" />
@@ -688,7 +737,7 @@ export function AttendancePage() {
                       ? `休${row.shift.isTentative ? '(仮)' : ''}`
                       : `${row.shift.startTime || '?'} - ${row.shift.endTime || '?'}${row.shift.isTentative ? '(仮)' : ''}`
                     : '';
-                  const cellDisabled = isLocked;
+                  const cellDisabled = isLocked || isRefreshing;
                   return (
                     <div
                       key={row.date}
