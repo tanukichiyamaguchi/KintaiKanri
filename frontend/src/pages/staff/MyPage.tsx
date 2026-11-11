@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
   Palmtree,
   Wallet,
@@ -15,9 +15,8 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi, paidLeaveApi, salaryApi, submissionApi } from '../../api';
 import type { AttendanceRecord, PaidLeaveBalance, MonthlySubmission, ClockGate } from '../../types';
-import { Header, Loading, Modal, SubmissionStatusBadge, SubmissionDeadlineBanner } from '../../components/common';
-import { formatLocalDate, formatLocalDateTime, formatMinutesAsTime } from '../../utils/calculations';
-import { formatYmdJp } from '../../utils/paidLeaveGrant';
+import { Header, Loading, Modal, SubmissionStatusBadge, SubmissionDeadlineBanner, PaidLeaveNoticeBanner } from '../../components/common';
+import { formatLocalDate, formatMinutesAsTime } from '../../utils/calculations';
 
 type Tab = 'attendance' | 'paidLeave' | 'salary';
 
@@ -25,7 +24,12 @@ export function MyPage() {
   const navigate = useNavigate();
   const { staff, isAuthenticated, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<Tab>('attendance');
+  // 打刻画面の「年5日の有給」のお知らせから ?tab=paidLeave で開かれたら、有給休暇のタブを出す
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const t = searchParams.get('tab');
+    return t === 'paidLeave' || t === 'salary' || t === 'attendance' ? t : 'attendance';
+  });
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
@@ -397,24 +401,23 @@ export function MyPage() {
 
         {activeTab === 'paidLeave' && (
           <>
-            {/* Balance Card */}
+            {/* 年5日の有給のお知らせ（期限の6か月前から・5日取れば消える） */}
+            {!isLoading && paidLeave?.notice && (
+              <div className="mt-4">
+                <PaidLeaveNoticeBanner notice={paidLeave.notice} />
+              </div>
+            )}
+
+            {/* 有給の申請（スタッフには有給の日数・取得の一覧は見せない） */}
             <section className="section">
               <div className="card !pt-6 text-center">
                 <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-icon-green text-white">
                   <Palmtree className="h-7 w-7" aria-hidden="true" />
                 </span>
-                <p className="t-subhead mt-3 text-label-2">有給休暇残日数</p>
-                <p className="mt-1.5 font-rounded tabular leading-none">
-                  <span className="text-[48px] font-semibold tracking-tight">
-                    {isLoading ? '-' : paidLeave?.balance ?? 0}
-                  </span>
-                  <span className="t-title3 ml-1 text-label-2">日</span>
+                <p className="t-headline mt-3">有給休暇</p>
+                <p className="t-footnote mt-1.5 text-label-2">
+                  有給で休みたい日を申請できます。先の月の分は「希望休」の画面からも申請できます。
                 </p>
-                {!isLoading && paidLeave?.nextGrant && (
-                  <p className="t-footnote mt-3 text-label-2 tabular">
-                    次の付与: {formatYmdJp(paidLeave.nextGrant.date)}に{paidLeave.nextGrant.days}日
-                  </p>
-                )}
 
                 {/* Request Button */}
                 <button
@@ -425,48 +428,7 @@ export function MyPage() {
                   有給休暇を申請する
                 </button>
               </div>
-            </section>
-
-            {/* History */}
-            <section className="section">
-              <h2 className="section-header">取得履歴</h2>
-              <div className="list-group">
-                {isLoading ? (
-                  <div className="py-6">
-                    <Loading />
-                  </div>
-                ) : !paidLeave?.history || paidLeave.history.length === 0 ? (
-                  <div className="list-row">
-                    <span className="t-body text-label-2">取得履歴はありません</span>
-                  </div>
-                ) : (
-                  paidLeave.history.map(request => (
-                    <div key={request.id} className="list-row">
-                      <div className="list-row-title">
-                        <p className="t-body tabular truncate">{request.leaveDate}</p>
-                        <p className="t-footnote tabular text-label-2 truncate">
-                          申請日: {formatLocalDateTime(request.requestDate)}
-                        </p>
-                      </div>
-                      <span
-                        className={`pill flex-shrink-0 ${
-                          request.status === 'approved'
-                            ? 'pill-success'
-                            : request.status === 'rejected'
-                            ? 'pill-danger'
-                            : 'pill-warning'
-                        }`}
-                      >
-                        {request.status === 'approved'
-                          ? '承認済'
-                          : request.status === 'rejected'
-                          ? '却下'
-                          : '申請中'}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
+              <p className="section-footer">有給の日数は管理者が管理しています。わからないことは管理者に相談してください。</p>
             </section>
           </>
         )}

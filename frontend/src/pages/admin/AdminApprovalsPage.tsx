@@ -28,6 +28,8 @@ import {
   SubmissionStatusBadge,
   ShiftDiffKindBadge,
 } from '../../components/common';
+import { refreshDashboard } from '../../api/dashboardStore';
+import { formatTimeOfDay } from '../../utils/calculations';
 
 // 小さいボタン（高さ 32px）の見た目はそのままに、押せる範囲だけを上下に広げて 44px にする
 const SMALL_BUTTON_HIT = 'relative before:absolute before:inset-x-0 before:-inset-y-1.5';
@@ -320,6 +322,8 @@ export function AdminApprovalsPage() {
           }
           setMessage({ type: 'success', text: '申請を却下しました' });
         }
+        // 下のタブの「承認」の件数（バッジ）もすぐに更新する
+        refreshDashboard(true);
         await reloadApplications();
       } else {
         const sId = pendingAction.staffId;
@@ -344,6 +348,7 @@ export function AdminApprovalsPage() {
           }
           setMessage({ type: 'success', text: '月次提出を差し戻しました' });
         }
+        refreshDashboard(true);
         await reloadSubmissions();
       }
       setPendingAction(null);
@@ -399,7 +404,7 @@ export function AdminApprovalsPage() {
                 <div>
                   <dt className="t-caption text-label-2">予定</dt>
                   <dd className="t-subhead tabular">
-                    {app.details.plannedStart} - {app.details.plannedEnd}
+                    {formatTimeOfDay(app.details.plannedStart)} - {formatTimeOfDay(app.details.plannedEnd)}
                   </dd>
                 </div>
               )}
@@ -407,7 +412,7 @@ export function AdminApprovalsPage() {
                 <div>
                   <dt className="t-caption text-label-2">実績</dt>
                   <dd className="t-subhead tabular">
-                    {app.details.actualStart} - {app.details.actualEnd}
+                    {formatTimeOfDay(app.details.actualStart)} - {formatTimeOfDay(app.details.actualEnd)}
                   </dd>
                 </div>
               )}

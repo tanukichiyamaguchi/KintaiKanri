@@ -225,6 +225,17 @@ export interface ClockGate {
   deadlineDate: string;      // 'YYYY-MM-07'
   alertActive: boolean;      // 1〜7日かつ前月未提出 → アラート表示
   clockBlocked: boolean;     // 4日以降かつ前月未提出 → 打刻ブロック
+  // 「年5日の有給を取りましょう」のお知らせ（打刻画面の取得 clock-gate にだけ入る。対象でなければ null）
+  paidLeaveNotice?: PaidLeaveNotice | null;
+}
+
+// スタッフ向けの「年5日の有給を取りましょう」のお知らせ。
+// 10日以上付与された期間で、承認済みの有給（予定を含む）が5日に届かず、期限の6か月前を過ぎたときだけ届く。
+// スタッフには有給の残日数などは見せないため、期限と「あと何日」だけ。
+export interface PaidLeaveNotice {
+  deadline: string;   // 期限 'YYYY-MM-DD'（付与日から1年の最後の日）
+  remaining: number;  // 5日のうち、まだ取っていない日数
+  required: number;   // 5
 }
 
 // 管理者ダッシュボードのまとめ取得（GAS: dashboard/summary）
@@ -269,6 +280,7 @@ export interface PaidLeaveBalance {
   pending?: number;             // 承認待ちの日数（全期間）
   available?: number;           // あと何日申請できるか = balance − pending
   nextGrant?: PaidLeaveNextGrant | null; // 次の付与（入社日が無い場合は null）
+  notice?: PaidLeaveNotice | null;       // 年5日のお知らせ（対象でなければ null）
   history: PaidLeaveRequest[];
 }
 

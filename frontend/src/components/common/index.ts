@@ -3,6 +3,7 @@ export { Loading, Spinner } from './Loading';
 export { Modal } from './Modal';
 export { ApplicationModal } from './ApplicationModal';
 export { SubmissionDeadlineBanner } from './SubmissionDeadlineBanner';
+export { PaidLeaveNoticeBanner } from './PaidLeaveNoticeBanner';
 export { EnvironmentBanner } from './EnvironmentBanner';
 export {
   ApplicationStatusBadge,
