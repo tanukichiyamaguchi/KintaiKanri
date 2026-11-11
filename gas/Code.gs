@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-11-11.4 (アプリを開いたときも有給の付与・シフト表の「有給」を自動で反映 / 勤怠申請の予定・実績の時刻を HH:mm で返す / シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
+const CODE_VERSION = '2026-11-11.5 (シフト表の日付の年をシート名の年に合わせる・年を取り違えた有給の自動修正 / アプリを開いたときも有給の付与・シフト表の「有給」を自動で反映 / 勤怠申請の予定・実績の時刻を HH:mm で返す / シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -2080,6 +2080,7 @@ function readPaidLeaveRows_() {
       date: formatDateOnly_(o.leave_date),
       status: o.status || 'pending',
       remarks: String(o.remarks || ''),
+      approvedDate: toYmdString_(o.approved_date),
     });
   }
   return { sheet: sheet, headers: headers, rows: rows };
@@ -3022,6 +3023,15 @@ const SHIFT_PAID_LEAVE_MARK = 'シフト表から登録';
 const SHIFT_PAID_LEAVE_SYNC_CACHE_KEY = 'shiftplsync:v1';
 const SHIFT_PAID_LEAVE_SYNC_SECONDS = 10 * 60;
 
+/** ymd（'YYYY-MM-DD'）が、baseYmd の前月〜3 か月先（シフト表を読む範囲）の月に入っているか。 */
+function isInShiftSyncWindow_(ymd, baseYmd) {
+  const a = String(ymd).split('-').map(Number);
+  const b = String(baseYmd).split('-').map(Number);
+  if (a.length < 2 || b.length < 2 || isNaN(a[0]) || isNaN(a[1]) || isNaN(b[0]) || isNaN(b[1])) return true;
+  const diff = (a[0] * 12 + a[1]) - (b[0] * 12 + b[1]);
+  return diff >= -1 && diff <= 3;
+}
+
 /** シフト表（前月〜3 か月先）を読み、{ byKey: { 'staffId|date': shift }, months: { 'YYYY-MM': true } } を返す。 */
 function collectShiftWindow_(nameToId, todayYmd) {
   const p = String(todayYmd).split('-').map(Number);
@@ -3062,6 +3072,41 @@ function syncShiftPaidLeave_(todayYmd) {
 
   const win = collectShiftWindow_(nameToId, today);
   const ctx = readPaidLeaveRows_();
+  const result = { registered: [], cancelled: [], skipped: [], repaired: [] };
+  const nowIso = new Date().toISOString();
+
+  // 0) 年を取り違えて登録した有給を直す（シフト表の日付セルの年がシートの年と違っていた不具合の後始末）。
+  //    シフト表から登録した有給は、登録した日の前月〜3 か月先の日のはず。そこから外れていて、
+  //    年を 1 つずらすと範囲に入り、その日がシフト表で「有給」なら、日付の年だけを直す
+  //    （残日数はすでに 1 日引いてあるので変えない）。同じ日の希望休は取り消す。
+  ctx.rows.forEach(function (r) {
+    if (r.status !== 'approved' || r.remarks.indexOf(SHIFT_PAID_LEAVE_MARK) !== 0) return;
+    if (!r.date || !r.approvedDate || isInShiftSyncWindow_(r.date, r.approvedDate)) return;
+    [1, -1].some(function (dy) {
+      const fixed = String(Number(r.date.slice(0, 4)) + dy) + r.date.slice(4);
+      if (!isInShiftSyncWindow_(fixed, r.approvedDate)) return false;
+      const sh = win.byKey[r.staffId + '|' + fixed];
+      if (!sh || !sh.isPaidLeave || sh.isTentative) return false;
+      const taken = ctx.rows.some(function (x) {
+        return x !== r && x.staffId === r.staffId && x.date === fixed && x.status === 'approved';
+      });
+      if (taken) return false;
+      const note = SHIFT_PAID_LEAVE_MARK + '（日付の年を修正: ' + r.date + ' → ' + fixed + '）';
+      setCellByColumnName_(ctx.sheet, r.rowIndex, ctx.headers, 'leave_date', fixed);
+      setCellByColumnName_(ctx.sheet, r.rowIndex, ctx.headers, 'remarks', note);
+      try {
+        removeShiftRequestOffDays_(r.staffId, fixed);
+      } catch (e) {
+        Logger.log('syncShiftPaidLeave_: remove off day failed: ' + (e && e.message ? e.message : e));
+      }
+      const st = staffById[r.staffId];
+      result.repaired.push({ staffId: r.staffId, name: st ? st.name : '', from: r.date, date: fixed });
+      r.date = fixed;
+      r.remarks = note;
+      return true;
+    });
+  });
+
   const recordsByKey = {};
   const pendingCount = {};
   ctx.rows.forEach(function (r) {
@@ -3069,9 +3114,6 @@ function syncShiftPaidLeave_(todayYmd) {
     (recordsByKey[key] = recordsByKey[key] || []).push(r);
     if (r.status === 'pending') pendingCount[r.staffId] = (pendingCount[r.staffId] || 0) + 1;
   });
-
-  const result = { registered: [], cancelled: [], skipped: [] };
-  const nowIso = new Date().toISOString();
 
   // 1) シフト表から登録した有給のうち、シフト表で「有給」ではなくなった日を取り消す
   ctx.rows.forEach(function (r) {
@@ -3140,7 +3182,7 @@ function syncShiftPaidLeave_(todayYmd) {
     const fresh = safeNumber_(getCellByColumnName_(staffSheet, st.rowIndex, staffHeaders, 'paid_leave_balance'), 0);
     setCellByColumnName_(staffSheet, st.rowIndex, staffHeaders, 'paid_leave_balance', fresh + st.delta);
   });
-  if (result.registered.length || result.cancelled.length) SpreadsheetApp.flush();
+  if (result.registered.length || result.cancelled.length || result.repaired.length) SpreadsheetApp.flush();
   return result;
 }
 
@@ -3212,6 +3254,7 @@ function menuSyncShiftPaidLeave() {
     const lines = []
       .concat(res.registered.map(function (x) { return '登録: ' + x.name + ' ' + x.date; }))
       .concat(res.cancelled.map(function (x) { return '取り消し: ' + x.name + ' ' + x.date; }))
+      .concat((res.repaired || []).map(function (x) { return '日付の年を修正: ' + x.name + ' ' + x.from + ' → ' + x.date; }))
       .concat(res.skipped.map(function (x) { return '登録しなかった: ' + x.name + ' ' + x.date + '（' + (reasonLabel[x.reason] || x.reason) + '）'; }));
     ui.alert('シフト表の有給', lines.length ? lines.join('\n') : '新しく反映する有給はありませんでした。', ui.ButtonSet.OK);
   } catch (e) {
@@ -4142,7 +4185,14 @@ function formatDateValue_(value, defaultYear, defaultMonth) {
   if (value == null || value === '') return null;
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
-    return Utilities.formatDate(value, scriptTimeZone_(), 'yyyy-MM-dd');
+    const ymd = Utilities.formatDate(value, scriptTimeZone_(), 'yyyy-MM-dd');
+    // シフト表の「1/4」などはシートが日付型に変え、入力した年（例: 2026 年に作った
+    // 2027 年 1 月の表なら 2026）が付く。表示は「1/4」のままで年は見えないため、
+    // 月がシートの月と同じなら、年はシート名（シフト_YYYYMM）の年に合わせる。
+    if (defaultYear && defaultMonth && Number(ymd.slice(5, 7)) === Number(defaultMonth)) {
+      return String(defaultYear) + ymd.slice(4);
+    }
+    return ymd;
   }
   // 数値（シリアル値）として保持されているケースは GAS で日付セルから来ることがあるが、
   // 通常 getValue() が Date を返すため通常は到達しない。念のため数値→文字列化してパース継続。
