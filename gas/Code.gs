@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-11-11 (シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
+const CODE_VERSION = '2026-11-11.2 (シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -2077,6 +2077,7 @@ function readPaidLeaveRows_() {
       staffId: String(o.staff_id || ''),
       date: formatDateOnly_(o.leave_date),
       status: o.status || 'pending',
+      remarks: String(o.remarks || ''),
     });
   }
   return { sheet: sheet, headers: headers, rows: rows };
@@ -2128,6 +2129,8 @@ function handleGetPaidLeaveBalance(params) {
 
   // 付与日・時効の日が来ていれば、先に反映する（1 日 1 回だけ実際に処理する）
   ensurePaidLeaveGrantsCurrent_();
+  // シフト表の「有給」も反映する（10 分に 1 回まで）
+  ensureShiftPaidLeaveSynced_(false);
 
   // Get balance from staff master
   const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
@@ -2917,6 +2920,8 @@ function handleRegisterPaidLeaveByAdmin(body) {
  */
 function handleGetPaidLeaveOverview() {
   ensurePaidLeaveGrantsCurrent_();
+  // シフト表の「有給」を反映してから集計する（管理者が開いたときは毎回）
+  ensureShiftPaidLeaveSynced_(true);
   const today = todayYmd_();
   const staffList = sheetToObjects(getOrCreateSheet(SHEETS.STAFF_MASTER))
     .filter(function (s) { return s.staff_id && s.status !== 'inactive'; });
@@ -2969,7 +2974,7 @@ function handleGetPaidLeaveOverview() {
 /**
  * シフト表（前月〜3 か月先）で「有給」と書かれているのに、有給の登録（承認済み・承認待ち）が
  * 無い日を、スタッフ別に返す。{ staffId: ['YYYY-MM-DD', ...] }
- * シフト表の「有給」は表示と判定にだけ使い、残日数は登録で減らすため、登録漏れを知らせる用。
+ * シフト表の「有給」は自動で登録されるため、ここに残るのは登録できなかった日（取り消し・却下済み、残日数不足など）。
  * 仮（(仮)）のシフトと、見出しの名前がスタッフ情報の氏名と一致しない列は対象外。
  */
 function shiftPaidLeaveWithoutRecord_(staffList, leaveRows, todayYmd) {
@@ -2995,6 +3000,199 @@ function shiftPaidLeaveWithoutRecord_(staffList, leaveRows, todayYmd) {
   }
   Object.keys(out).forEach(function (k) { out[k].sort(); });
   return out;
+}
+
+// ============================================================
+// シフト表の「有給」から有給を自動で登録する
+//
+//   - シフト表（前月〜3 か月先）で「有給」と書かれた日に、有給の記録が無ければ
+//     承認済みの有給として登録し、残日数を 1 日減らす（同じ日の希望休は取り消す。手動の登録と同じ）。
+//     その日に承認待ちの申請があれば、それを承認済みにする。
+//   - 次の日は登録しない（「有給休暇」画面の「登録できていない日」に出る）:
+//       却下・取り消しの記録がある日（管理者の判断を優先）、残日数が足りない日、仮（(仮)）の日
+//   - シフト表から登録した有給は、そのセルが「有給」以外（休・時間など）に変わったら自動で取り消し、
+//     残日数を 1 日戻す。セルが空・列が無い（見出しが氏名と一致しない）・シートが無い場合は何もしない。
+//     管理者・スタッフが登録・申請した有給は、シフト表の内容で取り消さない。
+//   - 処理は 10 分ごとのトリガー、管理者の「有給休暇」画面を開いたとき、残日数の読み込み（10 分に 1 回まで）。
+// ============================================================
+
+const SHIFT_PAID_LEAVE_MARK = 'シフト表から登録';
+const SHIFT_PAID_LEAVE_SYNC_CACHE_KEY = 'shiftplsync:v1';
+const SHIFT_PAID_LEAVE_SYNC_SECONDS = 10 * 60;
+
+/** シフト表（前月〜3 か月先）を読み、{ byKey: { 'staffId|date': shift }, months: { 'YYYY-MM': true } } を返す。 */
+function collectShiftWindow_(nameToId, todayYmd) {
+  const p = String(todayYmd).split('-').map(Number);
+  const byKey = {};
+  const months = {};
+  for (let k = -1; k <= 3; k++) {
+    const idx = p[0] * 12 + (p[1] - 1) + k;
+    const y = Math.floor(idx / 12);
+    const m = idx - y * 12 + 1;
+    const res = readShiftSheet_(y, m, nameToId);
+    if (!res.exists) continue;
+    months[y + '-' + pad2_(m)] = true;
+    res.shifts.forEach(function (sh) {
+      if (sh.staffId && sh.date) byKey[sh.staffId + '|' + sh.date] = sh;
+    });
+  }
+  return { byKey: byKey, months: months };
+}
+
+/**
+ * シフト表の「有給」を有給の記録に反映する（登録・取り消し）。呼ぶ側でロックを取ること。
+ * 戻り値: { registered: [], cancelled: [], skipped: [] }（各要素 { staffId, name, date, reason? }）
+ */
+function syncShiftPaidLeave_(todayYmd) {
+  const today = todayYmd || todayYmd_();
+  const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+  const staffValues = staffSheet.getDataRange().getValues();
+  const staffHeaders = staffValues && staffValues[0] ? staffValues[0] : [];
+  const staffById = {};
+  const nameToId = {};
+  for (let i = 1; i < staffValues.length; i++) {
+    const s = rowToObject_(staffHeaders, staffValues[i]);
+    if (!s.staff_id || s.status === 'inactive') continue;
+    const sid = String(s.staff_id);
+    staffById[sid] = { rowIndex: i + 1, name: String(s.name || ''), balance: safeNumber_(s.paid_leave_balance, 0), delta: 0 };
+    if (s.name) nameToId[String(s.name).trim()] = sid;
+  }
+
+  const win = collectShiftWindow_(nameToId, today);
+  const ctx = readPaidLeaveRows_();
+  const recordsByKey = {};
+  const pendingCount = {};
+  ctx.rows.forEach(function (r) {
+    const key = r.staffId + '|' + r.date;
+    (recordsByKey[key] = recordsByKey[key] || []).push(r);
+    if (r.status === 'pending') pendingCount[r.staffId] = (pendingCount[r.staffId] || 0) + 1;
+  });
+
+  const result = { registered: [], cancelled: [], skipped: [] };
+  const nowIso = new Date().toISOString();
+
+  // 1) シフト表から登録した有給のうち、シフト表で「有給」ではなくなった日を取り消す
+  ctx.rows.forEach(function (r) {
+    if (r.status !== 'approved' || r.remarks.indexOf(SHIFT_PAID_LEAVE_MARK) !== 0) return;
+    const st = staffById[r.staffId];
+    if (!st || !win.months[r.date.slice(0, 7)]) return;
+    const sh = win.byKey[r.staffId + '|' + r.date];
+    if (!sh || sh.isPaidLeave || sh.isTentative) return;
+    setCellByColumnName_(ctx.sheet, r.rowIndex, ctx.headers, 'status', 'rejected');
+    setCellByColumnName_(ctx.sheet, r.rowIndex, ctx.headers, 'approved_date', '');
+    setCellByColumnName_(ctx.sheet, r.rowIndex, ctx.headers, 'remarks',
+      'シフト表で有給ではなくなったため自動で取り消し（' + String(sh.rawCell || '') + '）');
+    r.status = 'rejected';
+    st.delta += 1;
+    result.cancelled.push({ staffId: r.staffId, name: st.name, date: r.date });
+  });
+
+  // 2) シフト表で「有給」の日を登録する（日付順）
+  Object.keys(win.byKey).sort(function (a, b) {
+    const da = a.split('|')[1];
+    const db = b.split('|')[1];
+    return da === db ? (a < b ? -1 : 1) : (da < db ? -1 : 1);
+  }).forEach(function (key) {
+    const sh = win.byKey[key];
+    if (!sh.isPaidLeave || sh.isTentative) return;
+    const st = staffById[sh.staffId];
+    if (!st) return;
+    const recs = recordsByKey[key] || [];
+    if (recs.some(function (r) { return r.status === 'approved'; })) return;
+    const pendingSame = recs.filter(function (r) { return r.status === 'pending'; })[0] || null;
+    if (!pendingSame && recs.some(function (r) { return r.status === 'rejected'; })) {
+      result.skipped.push({ staffId: sh.staffId, name: st.name, date: sh.date, reason: 'rejected' });
+      return;
+    }
+    const pendingOther = (pendingCount[sh.staffId] || 0) - (pendingSame ? 1 : 0);
+    if (st.balance + st.delta - pendingOther < 1) {
+      result.skipped.push({ staffId: sh.staffId, name: st.name, date: sh.date, reason: 'balance' });
+      return;
+    }
+    if (pendingSame) {
+      setCellByColumnName_(ctx.sheet, pendingSame.rowIndex, ctx.headers, 'status', 'approved');
+      setCellByColumnName_(ctx.sheet, pendingSame.rowIndex, ctx.headers, 'approved_date', nowIso);
+      setCellByColumnName_(ctx.sheet, pendingSame.rowIndex, ctx.headers, 'remarks', SHIFT_PAID_LEAVE_MARK + '（承認待ちの申請を承認）');
+      pendingSame.status = 'approved';
+      pendingCount[sh.staffId] -= 1;
+    } else {
+      appendPaidLeaveRow_(ctx, { staff_id: sh.staffId, name: st.name }, sh.date, nowIso, {
+        status: 'approved',
+        approvedDate: nowIso,
+        remarks: SHIFT_PAID_LEAVE_MARK,
+      });
+    }
+    st.delta -= 1;
+    try {
+      removeShiftRequestOffDays_(sh.staffId, sh.date);
+    } catch (e) {
+      Logger.log('syncShiftPaidLeave_: remove off day failed: ' + (e && e.message ? e.message : e));
+    }
+    result.registered.push({ staffId: sh.staffId, name: st.name, date: sh.date });
+  });
+
+  // 3) 残日数を反映（書く直前の値に差分を足す）
+  Object.keys(staffById).forEach(function (sid) {
+    const st = staffById[sid];
+    if (!st.delta) return;
+    const fresh = safeNumber_(getCellByColumnName_(staffSheet, st.rowIndex, staffHeaders, 'paid_leave_balance'), 0);
+    setCellByColumnName_(staffSheet, st.rowIndex, staffHeaders, 'paid_leave_balance', fresh + st.delta);
+  });
+  if (result.registered.length || result.cancelled.length) SpreadsheetApp.flush();
+  return result;
+}
+
+/**
+ * シフト表の「有給」を反映する（force でなければ 10 分に 1 回まで）。
+ * 他のロックの中から呼ばないこと。ほかの処理が実行中なら何もしない（次の機会に行う）。
+ */
+function ensureShiftPaidLeaveSynced_(force) {
+  let cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    if (!force && cache.get(SHIFT_PAID_LEAVE_SYNC_CACHE_KEY) === '1') return null;
+  } catch (e) {
+    cache = null;
+  }
+  const scriptLock = LockService.getScriptLock();
+  if (!scriptLock.tryLock(3000)) return null;
+  try {
+    const userLock = LockService.getUserLock();
+    if (!userLock.tryLock(5000)) return null;
+    try {
+      const res = syncShiftPaidLeave_(todayYmd_());
+      try { if (cache) cache.put(SHIFT_PAID_LEAVE_SYNC_CACHE_KEY, '1', SHIFT_PAID_LEAVE_SYNC_SECONDS); } catch (e) { /* ignore */ }
+      return res;
+    } finally {
+      try { userLock.releaseLock(); } catch (e) { /* ignore */ }
+    }
+  } catch (e) {
+    Logger.log('ensureShiftPaidLeaveSynced_ failed: ' + (e && e.message ? e.message : e));
+    return null;
+  } finally {
+    try { scriptLock.releaseLock(); } catch (e) { /* ignore */ }
+  }
+}
+
+/** メニュー: シフト表の「有給」を今すぐ有給に反映し、結果を表示する。 */
+function menuSyncShiftPaidLeave() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    ensurePaidLeaveGrantsCurrent_();
+    const res = ensureShiftPaidLeaveSynced_(true);
+    if (!res) {
+      ui.alert('シフト表の有給', 'ほかの処理が実行中のため、今は反映できませんでした。少し待ってからもう一度お試しください。', ui.ButtonSet.OK);
+      return;
+    }
+    const reasonLabel = { rejected: '取り消し・却下済みのため', balance: '残日数が足りないため' };
+    const lines = []
+      .concat(res.registered.map(function (x) { return '登録: ' + x.name + ' ' + x.date; }))
+      .concat(res.cancelled.map(function (x) { return '取り消し: ' + x.name + ' ' + x.date; }))
+      .concat(res.skipped.map(function (x) { return '登録しなかった: ' + x.name + ' ' + x.date + '（' + (reasonLabel[x.reason] || x.reason) + '）'; }));
+    ui.alert('シフト表の有給', lines.length ? lines.join('\n') : '新しく反映する有給はありませんでした。', ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('反映に失敗しました', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+  }
 }
 
 /**
@@ -3828,7 +4026,7 @@ function parseShiftCell_(cellValue) {
     return { defined: true, isOff: true, isTentative: tentative, rawCell: raw };
   }
   // 有給（勤務しない日なので休みとして扱い、表示は「有給」にする）。
-  // 残日数はここでは減らさない（「有給休暇」画面の登録・承認で減る）。
+  // 有給の記録への反映（残日数を減らす）は syncShiftPaidLeave_ が行う。
   if (isPaidLeaveShiftText_(cleaned)) {
     return { defined: true, isOff: true, isPaidLeave: true, isTentative: tentative, rawCell: raw };
   }
@@ -5020,6 +5218,12 @@ function attendanceLogRebuildTrigger() {
   } catch (e) {
     Logger.log('attendanceLogRebuildTrigger: paid leave grants failed: ' + (e && e.message ? e.message : e));
   }
+  // シフト表の「有給」を有給の記録に反映する（10 分ごと）
+  try {
+    ensureShiftPaidLeaveSynced_(true);
+  } catch (e) {
+    Logger.log('attendanceLogRebuildTrigger: shift paid leave sync failed: ' + (e && e.message ? e.message : e));
+  }
   const lock = LockService.getScriptLock();
   // 「出勤簿を再生成（今すぐ）」などが実行中なら、今回は何もせず次の回に任せる
   if (!lock.tryLock(1000)) return;
@@ -5148,6 +5352,7 @@ function onOpen() {
     .addItem('出勤簿を再生成（今すぐ）', 'menuRebuildAttendanceLogs')
     .addItem('出勤簿の自動更新（約10分ごと）を設定', 'menuInstallAttendanceLogTrigger')
     .addItem('有給の自動付与を今すぐ反映', 'menuProcessPaidLeaveGrants')
+    .addItem('シフト表の「有給」を今すぐ反映', 'menuSyncShiftPaidLeave')
     .addItem('シート構造を最新化（出勤簿再生成・JSON 解体・日本語化）', 'menuMigrateSheetNames')
     .addSeparator()
     .addItem('提出期限リマインドを毎月1日に自動送信する設定', 'menuInstallMonthlyReminder')

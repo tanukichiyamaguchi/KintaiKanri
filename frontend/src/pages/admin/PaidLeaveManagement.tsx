@@ -415,9 +415,9 @@ export function PaidLeaveManagement() {
                           <div className="list-row items-start">
                             <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" aria-hidden="true" />
                             <div className="list-row-title">
-                              <p className="t-body">シフト表は有給・まだ未登録</p>
+                              <p className="t-body">シフト表は有給・登録できていない日</p>
                               <p className="t-footnote text-label-2">
-                                残日数は登録したときに減ります。日付を押すと「有給を登録」に入ります。
+                                取り消し・却下した日か、残日数が足りない日です。日付を押すと「有給を登録」に入ります。
                               </p>
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {(s.shiftPaidLeaveUnregistered || []).map(d => (
@@ -494,7 +494,7 @@ export function PaidLeaveManagement() {
               <div className="callout callout-info mt-3">
                 <Info aria-hidden="true" />
                 <p className="t-footnote">
-                  入社日から6ヶ月で10日、その後1年ごとに11・12・14・16・18・20日を自動で付与します（出勤率8割以上が前提）。付与から2年たって使わなかった分は、古い付与分から先に使ったものとして自動で消えます。週4日以下のパートの方の少ない日数（比例付与）には対応していないため、その場合はスタッフ管理で残日数を調整してください。
+                  入社日から6ヶ月で10日、その後1年ごとに11・12・14・16・18・20日を自動で付与します（出勤率8割以上が前提）。付与から2年たって使わなかった分は、古い付与分から先に使ったものとして自動で消えます。週4日以下のパートの方の少ない日数（比例付与）には対応していないため、その場合はスタッフ管理で残日数を調整してください。シフト表に「有給」と書いた日は、自動で承認済みの有給として登録されます（約10分ごと・この画面を開いたとき）。シフト表で有給をやめると、自動で取り消されて残日数が戻ります。
                 </p>
               </div>
             </section>

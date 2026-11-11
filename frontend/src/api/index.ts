@@ -138,7 +138,7 @@ let mockInsuranceRates: InsuranceRates = {
 };
 const mockInsuranceHistory: InsuranceRates[] = [mockInsuranceRates];
 
-// --- デモのシフト（今月だけ）: 日曜は休み、佐藤さんは今日より後の最初の平日が「有給」 ---
+// --- デモのシフト（今月だけ）: 日曜は休み、田中さんは今日より後の最初の平日が「有給」 ---
 // 出勤簿の打刻（デモ）と食い違いが出ないよう、勤務日の時間は入れない（シフト未登録のまま）。
 function ensureDemoShifts(year: number, month: number): void {
   const key = `${year}-${month}`;
@@ -154,13 +154,49 @@ function ensureDemoShifts(year: number, month: number): void {
     mockStaffDetails.forEach(s => {
       if (date.getDay() === 0) {
         shifts.push({ staffId: s.staffId, staffName: s.name, date: dateStr, isOff: true, isTentative: false, rawCell: '休' });
-      } else if (s.staffId === 'S001' && !paidDone && date > today) {
+      } else if (s.staffId === 'S002' && !paidDone && date > today) {
         shifts.push({ staffId: s.staffId, staffName: s.name, date: dateStr, isOff: true, isPaidLeave: true, isTentative: false, rawCell: '有給' });
         paidDone = true;
       }
     });
   }
   mockShifts[key] = shifts;
+}
+
+// --- デモ: シフト表の「有給」を有給の記録に反映（サーバーの syncShiftPaidLeave_ と同じ決まりの登録部分） ---
+function demoSyncShiftPaidLeave(): void {
+  const now = new Date();
+  for (let k = -1; k <= 3; k++) {
+    const dt = new Date(now.getFullYear(), now.getMonth() + k, 1);
+    ensureDemoShifts(dt.getFullYear(), dt.getMonth() + 1);
+    (mockShifts[`${dt.getFullYear()}-${dt.getMonth() + 1}`] || []).forEach(sh => {
+      if (!sh.isPaidLeave || sh.isTentative) return;
+      const staff = mockStaffDetails.find(s => s.staffId === sh.staffId && s.status === 'active');
+      if (!staff) return;
+      const recs = mockPaidLeaveRequests.filter(r => r.staffId === sh.staffId && r.leaveDate === sh.date);
+      if (recs.some(r => r.status === 'approved')) return;
+      const pendingSame = recs.find(r => r.status === 'pending');
+      if (!pendingSame && recs.some(r => r.status === 'rejected')) return; // 取り消し・却下済みは登録しない
+      const pendingOther = mockPaidLeaveRequests.filter(r => r.staffId === sh.staffId && r.status === 'pending' && r !== pendingSame).length;
+      if (staff.paidLeaveBalance - pendingOther < 1) return; // 残日数不足
+      const at = new Date().toISOString();
+      if (pendingSame) {
+        pendingSame.status = 'approved';
+        pendingSame.approvedDate = at;
+        pendingSame.remarks = 'シフト表から登録（承認待ちの申請を承認）';
+      } else {
+        mockPaidLeaveRequests.push({
+          id: 'PL' + Date.now() + Math.random().toString(36).slice(2, 6),
+          staffId: sh.staffId, name: staff.name, requestDate: at, leaveDate: sh.date,
+          status: 'approved', approvedDate: at, remarks: 'シフト表から登録',
+        });
+      }
+      staff.paidLeaveBalance -= 1;
+      mockShiftRequests.forEach(sr => {
+        if (sr.staffId === sh.staffId) sr.offDays = sr.offDays.filter(d => !(d.date === sh.date && d.status !== 'rejected'));
+      });
+    });
+  }
 }
 
 // --- Generate mock monthly attendance ---
@@ -540,6 +576,7 @@ async function handleDemoRequest<T>(
 
   // --- Paid Leave ---
   if (action === 'paid-leave/balance') {
+    demoSyncShiftPaidLeave();
     const staffId = queryParams?.staffId || '';
     const staff = mockStaffDetails.find(s => s.staffId === staffId);
     const history = mockPaidLeaveRequests.filter(r => r.staffId === staffId);
@@ -605,6 +642,7 @@ async function handleDemoRequest<T>(
   }
 
   if (action === 'paid-leave/overview') {
+    demoSyncShiftPaidLeave();
     // サーバー（handleGetPaidLeaveOverview）と同じ形。デモでは付与履歴を入社日から作る
     const today = fmtDate(new Date());
     const items: PaidLeaveOverviewItem[] = mockStaffDetails
