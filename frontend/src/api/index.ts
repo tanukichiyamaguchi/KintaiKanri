@@ -138,6 +138,31 @@ let mockInsuranceRates: InsuranceRates = {
 };
 const mockInsuranceHistory: InsuranceRates[] = [mockInsuranceRates];
 
+// --- デモのシフト（今月だけ）: 日曜は休み、佐藤さんは今日より後の最初の平日が「有給」 ---
+// 出勤簿の打刻（デモ）と食い違いが出ないよう、勤務日の時間は入れない（シフト未登録のまま）。
+function ensureDemoShifts(year: number, month: number): void {
+  const key = `${year}-${month}`;
+  if (mockShifts[key]) return;
+  const today = new Date();
+  if (year !== today.getFullYear() || month !== today.getMonth() + 1) return;
+  const shifts: Shift[] = [];
+  const lastDay = new Date(year, month, 0).getDate();
+  let paidDone = false;
+  for (let d = 1; d <= lastDay; d++) {
+    const date = new Date(year, month - 1, d);
+    const dateStr = fmtDate(date);
+    mockStaffDetails.forEach(s => {
+      if (date.getDay() === 0) {
+        shifts.push({ staffId: s.staffId, staffName: s.name, date: dateStr, isOff: true, isTentative: false, rawCell: '休' });
+      } else if (s.staffId === 'S001' && !paidDone && date > today) {
+        shifts.push({ staffId: s.staffId, staffName: s.name, date: dateStr, isOff: true, isPaidLeave: true, isTentative: false, rawCell: '有給' });
+        paidDone = true;
+      }
+    });
+  }
+  mockShifts[key] = shifts;
+}
+
 // --- Generate mock monthly attendance ---
 function generateMockAttendance(staffId: string, year: number, month: number): AttendanceRecord[] {
   const staff = mockStaffDetails.find(s => s.staffId === staffId);
@@ -614,6 +639,20 @@ async function handleDemoRequest<T>(
               required: 5,
             }
           : null;
+        // サーバーと同じ: シフト表で「有給」なのに登録（承認済み・承認待ち）が無い日（前月〜3か月先）
+        const registered = new Set(mine.filter(r => r.status === 'approved' || r.status === 'pending').map(r => r.leaveDate));
+        const now = new Date();
+        const shiftPaidLeaveUnregistered: string[] = [];
+        for (let k = -1; k <= 3; k++) {
+          const dt = new Date(now.getFullYear(), now.getMonth() + k, 1);
+          ensureDemoShifts(dt.getFullYear(), dt.getMonth() + 1);
+          (mockShifts[`${dt.getFullYear()}-${dt.getMonth() + 1}`] || []).forEach(sh => {
+            if (sh.staffId === s.staffId && sh.isPaidLeave && !sh.isTentative && !registered.has(sh.date)) {
+              shiftPaidLeaveUnregistered.push(sh.date);
+            }
+          });
+        }
+        shiftPaidLeaveUnregistered.sort();
         return {
           staffId: s.staffId,
           name: s.name,
@@ -624,6 +663,7 @@ async function handleDemoRequest<T>(
           nextGrant: nextPaidLeaveGrant(s.hireDate, today),
           obligation,
           ledger,
+          shiftPaidLeaveUnregistered,
         };
       });
     return { success: true, data: items as unknown as T };
@@ -976,6 +1016,7 @@ async function handleDemoRequest<T>(
     const staffId = queryParams?.staffId;
     const year = queryParams?.year;
     const month = queryParams?.month;
+    ensureDemoShifts(Number(year), Number(month));
     const key = `${year}-${month}`;
     const all = mockShifts[key] || [];
     const filtered = staffId ? all.filter(s => s.staffId === staffId) : all;

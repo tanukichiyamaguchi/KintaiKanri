@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useId } from 'react';
+import { useState, useEffect, useCallback, useId, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, X, AlertCircle, CheckCircle2, ChevronDown, Info } from 'lucide-react';
+import { Check, X, AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Info } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { paidLeaveApi, localDateKey } from '../../api';
 import type { PaidLeaveRequest, PaidLeaveOverviewItem, PaidLeaveLedgerEntry } from '../../types';
@@ -57,6 +57,15 @@ export function PaidLeaveManagement() {
   const [confirmDraft, setConfirmDraft] = useState<RegisterDraft | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [registerError, setRegisterError] = useState('');
+  const registerSectionRef = useRef<HTMLElement>(null);
+
+  // シフト表で有給なのに未登録の日 → 登録欄にスタッフと日付を入れる（登録は確認してから）
+  const prefillRegister = (staffId: string, date: string) => {
+    setRegStaffId(staffId);
+    setRegDate(date);
+    setRegisterError('');
+    registerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // 承認済みの取り消し
   const [cancelTarget, setCancelTarget] = useState<PaidLeaveRequest | null>(null);
@@ -282,7 +291,7 @@ export function PaidLeaveManagement() {
             </section>
 
             {/* 管理者による有給の登録 */}
-            <section className="section" aria-labelledby={`${formId}-title`}>
+            <section ref={registerSectionRef} className="section scroll-mt-24" aria-labelledby={`${formId}-title`}>
               <h2 id={`${formId}-title`} className="section-header">有給を登録</h2>
               <form className="card space-y-4" onSubmit={handleRegisterSubmit} noValidate>
                 <div>
@@ -400,6 +409,30 @@ export function PaidLeaveManagement() {
                             >
                               {ob.taken} / {ob.required} 日
                             </span>
+                          </div>
+                        )}
+                        {(s.shiftPaidLeaveUnregistered?.length ?? 0) > 0 && (
+                          <div className="list-row items-start">
+                            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" aria-hidden="true" />
+                            <div className="list-row-title">
+                              <p className="t-body">シフト表は有給・まだ未登録</p>
+                              <p className="t-footnote text-label-2">
+                                残日数は登録したときに減ります。日付を押すと「有給を登録」に入ります。
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {(s.shiftPaidLeaveUnregistered || []).map(d => (
+                                  <button
+                                    key={d}
+                                    type="button"
+                                    onClick={() => prefillRegister(s.staffId, d)}
+                                    className={`btn btn-sm btn-tinted tabular ${SMALL_BUTTON_HIT}`}
+                                    aria-label={`${s.name}さんの${formatYmdSlash(d)}を「有給を登録」に入れる`}
+                                  >
+                                    {formatYmdSlash(d)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                           </div>
                         )}
                         <button
