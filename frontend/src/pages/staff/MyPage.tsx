@@ -16,7 +16,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi, paidLeaveApi, salaryApi, submissionApi } from '../../api';
 import type { AttendanceRecord, PaidLeaveBalance, MonthlySubmission, ClockGate } from '../../types';
 import { Header, Loading, Modal, SubmissionStatusBadge, SubmissionDeadlineBanner } from '../../components/common';
-import { formatMinutesAsTime } from '../../utils/calculations';
+import { formatLocalDate, formatLocalDateTime, formatMinutesAsTime } from '../../utils/calculations';
 import { formatYmdJp } from '../../utils/paidLeaveGrant';
 
 type Tab = 'attendance' | 'paidLeave' | 'salary';
@@ -445,7 +445,7 @@ export function MyPage() {
                       <div className="list-row-title">
                         <p className="t-body tabular truncate">{request.leaveDate}</p>
                         <p className="t-footnote tabular text-label-2 truncate">
-                          申請日: {request.requestDate}
+                          申請日: {formatLocalDateTime(request.requestDate)}
                         </p>
                       </div>
                       <span
@@ -570,7 +570,7 @@ export function MyPage() {
               value={leaveDate}
               onChange={e => setLeaveDate(e.target.value)}
               className="input"
-              min={new Date().toISOString().split('T')[0]}
+              min={formatLocalDate(new Date())}
             />
           </label>
 
