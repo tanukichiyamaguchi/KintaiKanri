@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-11-11.3 (勤怠申請の予定・実績の時刻を HH:mm で返す / シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
+const CODE_VERSION = '2026-11-11.4 (アプリを開いたときも有給の付与・シフト表の「有給」を自動で反映 / 勤怠申請の予定・実績の時刻を HH:mm で返す / シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -1777,6 +1777,8 @@ function handleGetStaffList() {
  *   counts: 承認待ちの件数。取得に失敗した項目は null
  */
 function handleGetDashboardSummary() {
+  // 有給の付与・シフト表の「有給」を先に反映する（件数や残日数に反映された状態で返す）
+  runPaidLeaveAutoJobs_();
   const staffRes = handleGetStaffList();
   const staff = staffRes && staffRes.success ? staffRes.data : [];
 
@@ -3168,9 +3170,31 @@ function ensureShiftPaidLeaveSynced_(force) {
     }
   } catch (e) {
     Logger.log('ensureShiftPaidLeaveSynced_ failed: ' + (e && e.message ? e.message : e));
+    // 失敗したときも、アプリを開くたびに試して遅くならないよう、次は 10 分後に試す
+    try { if (cache && !force) cache.put(SHIFT_PAID_LEAVE_SYNC_CACHE_KEY, '1', SHIFT_PAID_LEAVE_SYNC_SECONDS); } catch (e2) { /* ignore */ }
     return null;
   } finally {
     try { scriptLock.releaseLock(); } catch (e) { /* ignore */ }
+  }
+}
+
+/**
+ * 有給の自動処理（法定の付与・時効、シフト表の「有給」の反映）を、アプリを開いたときにも行う。
+ * 10 分ごとのトリガーが動いていない場合でも、管理者のホーム（1 分ごとに取り直す）や
+ * スタッフの打刻画面を開いたときに反映されるようにするため。
+ * 付与は 1 日 1 回、シフト表は 10 分に 1 回までしか実際には処理しないので、
+ * 通常はキャッシュを確認するだけで終わる。失敗しても画面の処理は止めない。
+ */
+function runPaidLeaveAutoJobs_() {
+  try {
+    ensurePaidLeaveGrantsCurrent_();
+  } catch (e) {
+    Logger.log('runPaidLeaveAutoJobs_: grants failed: ' + (e && e.message ? e.message : e));
+  }
+  try {
+    ensureShiftPaidLeaveSynced_(false);
+  } catch (e) {
+    Logger.log('runPaidLeaveAutoJobs_: shift paid leave sync failed: ' + (e && e.message ? e.message : e));
   }
 }
 
@@ -4524,6 +4548,8 @@ function computeClockGate_(staffId, now) {
 function handleGetClockGate(params) {
   const staffId = params && params.staffId ? String(params.staffId) : '';
   if (!staffId) return { success: false, error: 'スタッフIDが指定されていません' };
+  // スタッフが打刻画面を開いたときにも、有給の付与・シフト表の「有給」を反映する
+  runPaidLeaveAutoJobs_();
   return { success: true, data: computeClockGate_(staffId, new Date()) };
 }
 
