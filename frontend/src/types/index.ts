@@ -107,6 +107,8 @@ export interface Shift {
   startTime?: string; // HH:MM
   endTime?: string;   // HH:MM
   isOff: boolean;
+  // シフト表に「有給」と書かれた日（isOff も true）。残日数は「有給休暇」の登録で減る
+  isPaidLeave?: boolean;
   isTentative: boolean;
   parseError?: string;
   rawCell?: string;
@@ -310,6 +312,8 @@ export interface PaidLeaveOverviewItem {
   nextGrant: PaidLeaveNextGrant | null;
   obligation: PaidLeaveObligation | null;
   ledger: PaidLeaveLedgerEntry[];  // 新しい順
+  // シフト表で「有給」なのに、有給の登録（承認済み・承認待ち）が無い日（前月〜3か月先）
+  shiftPaidLeaveUnregistered?: string[];
 }
 
 // 管理者による有給の登録の結果

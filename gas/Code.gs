@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-11-10.2 (有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
+const CODE_VERSION = '2026-11-11 (シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -2922,6 +2922,13 @@ function handleGetPaidLeaveOverview() {
     .filter(function (s) { return s.staff_id && s.status !== 'inactive'; });
   const ledger = readPaidLeaveGrantRows_().rows;
   const leave = readPaidLeaveRows_().rows;
+  // シフト表で「有給」なのに、有給の登録（承認済み・承認待ち）が無い日（スタッフ別）
+  let shiftPaidMissing = {};
+  try {
+    shiftPaidMissing = shiftPaidLeaveWithoutRecord_(staffList, leave, today);
+  } catch (e) {
+    Logger.log('handleGetPaidLeaveOverview: shift check failed: ' + (e && e.message ? e.message : e));
+  }
   const data = staffList.map(function (s) {
     const sid = String(s.staff_id);
     const mine = ledger.filter(function (r) { return r.staffId === sid; });
@@ -2953,9 +2960,41 @@ function handleGetPaidLeaveOverview() {
       nextGrant: nextPaidLeaveGrant_(s, mine, today),
       obligation: paidLeaveObligation_(mine, myLeave, today),
       ledger: history,
+      shiftPaidLeaveUnregistered: shiftPaidMissing[sid] || [],
     };
   });
   return { success: true, data: data };
+}
+
+/**
+ * シフト表（前月〜3 か月先）で「有給」と書かれているのに、有給の登録（承認済み・承認待ち）が
+ * 無い日を、スタッフ別に返す。{ staffId: ['YYYY-MM-DD', ...] }
+ * シフト表の「有給」は表示と判定にだけ使い、残日数は登録で減らすため、登録漏れを知らせる用。
+ * 仮（(仮)）のシフトと、見出しの名前がスタッフ情報の氏名と一致しない列は対象外。
+ */
+function shiftPaidLeaveWithoutRecord_(staffList, leaveRows, todayYmd) {
+  const nameToId = {};
+  staffList.forEach(function (s) { if (s.name) nameToId[String(s.name).trim()] = String(s.staff_id); });
+  const registered = {};
+  (leaveRows || []).forEach(function (r) {
+    if (r.status === 'approved' || r.status === 'pending') registered[r.staffId + '|' + r.date] = true;
+  });
+  const p = String(todayYmd).split('-').map(Number);
+  const out = {};
+  for (let k = -1; k <= 3; k++) {
+    const idx = p[0] * 12 + (p[1] - 1) + k;
+    const y = Math.floor(idx / 12);
+    const m = idx - y * 12 + 1;
+    const res = readShiftSheet_(y, m, nameToId);
+    if (!res.exists) continue;
+    res.shifts.forEach(function (sh) {
+      if (!sh.isPaidLeave || sh.isTentative || !sh.staffId || !sh.date) return;
+      if (registered[sh.staffId + '|' + sh.date]) return;
+      (out[sh.staffId] = out[sh.staffId] || []).push(sh.date);
+    });
+  }
+  Object.keys(out).forEach(function (k) { out[k].sort(); });
+  return out;
 }
 
 /**
@@ -3764,6 +3803,12 @@ function getStandardRemuneration_(monthlyAmount) {
  *  - "休"          → { isOff:true }
  *  - 末尾 "(仮)"   → tentative:true
  */
+/** シフト表のセルが「有給」を表すか（有給・有休・有給休暇・年休。空白は無視）。 */
+function isPaidLeaveShiftText_(text) {
+  const t = String(text == null ? '' : text).replace(/[\s　]/g, '');
+  return t === '有給' || t === '有休' || t === '有給休暇' || t === '年休';
+}
+
 function parseShiftCell_(cellValue) {
   if (cellValue == null) return { defined: false, isTentative: false, isOff: false };
   let raw;
@@ -3781,6 +3826,11 @@ function parseShiftCell_(cellValue) {
 
   if (cleaned === '休' || cleaned === '×' || cleaned === '-' || cleaned === 'OFF' || cleaned === 'off') {
     return { defined: true, isOff: true, isTentative: tentative, rawCell: raw };
+  }
+  // 有給（勤務しない日なので休みとして扱い、表示は「有給」にする）。
+  // 残日数はここでは減らさない（「有給休暇」画面の登録・承認で減る）。
+  if (isPaidLeaveShiftText_(cleaned)) {
+    return { defined: true, isOff: true, isPaidLeave: true, isTentative: tentative, rawCell: raw };
   }
 
   // 全角コロン・全角ハイフン・全角数字を半角に正規化
@@ -3802,7 +3852,7 @@ function parseShiftCell_(cellValue) {
 /**
  * 月次のシフトシート（shift_YYYYMM）から全スタッフ × 全日付分の Shift[] を返す。
  */
-function readShiftSheet_(year, month) {
+function readShiftSheet_(year, month, nameToIdOpt) {
   const ss = getSpreadsheet();
   // 新名 (シフト_YYYYMM) を優先。無ければ旧名 (shift_YYYYMM) もフォールバックで参照する。
   const name = shiftSheetName(year, month);
@@ -3823,11 +3873,14 @@ function readShiftSheet_(year, month) {
     if (headers[c]) staffCols.push({ name: headers[c], col: c });
   }
 
-  // staff_master からスタッフ名 → staff_id のマッピング
-  const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
-  const staffData = sheetToObjects(staffSheet);
-  const nameToId = {};
-  staffData.forEach(s => { if (s.name) nameToId[String(s.name).trim()] = s.staff_id; });
+  // staff_master からスタッフ名 → staff_id のマッピング（呼び出し側で作ってあれば使い回す）
+  let nameToId = nameToIdOpt;
+  if (!nameToId) {
+    const staffSheet = getOrCreateSheet(SHEETS.STAFF_MASTER);
+    const staffData = sheetToObjects(staffSheet);
+    nameToId = {};
+    staffData.forEach(s => { if (s.name) nameToId[String(s.name).trim()] = s.staff_id; });
+  }
 
   const shifts = [];
   for (let r = 1; r < data.length; r++) {
@@ -3847,6 +3900,7 @@ function readShiftSheet_(year, month) {
         startTime: parsed.startTime,
         endTime: parsed.endTime,
         isOff: parsed.isOff,
+        isPaidLeave: parsed.isPaidLeave === true,
         isTentative: parsed.isTentative,
         parseError: parsed.parseError,
         rawCell: parsed.rawCell

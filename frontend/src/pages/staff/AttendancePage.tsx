@@ -734,7 +734,7 @@ export function AttendancePage() {
                   const hasOvertime = row.overtimeMinutes > 0;
                   const shiftLabel = row.shift
                     ? row.shift.isOff
-                      ? `休${row.shift.isTentative ? '(仮)' : ''}`
+                      ? `${row.shift.isPaidLeave ? '有給' : '休'}${row.shift.isTentative ? '(仮)' : ''}`
                       : `${row.shift.startTime || '?'} - ${row.shift.endTime || '?'}${row.shift.isTentative ? '(仮)' : ''}`
                     : '';
                   const cellDisabled = isLocked || isRefreshing;
@@ -763,9 +763,11 @@ export function AttendancePage() {
                               className={`pill tabular ${
                                 row.shift.isTentative
                                   ? 'text-label-2 ring-1 ring-inset ring-separator'
-                                  : row.shift.isOff
-                                    ? 'pill-neutral'
-                                    : 'pill-tint'
+                                  : row.shift.isPaidLeave
+                                    ? 'pill-success'
+                                    : row.shift.isOff
+                                      ? 'pill-neutral'
+                                      : 'pill-tint'
                               }`}
                             >
                               {shiftLabel}
