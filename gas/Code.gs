@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-11-11.5 (シフト表の日付の年をシート名の年に合わせる・年を取り違えた有給の自動修正 / アプリを開いたときも有給の付与・シフト表の「有給」を自動で反映 / 勤怠申請の予定・実績の時刻を HH:mm で返す / シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
+const CODE_VERSION = '2026-11-11.6 (スタッフに有給の日数を見せない・年 5 日の有給のお知らせ（期限の 6 か月前から） / シフト表の日付の年をシート名の年に合わせる・年を取り違えた有給の自動修正 / アプリを開いたときも有給の付与・シフト表の「有給」を自動で反映 / 勤怠申請の予定・実績の時刻を HH:mm で返す / シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -2151,13 +2151,19 @@ function handleGetPaidLeaveBalance(params) {
   const balance = safeNumber_(staff.paid_leave_balance, 0);
   const pending = history.filter(h => (h.status || 'pending') === 'pending').length;
 
-  // 次の付与（日付・日数）。取得に失敗しても残日数の表示は妨げない
+  // 次の付与（日付・日数）と、年 5 日のお知らせ。取得に失敗しても残日数の表示は妨げない
   let nextGrant = null;
+  let notice = null;
   try {
+    const today = todayYmd_();
     const ledger = readPaidLeaveGrantRows_().rows.filter(function (r) { return r.staffId === staffId; });
-    nextGrant = nextPaidLeaveGrant_(staff, ledger, todayYmd_());
+    nextGrant = nextPaidLeaveGrant_(staff, ledger, today);
+    const mine = history.map(function (h) {
+      return { date: formatDateOnly_(h.leave_date), status: h.status || 'pending' };
+    });
+    notice = paidLeaveStaffNotice_(ledger, mine, today);
   } catch (e) {
-    Logger.log('handleGetPaidLeaveBalance: nextGrant failed: ' + (e && e.message ? e.message : e));
+    Logger.log('handleGetPaidLeaveBalance: nextGrant/notice failed: ' + (e && e.message ? e.message : e));
   }
 
   return {
@@ -2167,6 +2173,7 @@ function handleGetPaidLeaveBalance(params) {
       pending: pending,
       available: balance - pending,
       nextGrant: nextGrant,
+      notice: notice,
       history: history.map(h => ({
         id: h.id,
         staffId: h.staff_id,
@@ -2215,7 +2222,8 @@ function handlePaidLeaveRequest(body) {
     if (av.available < 1) {
       return {
         success: false,
-        error: '有給の残り日数が足りません（残り ' + av.balance + ' 日' + (av.pending ? '・承認待ち ' + av.pending + ' 日' : '') + '）',
+        // スタッフには有給の日数を見せない（管理者の指示）
+        error: '有給の日数が足りないため申請できません。管理者に相談してください。',
       };
     }
     const requestId = appendPaidLeaveRow_(ctx, staff, leaveDate, new Date().toISOString());
@@ -2267,9 +2275,8 @@ function planPaidLeaveSync_(staff, targetYearMonth, requestedDates) {
   if (pendingInMonthAfter > Math.max(limit, pendingInMonthNow)) {
     return {
       ok: false,
-      error: '有給の残り日数が足りません（残り ' + balance + ' 日'
-        + (pendingOther ? '・ほかの月の承認待ち ' + pendingOther + ' 日' : '')
-        + '。この月に申請できるのは ' + Math.max(0, limit) + ' 日までです）',
+      // スタッフには有給の日数を見せない（管理者の指示）
+      error: '有給の日数が足りないため、選んだ日をすべては申請できません。管理者に相談してください。',
     };
   }
   return { ok: true, ctx: ctx, desired: desired, toAppend: toAppend, toDelete: toDelete, pendingInMonthAfter: pendingInMonthAfter };
@@ -2808,6 +2815,52 @@ function paidLeaveObligation_(ledger, leaveRows, todayYmd) {
     return r.status === 'approved' && r.date >= target.start && r.date <= target.end;
   }).length;
   return { periodStart: target.start, periodEnd: target.end, taken: taken, required: PAID_LEAVE_OBLIGATION_DAYS };
+}
+
+// スタッフ向けの「年 5 日の有給を取りましょう」のお知らせを出し始める時期（期限の何か月前から）
+const PAID_LEAVE_NOTICE_MONTHS_BEFORE = 6;
+const PAID_LEAVE_NOTICE_CACHE_SECONDS = 10 * 60;
+
+/**
+ * スタッフ向けの「年 5 日の有給を取りましょう」のお知らせ。
+ * 年 10 日以上付与された期間で、承認済みの有給（これからの予定の日を含む）がまだ 5 日に届かず、
+ * 期限（付与日から 1 年）の 6 か月前の日を過ぎていれば { deadline, remaining, required } を返す。
+ * それ以外は null。スタッフには有給の残日数などは見せないため、期限と「あと何日」だけを返す。
+ */
+function paidLeaveStaffNotice_(ledger, leaveRows, todayYmd) {
+  const ob = paidLeaveObligation_(ledger, leaveRows, todayYmd);
+  if (!ob || ob.taken >= ob.required) return null;
+  const showFrom = addMonthsLegal_(ob.periodEnd, -PAID_LEAVE_NOTICE_MONTHS_BEFORE);
+  if (todayYmd < showFrom) return null;
+  return { deadline: ob.periodEnd, remaining: ob.required - ob.taken, required: ob.required };
+}
+
+/**
+ * 指定スタッフのお知らせ（paidLeaveStaffNotice_）を返す。打刻画面を開くたびに呼ばれるため、
+ * スタッフ・日ごとに 10 分間キャッシュする（有給の承認などは最大 10 分遅れて反映される）。
+ */
+function getPaidLeaveStaffNotice_(staffId) {
+  const today = todayYmd_();
+  const key = 'plnotice:v1:' + staffId + ':' + today;
+  let cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    const hit = cache.get(key);
+    if (hit) return JSON.parse(hit).notice;
+  } catch (e) {
+    cache = null;
+  }
+  let notice = null;
+  try {
+    const ledger = readPaidLeaveGrantRows_().rows.filter(function (r) { return r.staffId === staffId; });
+    const leave = readPaidLeaveRows_().rows.filter(function (r) { return r.staffId === staffId; });
+    notice = paidLeaveStaffNotice_(ledger, leave, today);
+  } catch (e) {
+    Logger.log('getPaidLeaveStaffNotice_ failed: ' + (e && e.message ? e.message : e));
+    return null;
+  }
+  try { if (cache) cache.put(key, JSON.stringify({ notice: notice }), PAID_LEAVE_NOTICE_CACHE_SECONDS); } catch (e) { /* ignore */ }
+  return notice;
 }
 
 /** 指定スタッフ・日付の希望休（承認待ち・承認済み）を削除する。削除した件数を返す。 */
@@ -4600,7 +4653,10 @@ function handleGetClockGate(params) {
   if (!staffId) return { success: false, error: 'スタッフIDが指定されていません' };
   // スタッフが打刻画面を開いたときにも、有給の付与・シフト表の「有給」を反映する
   runPaidLeaveAutoJobs_();
-  return { success: true, data: computeClockGate_(staffId, new Date()) };
+  const gate = computeClockGate_(staffId, new Date());
+  // 「年 5 日の有給を取りましょう」のお知らせ（対象でなければ null）
+  gate.paidLeaveNotice = getPaidLeaveStaffNotice_(staffId);
+  return { success: true, data: gate };
 }
 
 function handleGetSubmissionStatus(params) {

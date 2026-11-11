@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn, LogOut, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceApi, submissionApi, readCache, writeCache, localDateKey } from '../../api';
-import type { ClockType, WorkStatus, ClockRecord, ClockGate } from '../../types';
-import { Header, Modal, SubmissionDeadlineBanner, Spinner } from '../../components/common';
+import type { ClockType, WorkStatus, ClockRecord, ClockGate, PaidLeaveNotice } from '../../types';
+import { Header, Modal, SubmissionDeadlineBanner, PaidLeaveNoticeBanner, Spinner } from '../../components/common';
 import { WorkRing } from '../../components/common/WorkRing';
 import { computeWorkedMinutes, formatDuration } from '../../utils/workTime';
 
@@ -12,6 +12,8 @@ interface ClockCache {
   status: WorkStatus;
   records: ClockRecord[];
   gate: ClockGate | null;
+  // 「年5日の有給を取りましょう」のお知らせ（打刻の取得 clock-gate にだけ入るので別に持つ）
+  plNotice?: PaidLeaveNotice | null;
 }
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
@@ -34,6 +36,8 @@ export function ClockPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [gate, setGate] = useState<ClockGate | null>(initialCache?.gate ?? null);
+  const [plNotice, setPlNotice] = useState<PaidLeaveNotice | null>(initialCache?.plNotice ?? null);
+  const plNoticeRef = useRef<PaidLeaveNotice | null>(initialCache?.plNotice ?? null);
   // 初回読込が一度でも成功したか / 失敗中か。失敗中は「状態不明」としてボタンを無効化し、
   // 既定値(未出勤)を正しい状態として見せない（サイレント失敗＋誤操作を防ぐ）。
   // 保存内容がある場合は、それを「今日の状態」として表示・操作できる（サーバーが最終確認する）。
@@ -85,6 +89,11 @@ export function ClockPage() {
       // apiRequest は失敗時も reject せず {success:false} を返すため、catch ではなく
       // success フラグで判定する（catch は防御的フォールバックとしてのみ残す）。
       const nextGate = gateRes.success && gateRes.data ? gateRes.data : null;
+      // 年5日のお知らせは clock-gate の取得にだけ入る（打刻の応答の gate には入らない）
+      if (nextGate && 'paidLeaveNotice' in nextGate) {
+        plNoticeRef.current = nextGate.paidLeaveNotice ?? null;
+        setPlNotice(plNoticeRef.current);
+      }
       if (todayRes.success && todayRes.data) {
         const nextStatus = todayRes.data.status || 'not_started';
         const nextRecords = todayRes.data.records || [];
@@ -92,7 +101,7 @@ export function ClockPage() {
         setRecords(nextRecords);
         setLoaded(true);
         setLoadError(false);
-        saveCache({ status: nextStatus, records: nextRecords, gate: nextGate });
+        saveCache({ status: nextStatus, records: nextRecords, gate: nextGate, plNotice: plNoticeRef.current });
       } else if (!loadedRef.current) {
         // 一度も正しく取得できていない＝状態不明。既定値(未出勤)を正解として見せない。
         setLoadError(true);
@@ -178,7 +187,7 @@ export function ClockPage() {
           setRecords(nextRecords);
           setLoaded(true);
           setLoadError(false);
-          saveCache({ status: nextStatus, records: nextRecords, gate: response.data.gate ?? gate });
+          saveCache({ status: nextStatus, records: nextRecords, gate: response.data.gate ?? gate, plNotice: plNoticeRef.current });
         }
         if (response.data?.gate) {
           setGate(response.data.gate);
@@ -251,6 +260,8 @@ export function ClockPage() {
       <main className="page-content">
         {/* 出勤簿 提出期限アラート / 承認待ちのお知らせ */}
         <SubmissionDeadlineBanner gate={gate} />
+        {/* 年5日の有給のお知らせ（期限の6か月前から・5日取れば消える） */}
+        <PaidLeaveNoticeBanner notice={plNotice} to="/mypage?tab=paidLeave" />
 
         {/* 時計と勤務リング */}
         <section className="card !px-4 !pt-6 !pb-5" aria-labelledby="clock-heading">

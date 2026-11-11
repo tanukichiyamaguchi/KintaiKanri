@@ -13,6 +13,7 @@ import type {
   PaidLeaveOverviewItem,
   PaidLeaveLedgerEntry,
   PaidLeaveRegisterResult,
+  PaidLeaveNotice,
   SalaryRecord,
   InsuranceRates,
   Incentive,
@@ -161,6 +162,28 @@ function ensureDemoShifts(year: number, month: number): void {
     });
   }
   mockShifts[key] = shifts;
+}
+
+// --- デモ: 年5日の有給のお知らせ（サーバーの paidLeaveStaffNotice_ と同じ決まり） ---
+// 10日以上付与された期間で、承認済みの有給（予定を含む）が5日に届かず、期限の6か月前を過ぎたら出す。
+function demoPaidLeaveNotice(staffId: string): PaidLeaveNotice | null {
+  const s = mockStaffDetails.find(x => x.staffId === staffId);
+  if (!s || !isYmd(s.hireDate)) return null;
+  const today = fmtDate(new Date());
+  let start: string | null = null;
+  for (let n = 1; n <= 100; n++) {
+    const date = paidLeaveGrantDate(s.hireDate, n);
+    if (date > today) break;
+    if (paidLeaveGrantDays(n) < 10) continue;
+    if (addDaysYmd(addMonthsLegal(date, 12), -1) >= today) start = date;
+  }
+  if (!start) return null;
+  const from = start;
+  const end = addDaysYmd(addMonthsLegal(from, 12), -1);
+  const taken = mockPaidLeaveRequests.filter(r => r.staffId === staffId && r.status === 'approved' && r.leaveDate >= from && r.leaveDate <= end).length;
+  if (taken >= 5) return null;
+  if (today < addMonthsLegal(end, -6)) return null;
+  return { deadline: end, remaining: 5 - taken, required: 5 };
 }
 
 // --- デモ: シフト表の「有給」を有給の記録に反映（サーバーの syncShiftPaidLeave_ と同じ決まりの登録部分） ---
@@ -585,7 +608,7 @@ async function handleDemoRequest<T>(
     const nextGrant = staff ? nextPaidLeaveGrant(staff.hireDate, fmtDate(new Date())) : null;
     return {
       success: true,
-      data: { balance, pending, available: balance - pending, nextGrant, history } as unknown as T,
+      data: { balance, pending, available: balance - pending, nextGrant, notice: demoPaidLeaveNotice(staffId), history } as unknown as T,
     };
   }
 
@@ -1011,6 +1034,7 @@ async function handleDemoRequest<T>(
       deadlineDate: `${curYm}-07`,
       alertActive: dayOfMonth >= 1 && dayOfMonth <= 7 && !prevSubmitted && hasPrevAttendance,
       clockBlocked: dayOfMonth >= 4 && !prevSubmitted && hasPrevAttendance,
+      paidLeaveNotice: demoPaidLeaveNotice(staffId),
     };
     return { success: true, data: gate as unknown as T };
   }

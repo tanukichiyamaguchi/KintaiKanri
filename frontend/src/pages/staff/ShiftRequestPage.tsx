@@ -150,7 +150,8 @@ export function ShiftRequestPage() {
     if (selectedPaid.size >= paidLimit) {
       setMessage({
         type: 'error',
-        text: `有給の残り日数が足りません（残り ${paidState.balance} 日${paidState.pendingOtherMonths ? `・ほかの月の承認待ち ${paidState.pendingOtherMonths} 日` : ''}）`,
+        // スタッフには有給の日数を見せない（管理者の指示）
+        text: 'これ以上は有給を選べません。有給の日数については管理者に相談してください。',
       });
       return;
     }
@@ -270,7 +271,7 @@ export function ShiftRequestPage() {
               <div className="tile">
                 <dt className="t-footnote text-label-2">有給</dt>
                 <dd className="t-headline tabular mt-0.5 text-success">{paidState ? `${selectedPaid.size}日` : '–'}</dd>
-                <dd className="t-caption tabular mt-0.5 text-label-2">{paidState ? `残り ${paidState.balance}日` : '取得できません'}</dd>
+                <dd className="t-caption mt-0.5 text-label-2">{paidState ? '選んだ日' : '読み込めません'}</dd>
               </div>
             </dl>
             {existing && (
@@ -355,10 +356,10 @@ export function ShiftRequestPage() {
                 {mode === 'off'
                   ? '休みを希望する日をタップしてください。'
                   : paidState
-                    ? <>有給の残り <span className="tabular font-semibold text-label">{paidState.balance}日</span>
-                        {paidState.pendingOtherMonths > 0 && <>（ほかの月の承認待ち <span className="tabular">{paidState.pendingOtherMonths}日</span>）</>}
-                        ・この月はあと <span className={`tabular font-semibold ${paidRemainingToPick === 0 ? 'text-danger' : 'text-success'}`}>{paidRemainingToPick}日</span> 選べます</>
-                    : '有給の残り日数を取得できませんでした。画面を更新してください。'}
+                    ? (paidRemainingToPick > 0
+                        ? '有給で休みたい日をタップしてください。'
+                        : <span className="text-danger">これ以上は有給を選べません。有給の日数については管理者に相談してください。</span>)
+                    : '有給の情報を読み込めませんでした。画面を更新してください。'}
               </p>
             </div>
 
