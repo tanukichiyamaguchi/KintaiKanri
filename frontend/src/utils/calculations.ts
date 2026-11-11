@@ -255,6 +255,23 @@ export function formatLocalDate(date: Date): string {
 }
 
 /**
+ * 画面に出す日時を 'YYYY/MM/DD HH:mm'（端末のタイムゾーン）に整える。
+ *   - ISO の日時（例 "2026-05-07T06:45:04.941Z"）→ "2026/05/07 15:45"
+ *   - 日付だけ（例 "2026-05-07"）→ "2026/05/07"（UTC として読まないよう別扱い）
+ *   - 読めない値はそのまま返す
+ */
+export function formatLocalDateTime(value: string | null | undefined): string {
+  if (!value) return '';
+  const s = String(value).trim();
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (ymd) return `${ymd[1]}/${ymd[2]}/${ymd[3]}`;
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
  * Extract HH:MM (local timezone) from a clock-in/out value returned by the API.
  *
  * The backend may return either:
