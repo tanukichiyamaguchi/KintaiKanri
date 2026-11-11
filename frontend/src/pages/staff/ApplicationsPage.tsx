@@ -15,6 +15,7 @@ import {
   ApplicationStatusBadge,
   ShiftDiffKindBadge,
 } from '../../components/common';
+import { formatTimeOfDay } from '../../utils/calculations';
 
 type StatusFilter = 'all' | ApplicationStatus;
 
@@ -180,13 +181,13 @@ export function ApplicationsPage() {
     if (d.plannedStart || d.plannedEnd) {
       items.push({
         label: '予定',
-        value: `${d.plannedStart || '-'} 〜 ${d.plannedEnd || '-'}`,
+        value: `${formatTimeOfDay(d.plannedStart) || '-'} 〜 ${formatTimeOfDay(d.plannedEnd) || '-'}`,
       });
     }
     if (d.actualStart || d.actualEnd) {
       items.push({
         label: '実績',
-        value: `${d.actualStart || '-'} 〜 ${d.actualEnd || '-'}`,
+        value: `${formatTimeOfDay(d.actualStart) || '-'} 〜 ${formatTimeOfDay(d.actualEnd) || '-'}`,
       });
     }
     if (typeof d.plannedBreak === 'number' || typeof d.actualBreak === 'number') {

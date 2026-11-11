@@ -17,7 +17,7 @@ const WEEKLY_HOURS = 44; // Beauty industry special measure
 // このコードのバージョン。Apps Script に最新コードが反映されているかを
 // メニュー「コードのバージョンを確認」で確認するための目印。
 // 出勤簿の [h]:mm 書式修正・提出ゲートの重複行修正を含む版。
-const CODE_VERSION = '2026-11-11.2 (シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
+const CODE_VERSION = '2026-11-11.3 (勤怠申請の予定・実績の時刻を HH:mm で返す / シフト表の「有給」から有給を自動登録・取り消し / シフト表の「有給」を有給として読む / 有給: 法定どおり自動付与・2年で時効・管理者による有給登録 / speed: 出勤簿 auto-rebuild every 10 min, batched writes, dashboard summary; 有給 from 希望休 screen)';
 
 // 月次出勤簿の提出ルール
 // - 提出期限: 毎月 7 日（前月分の出勤簿）
@@ -4303,10 +4303,12 @@ function handleListApplications(params) {
       // 旧 details_json が残っている行（migration 前）はそちらも併用
       const fromJson = safeJsonParse_(r.details_json) || {};
       const details = {};
-      if (fromJson.plannedStart || r.planned_start) details.plannedStart = r.planned_start || fromJson.plannedStart;
-      if (fromJson.plannedEnd || r.planned_end) details.plannedEnd = r.planned_end || fromJson.plannedEnd;
-      if (fromJson.actualStart || r.actual_start) details.actualStart = r.actual_start || fromJson.actualStart;
-      if (fromJson.actualEnd || r.actual_end) details.actualEnd = r.actual_end || fromJson.actualEnd;
+      // 時刻の列は、シートが「9:00」を時刻型に変えて保存するため Date（1899-12-30 基準）で読まれる。
+      // そのまま返すと画面に「1899-12-30T01:00:00.000Z」と出るので 'HH:mm' に揃えて返す。
+      if (fromJson.plannedStart || r.planned_start) details.plannedStart = formatTimeOnly_(r.planned_start || fromJson.plannedStart);
+      if (fromJson.plannedEnd || r.planned_end) details.plannedEnd = formatTimeOnly_(r.planned_end || fromJson.plannedEnd);
+      if (fromJson.actualStart || r.actual_start) details.actualStart = formatTimeOnly_(r.actual_start || fromJson.actualStart);
+      if (fromJson.actualEnd || r.actual_end) details.actualEnd = formatTimeOnly_(r.actual_end || fromJson.actualEnd);
       if (r.planned_break_min !== '' && r.planned_break_min !== undefined && r.planned_break_min !== null) {
         details.plannedBreak = Number(r.planned_break_min);
       } else if (fromJson.plannedBreak !== undefined) {

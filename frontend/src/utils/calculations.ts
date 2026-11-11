@@ -302,6 +302,20 @@ export function extractLocalTimeHHMM(value: string | null | undefined): string {
 }
 
 /**
+ * 申請の予定・実績などの時刻を 'HH:mm' で表示する。
+ *   - '9:00' / '09:00' / '09:00:00' → '09:00'
+ *   - ISO の日時（シートの時刻型が「1899-12-30T01:00:00.000Z」のように届く場合を含む）→ 端末のタイムゾーンの 'HH:mm'
+ *   - 読めない値はそのまま返す
+ */
+export function formatTimeOfDay(value: string | null | undefined): string {
+  if (!value) return '';
+  const s = String(value).trim();
+  const plain = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(s);
+  if (plain) return `${plain[1].padStart(2, '0')}:${plain[2]}`;
+  return extractLocalTimeHHMM(s) || s;
+}
+
+/**
  * Format date as Japanese string
  */
 export function formatDateJapanese(dateStr: string): string {
